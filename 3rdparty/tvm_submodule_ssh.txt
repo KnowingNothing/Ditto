@@ -1,0 +1,15 @@
+[submodule "dmlc-core"]
+	path = 3rdparty/dmlc-core
+	url = git@github.com:dmlc/dmlc-core.git
+[submodule "dlpack"]
+	path = 3rdparty/dlpack
+	url = git@github.com:dmlc/dlpack.git
+[submodule "3rdparty/rang"]
+	path = 3rdparty/rang
+	url = git@github.com:agauniyal/rang.git
+[submodule "3rdparty/vta-hw"]
+	path = 3rdparty/vta-hw
+	url = git@github.com:apache/tvm-vta.git
+[submodule "3rdparty/CTPL"]
+	path = 3rdparty/CTPL
+	url = git@github.com:vit-vit/CTPL.git

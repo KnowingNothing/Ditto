@@ -5,6 +5,7 @@ set(LIB_NAME nast)
 # include directories
 include_directories(${CMAKE_INCLUDE_PATH})
 include_directories("include")
+include_directories("3rdparty/tvm/include")
 
 # initial variables
 set(NAST_LINKER_LIBS "")
@@ -100,3 +101,10 @@ add_subdirectory(test)
 #     EXCLUDE_FROM_ALL)
 
 # target_link_libraries(${LIB_NAME} jsoncpp_lib)
+
+# TVM targets.
+add_subdirectory("3rdparty/tvm"
+    ${CMAKE_CURRENT_BINARY_DIR}/tvm-build
+    EXCLUDE_FROM_ALL)
+
+target_link_libraries(${LIB_NAME} tvm-build)

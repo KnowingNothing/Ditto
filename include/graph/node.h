@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <tvm/te/expr.h>
 
 namespace nast {
 
