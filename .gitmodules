@@ -1,4 +1,0 @@
-[submodule "3rdparty/tvm"]
-	path = 3rdparty/tvm
-	url = git@github.com:KnowingNothing/tvm.git
-	branch = mirror
