@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.2)
-project(nast C CXX)
-set(LIB_NAME nast)
+project(ditto C CXX)
+set(LIB_NAME ditto)
 
 # include directories
 include_directories(${CMAKE_INCLUDE_PATH})
@@ -52,21 +52,21 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/tvm.cmake)
 
 
 # Source file
-file(GLOB XCOMPILER_SRCS
-    src/*.cc
-    )
+# file(GLOB XCOMPILER_SRCS
+#     src/*.cc
+#     )
 
-file(GLOB XCOMPILER_SRCS
-    src/graph/*.cc
-)
+# file(GLOB XCOMPILER_SRCS
+#     src/graph/*.cc
+# )
 
-file(GLOB XCOMPILER_INCLUDES
-    include/*.h
-)
+# file(GLOB XCOMPILER_INCLUDES
+#     include/*.h
+# )
 
-file(GLOB XCOMPILER_INCLUDES
-    include/graph/*.h
-)
+# file(GLOB XCOMPILER_INCLUDES
+#     include/graph/*.h
+# )
 
 
 # if(NOT MSVC)
@@ -76,9 +76,9 @@ file(GLOB XCOMPILER_INCLUDES
 #     set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS}")
 # endif()
 
-add_library(${LIB_NAME} SHARED ${XCOMPILER_SRCS} ${XCOMPILER_INCLUDES})
-
-target_link_libraries(${LIB_NAME} ${NAST_LINKER_LIBS} ${NAST_RUNTIME_LINKER_LIBS})
+# add_library(${LIB_NAME} SHARED ${XCOMPILER_SRCS} ${XCOMPILER_INCLUDES})
+# target_compile_definitions(${LIB_NAME} PUBLIC DMLC_USE_LOGGING_LIBRARY=<tvm/runtime/logging.h>)
+# target_link_libraries(${LIB_NAME} ${NAST_LINKER_LIBS} ${NAST_RUNTIME_LINKER_LIBS})
 
 # if (HIDE_PRIVATE_SYMBOLS AND NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 #   set(HIDE_SYMBOLS_LINKER_FLAGS "-Wl,--exclude-libs,ALL")

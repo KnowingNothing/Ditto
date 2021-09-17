@@ -89,6 +89,7 @@ tvm_option(USE_VITIS_AI "Build with VITIS-AI Codegen support" OFF)
 # include directories
 include_directories(${CMAKE_INCLUDE_PATH})
 include_directories("3rdparty/tvm/include")
+include_directories("include")
 include_directories(SYSTEM ${DLPACK_PATH})
 include_directories(SYSTEM ${DMLC_PATH})
 include_directories(SYSTEM ${RANG_PATH})
@@ -229,8 +230,8 @@ if(BUILD_FOR_ANDROID)
 endif()
 
 # add source group
-FILE(GLOB_RECURSE GROUP_SOURCE "3rdparty/tvm/src/*.cc")
-FILE(GLOB_RECURSE GROUP_INCLUDE "3rdparty/tvm/src/*.h" "3rdparty/tvm/include/*.h")
+FILE(GLOB_RECURSE GROUP_SOURCE "3rdparty/tvm/src/*.cc" "src/*.cc")
+FILE(GLOB_RECURSE GROUP_INCLUDE "3rdparty/tvm/src/*.h" "3rdparty/tvm/include/*.h" "src/*.h" "include/*.h")
 assign_source_group("Source" ${GROUP_SOURCE})
 assign_source_group("Include" ${GROUP_INCLUDE})
 
@@ -248,6 +249,8 @@ file(GLOB_RECURSE COMPILER_SRCS
     3rdparty/tvm/src/parser/*.cc
     3rdparty/tvm/src/printer/*.cc
     3rdparty/tvm/src/support/*.cc
+    src/*.cc
+    src/graph/*.cc
     )
 
 file(GLOB CODEGEN_SRCS
@@ -605,6 +608,11 @@ install(TARGETS tvm DESTINATION lib${LIB_SUFFIX})
 install(TARGETS tvm_runtime DESTINATION lib${LIB_SUFFIX})
 
 if (INSTALL_DEV)
+  install(
+    DIRECTORY "include/." DESTINATION "include"
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
   install(
     DIRECTORY "3rdparty/tvm/include/." DESTINATION "include"
     FILES_MATCHING
