@@ -7,8 +7,8 @@ include_directories(${CMAKE_INCLUDE_PATH})
 include_directories("include")
 
 # initial variables
-set(NAST_LINKER_LIBS "")
-set(NAST_RUNTIME_LINKER_LIBS ${CMAKE_DL_LIBS})
+set(DITTO_LINKER_LIBS "")
+set(DITTO_RUNTIME_LINKER_LIBS ${CMAKE_DL_LIBS})
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/tvm.cmake)
 
