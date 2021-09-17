@@ -6,7 +6,7 @@ The three critical modules of Ditto include:
 - AutoTensorize
 - AutoCompute
 
-Besides, Ditto is also designed for compiling for training.
+Ditto is also designed for compiling for training.
 
 #### Supported Compiler Backends
 - TVM
