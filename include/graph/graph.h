@@ -17,43 +17,43 @@ namespace ditto {
 
 namespace graph {
 
-bool IsConstInt(const PrimExpr& expr);
+bool IsConstInt(const PrimExpr &expr);
 
 class SubstituteTensor : public tir::ExprMutator {
- public:
+public:
   using tir::ExprMutator::VisitExpr;
 
   SubstituteTensor(Array<te::Tensor> org, Array<te::Tensor> replace)
       : org_(org), replace_(replace) {}
 
- private:
+private:
   Array<te::Tensor> org_;
   Array<te::Tensor> replace_;
 
- protected:
+protected:
   using tir::ExprMutator::VisitExpr_;
   // list of functions to override.
-  PrimExpr VisitExpr_(const tir::ProducerLoadNode* op) override;
+  PrimExpr VisitExpr_(const tir::ProducerLoadNode *op) override;
 };
 
 class ExistVar : public tir::ExprVisitor {
- public:
+public:
   using tir::ExprVisitor::VisitExpr;
 
   ExistVar(tir::Var var) : var_(var) {}
 
-  bool operator()(const PrimExpr& expr) {
+  bool operator()(const PrimExpr &expr) {
     VisitExpr(expr);
     return exist_;
   }
 
- private:
+private:
   tir::Var var_;
   bool exist_{false};
 
- protected:
+protected:
   using tir::ExprVisitor::VisitExpr_;
-  void VisitExpr_(const tir::VarNode* op) override;
+  void VisitExpr_(const tir::VarNode *op) override;
 };
 
 // fwd decl for LayerNode
@@ -65,7 +65,7 @@ class LayerTensor;
  * \brief Layer class.
  */
 class Layer : public ObjectRef {
- public:
+public:
   // TVM_DEFINE_OBJECT_REF_METHODS(Layer, ObjectRef, LayerNode);
   // TVM_DEFINE_OBJECT_REF_COW_METHOD(LayerNode);
 
@@ -76,7 +76,7 @@ class Layer : public ObjectRef {
    * \brief access the internal node container
    * \return the pointer to the internal node container
    */
-  inline LayerNode* operator->() const;
+  inline LayerNode *operator->() const;
   /*!
    * \brief The constructor.
    * \param name The name of layer
@@ -87,9 +87,10 @@ class Layer : public ObjectRef {
    * \param const_tensors The constant tensors
    * \param gradients The gradients of this layer
    */
-  TVM_DLL Layer(std::string name, Array<te::Operation> ops, Array<te::Tensor> inputs,
-                Array<te::Tensor> weights, Array<PrimExpr> const_scalars,
-                Array<te::Tensor> const_tensors, Array<te::Tensor> gradients);
+  TVM_DLL Layer(std::string name, Array<te::Operation> ops,
+                Array<te::Tensor> inputs, Array<te::Tensor> weights,
+                Array<PrimExpr> const_scalars, Array<te::Tensor> const_tensors,
+                Array<te::Tensor> gradients);
   /*!
    * \brief Self-checking if the given compute is valid.
    */
@@ -98,7 +99,8 @@ class Layer : public ObjectRef {
    * \brief The constructor.
    * \param inputs The input tensors.
    */
-  std::vector<LayerTensor> ProduceOutputs(std::vector<LayerTensor> layer_inputs);
+  std::vector<LayerTensor>
+  ProduceOutputs(std::vector<LayerTensor> layer_inputs);
   /*! \brief specify container node */
   using ContainerType = LayerNode;
 };
@@ -111,7 +113,7 @@ class Layer : public ObjectRef {
  * \brief LayerTensorNode class.
  */
 class LayerTensorNode : public Object {
- public:
+public:
   /*! \brief The name of layer (optional) */
   std::string name{"layer_tensor"};
   /*! \brief The layer that produces this tensor, can be nullptr */
@@ -121,19 +123,19 @@ class LayerTensorNode : public Object {
   /*! \brief The ordinal number of this tensor */
   int value_idx{0};
 
-  void VisitAttrs(tvm::AttrVisitor* v) {
+  void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("name", &name);
     v->Visit("layer", &layer);
     v->Visit("tensor", &tensor);
     v->Visit("value_idx", &value_idx);
   }
 
-  static constexpr const char* _type_key = "ditto.LayerTensor";
+  static constexpr const char *_type_key = "ditto.LayerTensor";
   TVM_DECLARE_FINAL_OBJECT_INFO(LayerTensorNode, Object);
 };
 
 class LayerTensor : public ObjectRef {
- public:
+public:
   /*!
    * \brief The constructor.
    * \param name The name of layer
@@ -141,9 +143,11 @@ class LayerTensor : public ObjectRef {
    * \param tensor The tensor
    * \param value_idx The value index
    */
-  TVM_DLL LayerTensor(std::string name, Layer layer, te::Tensor tensor, int value_idx);
+  TVM_DLL LayerTensor(std::string name, Layer layer, te::Tensor tensor,
+                      int value_idx);
 
-  TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(LayerTensor, ObjectRef, LayerTensorNode);
+  TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(LayerTensor, ObjectRef,
+                                        LayerTensorNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(LayerTensorNode);
 };
 
@@ -155,7 +159,7 @@ class LayerTensor : public ObjectRef {
  * \brief LayerNode class.
  */
 class LayerNode : public Object {
- public:
+public:
   /*! \brief The name of layer (optional) */
   std::string name{"layer"};
   /*! \brief The output ops within this layer, required */
@@ -173,7 +177,7 @@ class LayerNode : public Object {
   /*! \brief The input layer tensors */
   std::vector<LayerTensor> input_layer_tensors_;
 
-  void VisitAttrs(tvm::AttrVisitor* v) {
+  void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("name", &name);
     v->Visit("ops", &ops);
     v->Visit("inputs", &inputs);
@@ -192,11 +196,13 @@ class LayerNode : public Object {
    */
   Array<te::Operation> GetAllOps() const;
 
-  static constexpr const char* _type_key = "ditto.Layer";
+  static constexpr const char *_type_key = "ditto.Layer";
   TVM_DECLARE_FINAL_OBJECT_INFO(LayerNode, Object);
 };
 
-inline LayerNode* Layer::operator->() const { return static_cast<LayerNode*>(data_.get()); }
+inline LayerNode *Layer::operator->() const {
+  return static_cast<LayerNode *>(data_.get());
+}
 
 /////////////////////////////////////
 // Definitions for Block
@@ -209,13 +215,13 @@ inline LayerNode* Layer::operator->() const { return static_cast<LayerNode*>(dat
  * \brief A base class for block.
  */
 class BlockNode : public Object {
- public:
+public:
   /*! \brief The name of block */
   std::string name;
   /*! \brief The output tensors */
   Array<LayerTensor> out_tensors;
 
-  void VisitAttrs(tvm::AttrVisitor* v) {
+  void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("name", &name);
     v->Visit("out_tensors", &out_tensors);
   }
@@ -225,12 +231,12 @@ class BlockNode : public Object {
    */
   Array<Layer> GetAllLayers() const;
 
-  static constexpr const char* _type_key = "ditto.Block";
+  static constexpr const char *_type_key = "ditto.Block";
   TVM_DECLARE_BASE_OBJECT_INFO(BlockNode, Object);
 };
 
 class Block : public ObjectRef {
- public:
+public:
   /*!
    * \brief The constructor.
    * \param name The name of block
@@ -250,23 +256,23 @@ class Block : public ObjectRef {
  * \brief A base class for graph.
  */
 class GraphNode : public Object {
- public:
+public:
   /*! \brief The name of graph */
   std::string name;
   /*! \brief The list of blocks */
   Array<Block> block_list;
 
-  void VisitAttrs(tvm::AttrVisitor* v) {
+  void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("name", &name);
     v->Visit("block_list", &block_list);
   }
 
-  static constexpr const char* _type_key = "ditto.Graph";
+  static constexpr const char *_type_key = "ditto.Graph";
   TVM_DECLARE_BASE_OBJECT_INFO(GraphNode, Object);
 };
 
 class Graph : public ObjectRef {
- public:
+public:
   /*!
    * \brief The constructor.
    * \param name The name of tensor
@@ -278,18 +284,15 @@ class Graph : public ObjectRef {
   TVM_DEFINE_OBJECT_REF_COW_METHOD(GraphNode);
 };
 
-}  // namespace graph
+} // namespace graph
 
-}  // namespace ditto
-
+} // namespace ditto
 
 namespace std {
-template <>
-struct hash<::ditto::graph::Layer> : public ::tvm::ObjectPtrHash {};
+template <> struct hash<::ditto::graph::Layer> : public ::tvm::ObjectPtrHash {};
 
-template <>
-struct hash<::ditto::graph::LayerTensor> {
-  std::size_t operator()(const ::ditto::graph::LayerTensor& k) const {
+template <> struct hash<::ditto::graph::LayerTensor> {
+  std::size_t operator()(const ::ditto::graph::LayerTensor &k) const {
     ::tvm::ObjectPtrHash hasher;
     if (k.defined() && k->layer.defined()) {
       return hasher(k->layer);
@@ -298,8 +301,7 @@ struct hash<::ditto::graph::LayerTensor> {
     }
   }
 };
-}  // namespace std
-
+} // namespace std
 
 namespace ditto {
 
@@ -313,14 +315,14 @@ namespace graph {
  * \brief A base class for tensor state.
  */
 class TensorStateNode : public Object {
- public:
+public:
   /*! \brief The tensor */
   te::Tensor tensor;
   std::vector<PrimExpr> shape;
   std::vector<PrimExpr> access_index;
   runtime::DataType dtype;
 
-  void VisitAttrs(tvm::AttrVisitor* v) { v->Visit("tensor", &tensor); }
+  void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("tensor", &tensor); }
   /*!
    * \brief Return the dimension of tensor.
    */
@@ -338,13 +340,18 @@ class TensorStateNode : public Object {
    * \param expr The expression
    */
   void SubstituteIndexVar(tir::Var v, PrimExpr expr);
+  /*!
+   * \brief Substitute vars through a map.
+   * \param mapping The mapping
+   */
+  void SubstituteIndexVars(Map<tir::Var, PrimExpr> mapping);
 
-  static constexpr const char* _type_key = "ditto.TensorState";
+  static constexpr const char *_type_key = "ditto.TensorState";
   TVM_DECLARE_BASE_OBJECT_INFO(TensorStateNode, Object);
 };
 
 class TensorState : public ObjectRef {
- public:
+public:
   /*!
    * \brief The constructor.
    * \param tensor The tensor
@@ -359,9 +366,12 @@ class TensorState : public ObjectRef {
    * \brief Returns if the index is direct access.
    * \param index The index
    */
-  static bool IsSimpleIndex(PrimExpr index) { return (index.as<tir::VarNode>() != nullptr); }
+  static bool IsSimpleIndex(PrimExpr index) {
+    return (index.as<tir::VarNode>() != nullptr);
+  }
 
-  TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(TensorState, ObjectRef, TensorStateNode);
+  TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(TensorState, ObjectRef,
+                                        TensorStateNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(TensorStateNode);
 };
 
@@ -369,7 +379,7 @@ class TensorState : public ObjectRef {
  * \brief A base class for opstage.
  */
 class OpStateNode : public Object {
- public:
+public:
   /*! \brief The op */
   te::Operation op;
   std::vector<tir::IterVar> axis;
@@ -378,20 +388,20 @@ class OpStateNode : public Object {
   std::unordered_map<te::Operation, TensorState> input_tensor_states;
 
   class BodyVisitor : public tir::ExprVisitor {
-   public:
+  public:
     using tir::ExprVisitor::VisitExpr;
 
     BodyVisitor(runtime::ObjectPtr<OpStateNode> self) : self_(self) {}
 
-   protected:
+  protected:
     using tir::ExprVisitor::VisitExpr_;
-    void VisitExpr_(const tir::ProducerLoadNode* op) override;
+    void VisitExpr_(const tir::ProducerLoadNode *op) override;
 
-   private:
+  private:
     runtime::ObjectPtr<OpStateNode> self_;
   };
 
-  void VisitAttrs(tvm::AttrVisitor* v) { v->Visit("op", &op); }
+  void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("op", &op); }
   /*!
    * \brief Split the dimension of output tensor.
    * \param iv The dimension
@@ -400,8 +410,8 @@ class OpStateNode : public Object {
    * \param p_inner
    * \param ordinal
    */
-  void SplitSpatial(tir::IterVar iv, PrimExpr factor, tir::IterVar* p_outer, tir::IterVar* p_inner,
-                    int* ordinal);
+  void SplitSpatial(tir::IterVar iv, PrimExpr factor, tir::IterVar *p_outer,
+                    tir::IterVar *p_inner, int *ordinal);
   /*!
    * \brief Split the reduce axis.
    * \param iv The dimension
@@ -410,8 +420,8 @@ class OpStateNode : public Object {
    * \param p_inner
    * \param ordinal
    */
-  void SplitReduce(tir::IterVar iv, PrimExpr factor, tir::IterVar* p_outer, tir::IterVar* p_inner,
-                   int* ordinal);
+  void SplitReduce(tir::IterVar iv, PrimExpr factor, tir::IterVar *p_outer,
+                   tir::IterVar *p_inner, int *ordinal);
   /*!
    * \brief Split the axis.
    * \param iv The dimension
@@ -420,8 +430,8 @@ class OpStateNode : public Object {
    * \param p_inner
    * \param ordinal
    */
-  void Split(tir::IterVar iv, PrimExpr factor, tir::IterVar* p_outer, tir::IterVar* p_inner,
-             int* ordinal);
+  void Split(tir::IterVar iv, PrimExpr factor, tir::IterVar *p_outer,
+             tir::IterVar *p_inner, int *ordinal);
   /*!
    * \brief Propagate split from producer to consumer.
    * \param op The producer
@@ -429,14 +439,32 @@ class OpStateNode : public Object {
    * \param outer
    * \param inner
    */
-  void PropagateSplit(te::Operation op, int ordinal, tir::IterVar outer, tir::IterVar inner);
+  void PropagateSplit(te::Operation op, int ordinal, tir::IterVar outer,
+                      tir::IterVar inner);
 
-  static constexpr const char* _type_key = "ditto.OpState";
+  static constexpr const char *_type_key = "ditto.OpState";
   TVM_DECLARE_BASE_OBJECT_INFO(OpStateNode, Object);
+
+private:
+  /*!
+   * \brief Change the access of one input without global rewrite.
+   * \param op The producer that produces the tensor.
+   * \param access_idx The array of indices
+   */
+  void _SetReadAccess(te::Operation op, Array<PrimExpr> access_idx);
+  /*!
+   * \brief Change the dimension of output with rewrite.
+   * \param new_axis The new axis
+   * \param new_reduce_axis The new reduce_axis
+   * \param mapping The binary relation from original vars to new vars
+   */
+  void _SetWriteAccess(Array<tir::IterVar> new_axis,
+                       Array<tir::IterVar> new_reduce_axis,
+                       Map<tir::Var, PrimExpr> mapping);
 };
 
 class OpState : public ObjectRef {
- public:
+public:
   /*!
    * \brief The constructor.
    * \param op The op
@@ -451,14 +479,17 @@ class OpState : public ObjectRef {
  * \brief A base class for layer stage.
  */
 class LayerStateNode : public Object {
- public:
+public:
   /*! \brief The layer */
   Layer layer;
   std::unordered_map<te::Operation, OpState> op_states;
   std::vector<te::Operation> all_ops;
-  std::unordered_map<te::Operation, std::unordered_set<te::Operation>> feed_graph;
+  std::unordered_map<te::Operation, std::unordered_set<te::Operation>>
+      read_graph;
+  std::unordered_map<te::Operation, std::unordered_set<te::Operation>>
+      feed_graph;
 
-  void VisitAttrs(tvm::AttrVisitor* v) { v->Visit("layer", &layer); }
+  void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("layer", &layer); }
 
   /*!
    * \brief Split the axis of one op.
@@ -469,15 +500,15 @@ class LayerStateNode : public Object {
    * \param p_inner
    * \param ordinal
    */
-  void Split(te::Operation op, tir::IterVar iv, PrimExpr factor, tir::IterVar* p_outer,
-             tir::IterVar* p_inner, int* ordinal);
+  void Split(te::Operation op, tir::IterVar iv, PrimExpr factor,
+             tir::IterVar *p_outer, tir::IterVar *p_inner, int *ordinal);
 
-  static constexpr const char* _type_key = "ditto.LayerState";
+  static constexpr const char *_type_key = "ditto.LayerState";
   TVM_DECLARE_BASE_OBJECT_INFO(LayerStateNode, Object);
 };
 
 class LayerState : public ObjectRef {
- public:
+public:
   /*!
    * \brief The constructor.
    * \param layer The layer
@@ -492,14 +523,14 @@ class LayerState : public ObjectRef {
  * \brief A base class for block stage.
  */
 class BlockStateNode : public Object {
- public:
+public:
   /*! \brief The block */
   Block block;
   std::unordered_map<Layer, LayerState> layer_states;
   std::vector<Layer> all_layers;
   std::unordered_map<Layer, std::unordered_set<Layer>> feed_graph;
 
-  void VisitAttrs(tvm::AttrVisitor* v) { v->Visit("block", &block); }
+  void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("block", &block); }
 
   /*!
    * \brief Split the axis of one op.
@@ -511,15 +542,15 @@ class BlockStateNode : public Object {
    * \param p_inner
    * \param ordinal
    */
-  void Split(Layer layer, te::Operation op, tir::IterVar iv, PrimExpr factor, tir::IterVar* p_outer,
-             tir::IterVar* p_inner, int* ordinal);
+  void Split(Layer layer, te::Operation op, tir::IterVar iv, PrimExpr factor,
+             tir::IterVar *p_outer, tir::IterVar *p_inner, int *ordinal);
 
-  static constexpr const char* _type_key = "ditto.BlockState";
+  static constexpr const char *_type_key = "ditto.BlockState";
   TVM_DECLARE_BASE_OBJECT_INFO(BlockStateNode, Object);
 };
 
 class BlockState : public ObjectRef {
- public:
+public:
   /*!
    * \brief The constructor.
    * \param block The block
@@ -530,6 +561,6 @@ class BlockState : public ObjectRef {
   TVM_DEFINE_OBJECT_REF_COW_METHOD(BlockStateNode);
 };
 
-}  // namespace graph
+} // namespace graph
 
-}  // namespace ditto
+} // namespace ditto
