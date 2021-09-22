@@ -95,8 +95,8 @@ Layer::Layer(std::string name, Array<te::Operation> ops,
   node->const_scalars = const_scalars;
   node->const_tensors = const_tensors;
   node->gradients = gradients;
-  CheckValidity();
   data_ = node;
+  CheckValidity();
 }
 
 void Layer::CheckValidity() {
@@ -311,6 +311,25 @@ void OpStateNode::BodyVisitor::VisitExpr_(const tir::ProducerLoadNode *op) {
   }
 }
 
+PrimExpr OpStateNode::BodyMutator::VisitExpr_(const tir::ProducerLoadNode *op) {
+  auto t = runtime::Downcast<te::Tensor>(op->producer);
+  if (t.defined() && mapping_.count(t->op) &&
+      self_->input_tensor_states.count(t->op)) {
+    te::Operation new_op = mapping_.at(t->op);
+    TensorState state = self_->input_tensor_states.at(t->op);
+    Array<PrimExpr> new_indices;
+    for (auto idx : state->access_index) {
+      new_indices.push_back(VisitExpr(idx));
+    }
+    return tir::ProducerLoad(new_op.output(t->value_index), new_indices);
+  }
+  Array<PrimExpr> new_indices;
+  for (auto idx : op->indices) {
+    new_indices.push_back(VisitExpr(idx));
+  }
+  return tir::ProducerLoad(op->producer, new_indices, op->span);
+}
+
 void OpStateNode::SplitSpatial(tir::IterVar iv, PrimExpr factor,
                                tir::IterVar *p_outer, tir::IterVar *p_inner,
                                int *ordinal) {
@@ -472,6 +491,36 @@ void OpStateNode::PropagateSplit(te::Operation op, int ordinal,
   input_tensor_states.at(op)->SplitDim(ordinal, outer, inner);
 }
 
+te::Operation OpStateNode::MakeCompute(Array<te::Tensor> inputs) {
+  // Warning: the order of inputs is of critical importance
+  Array<te::Tensor> original_tensors = op->InputTensors();
+  CHECK(original_tensors.size() == inputs.size()) << "Input number mismatch.\n";
+  int num_inputs = (int)(original_tensors.size());
+  Map<te::Operation, te::Operation> mapping;
+  for (int i = 0; i < num_inputs; ++i) {
+    mapping.Set(original_tensors[i]->op, inputs[i]->op);
+  }
+  BodyMutator mutator(this, mapping);
+  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+  const te::PlaceholderOpNode *pop = op.as<te::PlaceholderOpNode>();
+  CHECK(cop || pop) << "Only expect PlaceholderOp or ComputeOp.\n";
+  if (cop) {
+    // compute op
+    Array<PrimExpr> new_body;
+    for (auto b : cop->body) {
+      new_body.push_back(mutator(b));
+    }
+    return te::ComputeOp(cop->name, cop->tag, cop->attrs, axis, new_body);
+  } else {
+    // placeholder op
+    Array<PrimExpr> shape;
+    for (auto iv : axis) {
+      shape.push_back(iv->dom->extent);
+    }
+    return te::PlaceholderOp(pop->name, shape, dtype);
+  }
+}
+
 void OpStateNode::_SetReadAccess(te::Operation op, Array<PrimExpr> access_idx) {
   // This function is dangeous as it has no checking
   // and may result in wrong compute without carefully selected parameters
@@ -504,6 +553,8 @@ OpState::OpState(te::Operation op) {
   auto node = make_object<OpStateNode>();
   node->op = op;
   const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+  const te::PlaceholderOpNode *pop = op.as<te::PlaceholderOpNode>();
+  CHECK(cop || pop) << "Expect PlaceholderOp or ComputeOp.\n";
   if (cop) {
     OpStateNode::BodyVisitor visitor(node);
     for (auto b : cop->body) {
@@ -514,6 +565,13 @@ OpState::OpState(te::Operation op) {
     }
     for (auto iv : cop->reduce_axis) {
       node->reduce_axis.push_back(iv);
+    }
+  } else {
+    // placeholder op
+    for (auto s : pop->shape) {
+      node->axis.push_back(
+          tir::IterVar(Range(0, s), tir::Var("", runtime::DataType::Int(32)),
+                       tir::IterVarType::kDataPar, ""));
     }
   }
   node->dtype = op->output_dtype(0);
@@ -549,6 +607,8 @@ void LayerStateNode::Split(te::Operation op, tir::IterVar iv, PrimExpr factor,
 LayerState::LayerState(Layer layer) {
   auto node = make_object<LayerStateNode>();
   node->layer = layer;
+  CHECK(!layer->gradients.size())
+      << "Please set the gradients after compute transformation.\n";
   Array<te::Operation> ops = layer->GetAllOps();
   for (auto op : ops) {
     node->all_ops.push_back(op);
@@ -557,10 +617,69 @@ LayerState::LayerState(Layer layer) {
       if (!node->feed_graph[inp->op].count(op)) {
         node->feed_graph[inp->op].insert(op);
       }
-      node->read_graph[op].insert(inp->op);
+      node->read_graph[op].push_back(inp->op);
     }
   }
   data_ = node;
+}
+
+Layer LayerStateNode::MakeCompute(Array<LayerTensor> inputs) {
+  // assumption: previous input/output ops are still input/output ops
+  //             previous weight ops are still weight ops
+  //             previous constant ops are still constant ops
+  std::unordered_map<te::Operation, te::Operation> updates;
+  int num_inputs = (int)inputs.size();
+  Array<te::Tensor> original_inputs = layer->inputs;
+  CHECK(num_inputs == (int)(original_inputs.size()))
+      << "Input number mismatch.\n";
+  for (int i = 0; i < num_inputs; ++i) {
+    updates[original_inputs[i]->op] = inputs[i]->tensor->op;
+  }
+
+  std::function<void(te::Operation op)> helper;
+  helper = [&](te::Operation op) {
+    if (updates.count(op))
+      return;
+
+    Array<te::Tensor> new_inputs;
+    if (read_graph.count(op)) {
+      for (auto inp_op : read_graph.at(op)) {
+        helper(inp_op);
+        CHECK(updates.count(inp_op));
+        new_inputs.push_back(updates.at(inp_op).output(0));
+      }
+    }
+
+    CHECK(op_states.count(op)) << "Can't find the op " << op << " in states.\n";
+    OpState state = op_states.at(op);
+    te::Operation new_op = state->MakeCompute(new_inputs);
+    updates[op] = new_op;
+  };
+
+  Array<te::Operation> new_ops;
+  Array<te::Tensor> new_inputs;
+  Array<te::Tensor> new_weights;
+  Array<te::Tensor> new_const_tensors;
+  for (auto op : layer->ops) {
+    helper(op);
+    CHECK(updates.count(op));
+    new_ops.push_back(updates.at(op));
+  }
+  for (auto inp : layer->inputs) {
+    CHECK(updates.count(inp->op));
+    new_inputs.push_back(updates.at(inp->op).output(0));
+  }
+  for (auto w : layer->weights) {
+    CHECK(updates.count(w->op));
+    new_weights.push_back(updates.at(w->op).output(0));
+  }
+  for (auto t : layer->const_tensors) {
+    CHECK(updates.count(t->op));
+    new_const_tensors.push_back(updates.at(t->op).output(0));
+  }
+
+  return Layer(layer->name, new_ops, new_inputs, new_weights,
+               layer->const_scalars, new_const_tensors, layer->gradients);
 }
 
 void BlockStateNode::Split(Layer layer, te::Operation op, tir::IterVar iv,
@@ -581,6 +700,7 @@ BlockState::BlockState(Block block) {
       if (!node->feed_graph[inp->layer].count(layer)) {
         node->feed_graph[inp->layer].insert(layer);
       }
+      node->read_graph[layer].push_back(inp->layer);
     }
   }
   data_ = node;
@@ -591,6 +711,14 @@ TVM_REGISTER_GLOBAL("ditto.LayerTensor")
                        int value_idx) {
       return LayerTensor(name, layer, tensor, value_idx);
     });
+
+TVM_REGISTER_GLOBAL("ditto.LayerTensorHash")
+    .set_body_typed([](LayerTensor tensor) -> int64_t {
+      return static_cast<int64_t>(std::hash<LayerTensor>()(tensor));
+    });
+
+TVM_REGISTER_GLOBAL("ditto.LayerTensorEqual")
+    .set_body_method(&LayerTensor::operator==);
 
 TVM_REGISTER_GLOBAL("ditto.Layer")
     .set_body_typed([](std::string name, Array<te::Operation> ops,
@@ -610,6 +738,11 @@ TVM_REGISTER_GLOBAL("ditto.MakeLayer")
                        Array<te::Tensor> gradients) {
       return Layer(name, ops, inputs, weights, const_scalars, const_tensors,
                    gradients);
+    });
+
+TVM_REGISTER_GLOBAL("ditto.LayerHash")
+    .set_body_typed([](Layer layer) -> int64_t {
+      return static_cast<int64_t>(std::hash<Layer>()(layer));
     });
 
 TVM_REGISTER_GLOBAL("ditto.Block")
@@ -634,6 +767,34 @@ TVM_REGISTER_GLOBAL("ditto.ProduceOutputs")
         returns.push_back(out);
       }
       return returns;
+    });
+
+TVM_REGISTER_GLOBAL("ditto.CreateOpState").set_body_typed([](te::Operation op) {
+  return OpState(op);
+});
+
+TVM_REGISTER_GLOBAL("ditto.OpStateMakeCompute")
+    .set_body_typed([](OpState op_state, Array<te::Tensor> inputs) {
+      auto ret = op_state->MakeCompute(inputs);
+      return ret;
+    });
+
+TVM_REGISTER_GLOBAL("ditto.CreateLayerState").set_body_typed([](Layer layer) {
+  return LayerState(layer);
+});
+
+TVM_REGISTER_GLOBAL("ditto.LayerStateGetOpState")
+    .set_body_typed([](LayerState layer_state, te::Operation op) {
+      CHECK(layer_state->op_states.count(op))
+          << "can't find the op " << op << " in layer state of "
+          << layer_state->layer->name << ".\n";
+      return layer_state->op_states.at(op);
+    });
+
+TVM_REGISTER_GLOBAL("ditto.LayerStateMakeCompute")
+    .set_body_typed([](LayerState layer_state, Array<LayerTensor> inputs) {
+      auto ret = layer_state->MakeCompute(inputs);
+      return ret;
     });
 
 } // namespace graph

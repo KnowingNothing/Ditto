@@ -13,6 +13,19 @@ def layer_tensor(shape, name="layer_tensor", dtype="float32"):
 class LayerTensor(Object):
     """LayerTensor object"""
 
+    def __hash__(self):
+        return _ffi_api.LayerTensorHash(self)
+
+    def __eq__(self, other):
+        if not isinstance(other, LayerTensor):
+            return False
+        return _ffi_api.LayerTensorEqual(self, other)
+
+
+def create_op_state(op):
+    """Make op state"""
+    return _ffi_api.CreateOpState(op)
+
 
 @tvm._ffi.register_object("ditto.Layer")
 class Layer(Object):
@@ -29,65 +42,14 @@ class Layer(Object):
         if len(ret) == 1:
             return ret[0]
 
-    # def __getitem__(self, indices):
-    #     return TensorSlice(self, indices)
-
-    # def __hash__(self):
-    #     return _ffi_api.TensorHash(self)
-
-    # def __eq__(self, other):
-    #     if not isinstance(other, Tensor):
-    #         if isinstance(other, _expr.ExprOp):
-    #             return _expr.EqualOp(self, other)
-    #         return False
-    #     if self.ndim == 0 and other.ndim == 0:
-    #         raise ValueError(
-    #             "Equal == comparison among rank-0 tensor is ambiguous, "
-    #             "use Tensor.equal for content expression equvalence, "
-    #             "use Tensor.same_as for exact reference comparison"
-    #         )
-    #     return _ffi_api.TensorEqual(self, other)
-
     @property
     def num_inputs(self):
         """Number of inputs required by this layer."""
         return len(self.inputs)
 
-    # @property
-    # def axis(self):
-    #     """Axis of the tensor."""
-    #     return self.__getattr__("axis")
-
-    # @property
-    # def op(self):
-    #     """The corressponding :py:class:`Operation`."""
-    #     return self.__getattr__("op")
-
-    # @property
-    # def value_index(self):
-    #     """The output value index the tensor corresponds to."""
-    #     return self.__getattr__("value_index")
-
-    # @property
-    # def shape(self):
-    #     """The output shape of the tensor."""
-    #     return self.__getattr__("shape")
-
-    # @property
-    # def requires_grad(self):
-    #     """The requires_grad of the tensor."""
-    #     return self.__getattr__("requires_grad")
-
-    # @property
-    # def name(self):
-    #     op = self.op
-    #     if op.num_outputs == 1:
-    #         return op.name
-    #     return "%s.v%d" % (op.name, self.value_index)
-
 
 def layer(ops, inputs=None, weights=None, const_scalars=None,
-              const_tensors=None, gradients=None, requires_grad=False, name="layer"):
+          const_tensors=None, gradients=None, requires_grad=False, name="layer"):
     """Make a network layer through IR.
 
     Parameters
@@ -156,20 +118,25 @@ def layer(ops, inputs=None, weights=None, const_scalars=None,
                               const_scalars, const_tensors, gradients)
 
 
+def create_layer_state(layer):
+    """Make the Layer State"""
+    return _ffi_api.CreateLayerState(layer)
+
+
 @tvm._ffi.register_object("ditto.Block")
 class Block(Object):
     """Block object"""
 
-    
-@tvm._ffi.register_object("ditto.Graph")
-class Graph(Object):
-    """Graph object"""
-    
-    
+
 def block(out_tensors, name="block"):
     if not isinstance(out_tensors, list):
         out_tensors = [out_tensors]
     return _ffi_api.Block(name, out_tensors)
+
+
+@tvm._ffi.register_object("ditto.Graph")
+class Graph(Object):
+    """Graph object"""
 
 
 def graph(blocks, name="graph"):

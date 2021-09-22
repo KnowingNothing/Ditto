@@ -48,10 +48,54 @@ def test1():
     print(new_y)
     print(new_y.layer == layer)
     t_y = new_y.tensor
-    print(t_y.op.input_tensors[0].op.input_tensors[0].op.input_tensors[0].op.input_tensors[0].op.body)
-    
+    print(t_y.op.input_tensors[0].op.input_tensors[0]
+          .op.input_tensors[0].op.input_tensors[0].op.body)
+
     block = graph.block(new_y)
     print(block.out_tensors)
+
+
+def _2mm(M, L, K, N):
+    A = tvm.te.placeholder([M, K], name="A", dtype="float32")
+    B = tvm.te.placeholder([K, L], name="B", dtype="float32")
+    C = tvm.te.placeholder([L, N], name="C", dtype="float32")
+    D = tvm.te.placeholder([M, N], name="D", dtype="float32")
+    alpha = tvm.tir.Var("alpha", "float32")
+    beta = tvm.tir.Var("beta", "float32")
+
+    rk = tvm.te.reduce_axis([0, K], name="rk")
+    tmp = tvm.te.compute(
+        [M, L],
+        lambda m, l:
+            tvm.te.sum(A[m, rk] * B[rk, l], axis=rk),
+        name="tmp"
+    )
+
+    rl = tvm.te.reduce_axis([0, L], name="rl")
+    E = tvm.te.compute(
+        [M, N],
+        lambda m, n:
+            tvm.te.sum(tmp[m, rl] * C[rl, n], axis=rl),
+        name="E"
+    )
+    F = tvm.te.compute(
+        [M, N],
+        lambda m, n:
+            alpha * E[m, n] + beta * D[m, n],
+        name="F"
+    )
+    return [F], [A, B, C, D, alpha, beta]
+
+
+@register_test
+def test2():
+    outs, ins = _2mm(100, 40, 50, 60)
+    F, = outs
+    A, B, C, D, alpha, beta = ins
+    layer = graph.layer(F.op, inputs=[A], weights=[
+                        B, C, D], const_scalars=[alpha, beta])
+    layer_state = graph.create_layer_state(layer)
+    print(layer_state)
 
 
 if __name__ == "__main__":

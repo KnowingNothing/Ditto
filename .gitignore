@@ -3,3 +3,4 @@ build
 .pkl*
 *.pyc
 .vscode
+__pycache__

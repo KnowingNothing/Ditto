@@ -146,6 +146,19 @@ public:
   TVM_DLL LayerTensor(std::string name, Layer layer, te::Tensor tensor,
                       int value_idx);
 
+  inline bool operator==(const LayerTensor &other) const {
+    if (get() == other.get())
+      return true;
+    if (get() == nullptr || other.get() == nullptr)
+      return false;
+    if ((*this)->layer.defined() || other->layer.defined()) {
+      return (*this)->layer == other->layer &&
+             (*this)->value_idx == other->value_idx;
+    } else {
+      return false;
+    }
+  }
+
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(LayerTensor, ObjectRef,
                                         LayerTensorNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(LayerTensorNode);
@@ -386,6 +399,7 @@ public:
   std::vector<tir::IterVar> reduce_axis;
   runtime::DataType dtype;
   std::unordered_map<te::Operation, TensorState> input_tensor_states;
+  std::unordered_map<te::Operation, te::Operation> op_mapping;
 
   class BodyVisitor : public tir::ExprVisitor {
   public:
@@ -399,6 +413,22 @@ public:
 
   private:
     runtime::ObjectPtr<OpStateNode> self_;
+  };
+
+  class BodyMutator : public tir::ExprMutator {
+  public:
+    using tir::ExprMutator::VisitExpr;
+
+    BodyMutator(OpStateNode *self, Map<te::Operation, te::Operation> mapping)
+        : self_(self), mapping_(mapping) {}
+
+  protected:
+    using tir::ExprMutator::VisitExpr_;
+    PrimExpr VisitExpr_(const tir::ProducerLoadNode *op) override;
+
+  private:
+    OpStateNode *self_;
+    Map<te::Operation, te::Operation> mapping_;
   };
 
   void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("op", &op); }
@@ -441,6 +471,11 @@ public:
    */
   void PropagateSplit(te::Operation op, int ordinal, tir::IterVar outer,
                       tir::IterVar inner);
+  /*!
+   * \brief Make the transformed compute.
+   * \param inputs The input tensors
+   */
+  te::Operation MakeCompute(Array<te::Tensor> inputs);
 
   static constexpr const char *_type_key = "ditto.OpState";
   TVM_DECLARE_BASE_OBJECT_INFO(OpStateNode, Object);
@@ -484,8 +519,7 @@ public:
   Layer layer;
   std::unordered_map<te::Operation, OpState> op_states;
   std::vector<te::Operation> all_ops;
-  std::unordered_map<te::Operation, std::unordered_set<te::Operation>>
-      read_graph;
+  std::unordered_map<te::Operation, std::vector<te::Operation>> read_graph;
   std::unordered_map<te::Operation, std::unordered_set<te::Operation>>
       feed_graph;
 
@@ -502,6 +536,11 @@ public:
    */
   void Split(te::Operation op, tir::IterVar iv, PrimExpr factor,
              tir::IterVar *p_outer, tir::IterVar *p_inner, int *ordinal);
+  /*!
+   * \brief Make the transformed compute.
+   * \param inputs The input tensors
+   */
+  Layer MakeCompute(Array<LayerTensor> inputs);
 
   static constexpr const char *_type_key = "ditto.LayerState";
   TVM_DECLARE_BASE_OBJECT_INFO(LayerStateNode, Object);
@@ -528,6 +567,7 @@ public:
   Block block;
   std::unordered_map<Layer, LayerState> layer_states;
   std::vector<Layer> all_layers;
+  std::unordered_map<Layer, std::vector<Layer>> read_graph;
   std::unordered_map<Layer, std::unordered_set<Layer>> feed_graph;
 
   void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("block", &block); }
