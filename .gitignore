@@ -2,3 +2,4 @@ build
 *.log
 .pkl*
 *.pyc
+.vscode
