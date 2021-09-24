@@ -2,6 +2,7 @@
 #include <tvm/arith/analyzer.h>
 #include <tvm/ir/expr.h>
 #include <tvm/tir/op.h>
+#include <utils/iter_domain.h>
 
 #include <deque>
 #include <unordered_map>
@@ -330,6 +331,14 @@ PrimExpr OpStateNode::BodyMutator::VisitExpr_(const tir::ProducerLoadNode *op) {
   return tir::ProducerLoad(op->producer, new_indices, op->span);
 }
 
+Array<tir::IterVar> OpStateNode::GetAxis() const {
+  return Array<tir::IterVar>(axis);
+}
+
+Array<tir::IterVar> OpStateNode::GetReduceAxis() const {
+  return Array<tir::IterVar>(reduce_axis);
+}
+
 void OpStateNode::SplitSpatial(tir::IterVar iv, PrimExpr factor,
                                tir::IterVar *p_outer, tir::IterVar *p_inner,
                                int *ordinal) {
@@ -491,6 +500,150 @@ void OpStateNode::PropagateSplit(te::Operation op, int ordinal,
   input_tensor_states.at(op)->SplitDim(ordinal, outer, inner);
 }
 
+std::pair<te::Operation, te::Operation> OpStateNode::Transform(
+    Array<tir::Var> spatial_vars, Array<PrimExpr> spatial_forward,
+    Array<PrimExpr> spatial_backward, Array<tir::Var> reduce_vars,
+    Array<PrimExpr> reduce_forward, Array<PrimExpr> reduce_backward) {
+  // helper function
+  std::function<Array<tir::IterVar>(
+      Array<tir::Var> new_vars, Array<PrimExpr> forward,
+      Array<PrimExpr> backward, std::vector<tir::IterVar> vars,
+      tir::IterVarType type)>
+      helper;
+
+  helper = [&](Array<tir::Var> new_vars, Array<PrimExpr> forward,
+               Array<PrimExpr> backward, std::vector<tir::IterVar> vars,
+               tir::IterVarType type) {
+    Map<tir::Var, PrimExpr> var_mapping;
+    int count_vars = 0;
+    for (auto expr : forward) {
+      var_mapping.Set(new_vars[count_vars++], expr);
+    }
+
+    Map<tir::Var, Range> original_ranges;
+    std::unordered_map<const tir::VarNode *, tir::IterVarType> original_types;
+    for (auto iv : vars) {
+      original_ranges.Set(iv->var, iv->dom);
+      original_types[iv->var.get()] = iv->iter_type;
+    }
+
+    Map<tir::Var, Range> new_var_mapping =
+        utils::InferRange(var_mapping, original_ranges);
+    std::unordered_map<const tir::VarNode *, tir::IterVarType> new_types =
+        utils::InferIterVarType(var_mapping, original_types);
+
+    Array<tir::IterVar> new_itervars;
+    for (auto var : new_vars) {
+      CHECK(new_var_mapping.count(var))
+          << "Can't find the var " << var << " after infer range.\n";
+      CHECK(new_types.count(var.get()))
+          << "Can't find the var " << var << " after infer type.\n";
+      CHECK(new_types.at(var.get()) == type)
+          << "Expect type " << type << " but get " << new_types.at(var.get())
+          << ".\n";
+      tir::IterVar new_iter(new_var_mapping.at(var), var, type, "");
+      new_itervars.push_back(new_iter);
+    }
+
+    return new_itervars;
+  };
+
+  // prepare reverse mapping
+  Map<tir::Var, PrimExpr> reverse_mapping;
+
+  int num_spatial = (int)(axis.size());
+  CHECK(num_spatial == (int)spatial_backward.size())
+      << "Spatial length mismatch.\n";
+  for (int i = 0; i < num_spatial; ++i) {
+    reverse_mapping.Set(axis[i]->var, spatial_backward[i]);
+  }
+
+  int num_reduce = (int)(reduce_axis.size());
+  CHECK(num_reduce == (int)reduce_backward.size())
+      << "Reduce length mismatch.\n";
+  for (int i = 0; i < num_reduce; ++i) {
+    reverse_mapping.Set(reduce_axis[i]->var, reduce_backward[i]);
+  }
+
+  // prepare the forward mapping
+  Map<tir::Var, PrimExpr> forward_mapping;
+  num_spatial = (int)(spatial_vars.size());
+  CHECK(num_spatial == (int)spatial_forward.size())
+      << "Spatial length mismatch.\n";
+  for (int i = 0; i < num_spatial; ++i) {
+    forward_mapping.Set(spatial_vars[i], spatial_forward[i]);
+  }
+
+  num_reduce = (int)(reduce_vars.size());
+  CHECK(num_reduce == (int)reduce_forward.size())
+      << "Reduce length mismatch.\n";
+  for (int i = 0; i < num_reduce; ++i) {
+    forward_mapping.Set(reduce_vars[i], reduce_forward[i]);
+  }
+
+  // prepare the spatial iter vars
+  Array<tir::IterVar> upper_axis =
+      helper(spatial_vars, spatial_forward, spatial_backward, axis,
+             tir::IterVarType::kDataPar);
+  // prepare the reduce iter vars
+  Array<tir::IterVar> upper_reduce_axis =
+      helper(reduce_vars, reduce_forward, reduce_backward, reduce_axis,
+             tir::IterVarType::kCommReduce);
+
+  // prepare the new bodies
+  const te::PlaceholderOpNode *pop = op.as<te::PlaceholderOpNode>();
+  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+  CHECK(pop || cop) << "Expect PlaceholderOp or ComputeOp.\n";
+  if (pop) {
+
+    // produce the upper placeholder
+    Array<PrimExpr> upper_shape;
+    for (auto iv : upper_axis) {
+      upper_shape.push_back(iv->dom->extent);
+    }
+
+    te::Operation upper =
+        te::PlaceholderOp(pop->name + ".upper", upper_shape, pop->dtype);
+    // produce the lower compute
+    Array<PrimExpr> lower_body;
+    Array<PrimExpr> load_index;
+    for (auto s : spatial_vars) {
+      load_index.push_back(s);
+    }
+
+    lower_body.push_back(tir::Substitute(
+        tir::ProducerLoad(upper.output(0), load_index), forward_mapping));
+
+    te::Operation lower =
+        te::ComputeOp(pop->name + ".lower", pop->name + ".lower", {},
+                      Array<tir::IterVar>(axis), lower_body);
+
+    return std::make_pair(upper, lower);
+  } else {
+    // cop
+    // produce the upper compute
+    Array<PrimExpr> new_body;
+    for (auto b : cop->body) {
+      new_body.push_back(tir::Substitute(b, reverse_mapping));
+    }
+    te::Operation upper =
+        te::ComputeOp(cop->name + ".upper", cop->tag + ".upper", cop->attrs,
+                      upper_axis, new_body);
+    // produce the lower compute
+    Array<PrimExpr> lower_body;
+    Array<PrimExpr> load_index;
+    for (auto s : spatial_vars) {
+      load_index.push_back(s);
+    }
+    lower_body.push_back(tir::Substitute(
+        tir::ProducerLoad(upper.output(0), load_index), forward_mapping));
+    te::Operation lower =
+        te::ComputeOp(cop->name + ".lower", cop->tag + ".lower", cop->attrs,
+                      Array<tir::IterVar>(axis), lower_body);
+    return std::make_pair(upper, lower);
+  }
+}
+
 te::Operation OpStateNode::MakeCompute(Array<te::Tensor> inputs) {
   // Warning: the order of inputs is of critical importance
   Array<te::Tensor> original_tensors = op->InputTensors();
@@ -568,14 +721,22 @@ OpState::OpState(te::Operation op) {
     }
   } else {
     // placeholder op
+    int count_v = 0;
     for (auto s : pop->shape) {
-      node->axis.push_back(
-          tir::IterVar(Range(0, s), tir::Var("", runtime::DataType::Int(32)),
-                       tir::IterVarType::kDataPar, ""));
+      node->axis.push_back(tir::IterVar(
+          Range(0, s),
+          tir::Var("v" + std::to_string(count_v++), runtime::DataType::Int(32)),
+          tir::IterVarType::kDataPar, ""));
     }
   }
   node->dtype = op->output_dtype(0);
   data_ = node;
+}
+
+OpState LayerStateNode::GetOpState(te::Operation op) const {
+  CHECK(op_states.count(op))
+      << "Can't find op " << op << " in layer state " << layer << ".\n";
+  return op_states.at(op);
 }
 
 void LayerStateNode::Split(te::Operation op, tir::IterVar iv, PrimExpr factor,
@@ -621,6 +782,56 @@ LayerState::LayerState(Layer layer) {
     }
   }
   data_ = node;
+}
+
+te::Operation LayerStateNode::Transform(
+    te::Operation op, Array<tir::Var> spatial_vars,
+    Array<PrimExpr> spatial_forward, Array<PrimExpr> spatial_backward,
+    Array<tir::Var> reduce_vars, Array<PrimExpr> reduce_forward,
+    Array<PrimExpr> reduce_backward, bool explicit_transform) {
+  OpState state = GetOpState(op);
+  if (explicit_transform) {
+    /* strong */
+    te::Operation a, b;
+    std::tie(a, b) =
+        state->Transform(spatial_vars, spatial_forward, spatial_backward,
+                         reduce_vars, reduce_forward, reduce_backward);
+    OpState upper(a), lower(b);
+    int bias = 0, num_ops = (int)all_ops.size();
+    for (; bias < num_ops; ++bias) {
+      if (all_ops[bias] == op) {
+        break;
+      }
+    }
+    CHECK(bias < num_ops) << "Can't find op " << op << ".\n";
+    op_states.erase(op);
+    feed_graph[op].insert(lower->op);
+    read_graph[lower->op].push_back(op);
+
+    op_states[op] = upper;
+    op_states[lower->op] = lower;
+    all_ops.insert(all_ops.begin() + bias, lower->op);
+
+    std::unordered_set<te::Operation> consumers;
+    if (feed_graph.count(op)) {
+      consumers = feed_graph.at(op);
+      feed_graph.erase(op);
+      feed_graph[lower->op] = consumers;
+      for (auto c : consumers) {
+        CHECK(read_graph.count(c));
+        int num_inputs = (int)read_graph.at(c).size();
+        for (int i = 0; i < num_inputs; ++i) {
+          if (read_graph.at(c)[i] == op) {
+            read_graph[c][i] = lower->op;
+          }
+        }
+      }
+    }
+
+    return lower->op;
+  } else {
+    return op;
+  }
 }
 
 Layer LayerStateNode::MakeCompute(Array<LayerTensor> inputs) {
@@ -773,6 +984,26 @@ TVM_REGISTER_GLOBAL("ditto.CreateOpState").set_body_typed([](te::Operation op) {
   return OpState(op);
 });
 
+TVM_REGISTER_GLOBAL("ditto.OpStateGetAxis")
+    .set_body_typed([](OpState op_state) { return op_state->GetAxis(); });
+
+TVM_REGISTER_GLOBAL("ditto.OpStateGetReduceAxis")
+    .set_body_typed([](OpState op_state) { return op_state->GetReduceAxis(); });
+
+TVM_REGISTER_GLOBAL("ditto.OpStateTransform")
+    .set_body_typed([](OpState op_state, Array<tir::Var> spatial_vars,
+                       Array<PrimExpr> spatial_forward,
+                       Array<PrimExpr> spatial_backward,
+                       Array<tir::Var> reduce_vars,
+                       Array<PrimExpr> reduce_forward,
+                       Array<PrimExpr> reduce_backward) {
+      te::Operation a, b;
+      std::tie(a, b) =
+          op_state->Transform(spatial_vars, spatial_forward, spatial_backward,
+                              reduce_vars, reduce_forward, reduce_backward);
+      return Array<te::Operation>({a, b});
+    });
+
 TVM_REGISTER_GLOBAL("ditto.OpStateMakeCompute")
     .set_body_typed([](OpState op_state, Array<te::Tensor> inputs) {
       auto ret = op_state->MakeCompute(inputs);
@@ -785,10 +1016,7 @@ TVM_REGISTER_GLOBAL("ditto.CreateLayerState").set_body_typed([](Layer layer) {
 
 TVM_REGISTER_GLOBAL("ditto.LayerStateGetOpState")
     .set_body_typed([](LayerState layer_state, te::Operation op) {
-      CHECK(layer_state->op_states.count(op))
-          << "can't find the op " << op << " in layer state of "
-          << layer_state->layer->name << ".\n";
-      return layer_state->op_states.at(op);
+      return layer_state->GetOpState(op);
     });
 
 TVM_REGISTER_GLOBAL("ditto.LayerStateMakeCompute")

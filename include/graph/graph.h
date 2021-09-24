@@ -431,6 +431,16 @@ public:
     Map<te::Operation, te::Operation> mapping_;
   };
 
+  /*!
+   * \brief Get the axis.
+   */
+  Array<tir::IterVar> GetAxis() const;
+
+  /*!
+   * \brief Get the reduce axis.
+   */
+  Array<tir::IterVar> GetReduceAxis() const;
+
   void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("op", &op); }
   /*!
    * \brief Split the dimension of output tensor.
@@ -471,6 +481,21 @@ public:
    */
   void PropagateSplit(te::Operation op, int ordinal, tir::IterVar outer,
                       tir::IterVar inner);
+
+  /*!
+   * \brief Transform write access.
+   * \param spatial_vars
+   * \param spatial_forward Affine expressions of spatial vars
+   * \param spatial_backward Reverse spatial transformation
+   * \param reduce_vars
+   * \param reduce_forward Affine expressions of reduce vars
+   * \param reduce_backward Reverse reduce transformation
+   */
+  std::pair<te::Operation, te::Operation>
+  Transform(Array<tir::Var> spatial_vars, Array<PrimExpr> spatial_forward,
+            Array<PrimExpr> spatial_backward, Array<tir::Var> reduce_vars,
+            Array<PrimExpr> reduce_forward, Array<PrimExpr> reduce_backward);
+
   /*!
    * \brief Make the transformed compute.
    * \param inputs The input tensors
@@ -526,6 +551,12 @@ public:
   void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("layer", &layer); }
 
   /*!
+   * \brief Get op state.
+   * \param op
+   */
+  OpState GetOpState(te::Operation op) const;
+
+  /*!
    * \brief Split the axis of one op.
    * \param op
    * \param iv The dimension
@@ -536,6 +567,20 @@ public:
    */
   void Split(te::Operation op, tir::IterVar iv, PrimExpr factor,
              tir::IterVar *p_outer, tir::IterVar *p_inner, int *ordinal);
+
+  /*!
+   * \brief Transform write access.
+   * \param op The op to be transformed
+   * \param forward Affine expressions of vars
+   * \param backward Reverse transformation
+   * \param constraint_level 1: weak, 2: medium, 3: strong
+   */
+  te::Operation
+  Transform(te::Operation op, Array<tir::Var> spatial_vars,
+            Array<PrimExpr> spatial_forward, Array<PrimExpr> spatial_backward,
+            Array<tir::Var> reduce_vars, Array<PrimExpr> reduce_forward,
+            Array<PrimExpr> reduce_backward, bool explicit_transform = true);
+
   /*!
    * \brief Make the transformed compute.
    * \param inputs The input tensors

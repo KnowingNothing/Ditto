@@ -96,6 +96,36 @@ def test2():
                         B, C, D], const_scalars=[alpha, beta])
     layer_state = graph.create_layer_state(layer)
     print(layer_state)
+    
+    E = F.op.input_tensors[0]
+    tmp = E.op.input_tensors[0]
+        
+    print(layer_state[A])
+    m, k = layer_state[A].axis()
+    op1, op2 = layer_state[A].transform(
+        [m.var//16, m.var%16, k.var//16, k.var%16],
+        lambda m1, m2, k1, k2: [m1*16 + m2, k1*16 + k2],
+        [],
+        lambda : None)
+
+    print(m.var, k.var)
+    print(op1)
+    print(op2.body)
+    
+    input_A = graph.layer_tensor((100, 50), name="real_A", dtype="float32")
+    new_layer = layer_state.make_compute([input_A])
+    print(new_layer)
+    
+    print(layer_state[tmp])
+    m, l = layer_state[tmp].axis()
+    print("axis:", m, l)
+    rk, = layer_state[tmp].reduce_axis()
+    print("reduce_axis", rk)
+
+
+@register_test
+def test3():
+    pass
 
 
 if __name__ == "__main__":

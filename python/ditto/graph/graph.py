@@ -1,5 +1,6 @@
 import tvm._ffi
 import tvm
+from tvm.te import tensor
 from . import _ffi_api
 from tvm.runtime import Object
 
@@ -143,3 +144,52 @@ def graph(blocks, name="graph"):
     if not isinstance(blocks, list):
         blocks = [blocks]
     return _ffi_api.Graph(name, blocks)
+
+
+@tvm._ffi.register_object("ditto.TensorState")
+class TensorState(Object):
+    """TensorState object"""
+
+
+@tvm._ffi.register_object("ditto.OpState")
+class OpState(Object):
+    """OpState object"""
+
+    def axis(self):
+        return _ffi_api.OpStateGetAxis(self)
+
+    def reduce_axis(self):
+        return _ffi_api.OpStateGetReduceAxis(self)
+
+    def transform(self, spatial_forward, fspatial_backward,
+                  reduce_forward, freduce_backward):
+        def _make_vars(forward, fcompute):
+            code = fcompute.__code__
+            names = code.co_varnames
+            if not (len(forward) == len(names)):
+                raise ValueError(f"transform var number mismatch {len(forward)} vs {len(names)}.\n")
+            vvars = [tvm.tir.Var(name, "int32") for name in names]
+            return vvars, fcompute(*vvars)
+
+        spatial_vars, spatial_backward = _make_vars(
+            spatial_forward, fspatial_backward)
+        reduce_vars, reduce_backward = _make_vars(
+            reduce_forward, freduce_backward)
+        return _ffi_api.OpStateTransform(self, spatial_vars, spatial_forward,
+                                         spatial_backward, reduce_vars,
+                                         reduce_forward, reduce_backward)
+
+
+@tvm._ffi.register_object("ditto.LayerState")
+class LayerState(Object):
+    """LayerState object"""
+
+    def __getitem__(self, k):
+        if isinstance(k, tensor.Tensor):
+            k = k.op
+        if not isinstance(k, tensor.Operation):
+            raise ValueError("Expect state key to be Tensor or Operation")
+        return _ffi_api.LayerStateGetOpState(self, k)
+
+    def make_compute(self, layer_inputs):
+        return _ffi_api.LayerStateMakeCompute(self, layer_inputs)
