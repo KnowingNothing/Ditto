@@ -167,7 +167,8 @@ class OpState(Object):
             code = fcompute.__code__
             names = code.co_varnames
             if not (len(forward) == len(names)):
-                raise ValueError(f"transform var number mismatch {len(forward)} vs {len(names)}.\n")
+                raise ValueError(
+                    f"transform var number mismatch {len(forward)} vs {len(names)}.\n")
             vvars = [tvm.tir.Var(name, "int32") for name in names]
             return vvars, fcompute(*vvars)
 
@@ -193,3 +194,46 @@ class LayerState(Object):
 
     def make_compute(self, layer_inputs):
         return _ffi_api.LayerStateMakeCompute(self, layer_inputs)
+
+    def transform(self, k, spatial_forward, fspatial_backward,
+                  reduce_forward, freduce_backward, explicit_transform=True):
+        if isinstance(k, tensor.Tensor):
+            k = k.op
+        if not isinstance(k, tensor.Operation):
+            raise ValueError("Expect state key to be Tensor or Operation")
+
+        def _make_vars(forward, fcompute):
+            code = fcompute.__code__
+            names = code.co_varnames
+            if not (len(forward) == len(names)):
+                raise ValueError(
+                    f"transform var number mismatch {len(forward)} vs {len(names)}.\n")
+            vvars = [tvm.tir.Var(name, "int32") for name in names]
+            return vvars, fcompute(*vvars)
+
+        spatial_vars, spatial_backward = _make_vars(
+            spatial_forward, fspatial_backward)
+        reduce_vars, reduce_backward = _make_vars(
+            reduce_forward, freduce_backward)
+        return _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
+                                            spatial_backward, reduce_vars,
+                                            reduce_forward, reduce_backward,
+                                            1 if explicit_transform else 0)
+
+    def _split(self, k, axis, factor, explicit=True):
+        if not isinstance(axis, tvm.tir.IterVar):
+            raise ValueError("Expect axis to be IterVar")
+        if not isinstance(factor, (int, tvm.tir.IntImm)):
+            raise ValueError("Expect axis to be int or IntImm")
+        if axis.iter_type == 0:  # spatial
+            pass
+        elif axis.iter_type == 2:  # reduce
+            pass
+        else:
+            raise ValueError(f"Don't support axis type:{axis.iter_type}.\n")
+
+    def explicit_split(self, k, axis, factor):
+        return self._split(k, axis, factor, True)
+
+    def implicit_split(self, k, axis, factor):
+        return self._split(k, axis, factor, False)

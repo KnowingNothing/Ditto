@@ -102,25 +102,27 @@ def test2():
         
     print(layer_state[A])
     m, k = layer_state[A].axis()
-    op1, op2 = layer_state[A].transform(
-        [m.var//16, m.var%16, k.var//16, k.var%16],
-        lambda m1, m2, k1, k2: [m1*16 + m2, k1*16 + k2],
+    trans_A = layer_state.transform(
+        A,
+        [m.var//16, k.var//16, m.var%16, k.var%16],
+        lambda m1, k1, m2, k2: [m1*16 + m2, k1*16 + k2],
         [],
         lambda : None)
-
-    print(m.var, k.var)
-    print(op1)
-    print(op2.body)
     
-    input_A = graph.layer_tensor((100, 50), name="real_A", dtype="float32")
+    m, k = layer_state[trans_A].axis()
+    trans_trans_A = layer_state.explicit_split(trans_A, m, factor=7)
+    
+    print(layer_state[A].op.output(0).shape)
+    input_A = graph.layer_tensor(layer_state[A].op.output(0).shape, name="real_A", dtype="float32")
     new_layer = layer_state.make_compute([input_A])
-    print(new_layer)
-    
-    print(layer_state[tmp])
-    m, l = layer_state[tmp].axis()
-    print("axis:", m, l)
-    rk, = layer_state[tmp].reduce_axis()
-    print("reduce_axis", rk)
+    out = new_layer.ops[0]
+    sch = tvm.te.create_schedule(out)
+    all_tensors = [*new_layer.inputs,
+                   *new_layer.weights,
+                   *new_layer.const_scalars,
+                   *new_layer.const_tensors,
+                   out.output(0)]
+    print(tvm.lower(sch, all_tensors, simple_mode=True))
 
 
 @register_test
