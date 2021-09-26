@@ -331,6 +331,30 @@ PrimExpr OpStateNode::BodyMutator::VisitExpr_(const tir::ProducerLoadNode *op) {
   return tir::ProducerLoad(op->producer, new_indices, op->span);
 }
 
+PrimExpr OpStateNode::RemapInput::VisitExpr_(const tir::ProducerLoadNode *op) {
+  auto t = runtime::Downcast<te::Tensor>(op->producer);
+  if (t->op == original_producer_) {
+    Array<PrimExpr> new_indices;
+    Map<tir::Var, PrimExpr> original_vars_mapping;
+    int num_old_vars = (int)(original_vars_.size());
+    CHECK(num_old_vars == (int)op->indices.size()) << "Dim mismatch.\n";
+    for (int i = 0; i < num_old_vars; ++i) {
+      original_vars_mapping.Set(original_vars_[i], op->indices[i]);
+    }
+    for (auto var : new_vars_) {
+      PrimExpr tmp = var;
+      PrimExpr express_by_old = tir::Substitute(tmp, new_vars_mapping_);
+      PrimExpr express_by_new =
+          tir::Substitute(express_by_old, original_vars_mapping);
+      PrimExpr new_index = VisitExpr(express_by_new);
+      new_indices.push_back(new_index);
+    }
+    return tir::ProducerLoad(new_producer_.output(0), new_indices);
+  } else {
+    return tir::ExprMutator::VisitExpr_(op);
+  }
+}
+
 Array<tir::IterVar> OpStateNode::GetAxis() const {
   return Array<tir::IterVar>(axis);
 }
@@ -644,6 +668,27 @@ std::pair<te::Operation, te::Operation> OpStateNode::Transform(
   }
 }
 
+te::Operation OpStateNode::TransformRemapInput(
+    int original_producer_location, te::Operation new_producer,
+    Array<tir::Var> original_vars, Array<tir::Var> new_vars,
+    Map<tir::Var, PrimExpr> new_vars_mapping) {
+  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+  CHECK(cop) << "Only expect ComputeOp to have inputs.\n";
+  Array<PrimExpr> new_body;
+  Array<te::Tensor> inputs = op->InputTensors();
+  CHECK(0 <= original_producer_location &&
+        original_producer_location < (int)(inputs.size()))
+      << "Input location out of bound.\n";
+  te::Operation original_producer = inputs[original_producer_location]->op;
+  OpStateNode::RemapInput remap(this, original_producer, new_producer,
+                                original_vars, new_vars, new_vars_mapping);
+  for (auto b : cop->body) {
+    PrimExpr new_b = remap(b);
+    new_body.push_back(new_b);
+  }
+  return te::ComputeOp(cop->name, cop->tag, cop->attrs, axis, new_body);
+}
+
 te::Operation OpStateNode::MakeCompute(Array<te::Tensor> inputs) {
   // Warning: the order of inputs is of critical importance
   Array<te::Tensor> original_tensors = op->InputTensors();
@@ -791,7 +836,7 @@ te::Operation LayerStateNode::Transform(
     Array<PrimExpr> reduce_backward, bool explicit_transform) {
   OpState state = GetOpState(op);
   if (explicit_transform) {
-    /* strong */
+    /* strong: keep the input/output the same */
     te::Operation a, b;
     std::tie(a, b) =
         state->Transform(spatial_vars, spatial_forward, spatial_backward,
@@ -830,6 +875,57 @@ te::Operation LayerStateNode::Transform(
 
     return lower->op;
   } else {
+    /* weak: only keep the input */
+    te::Operation a, b;
+    std::tie(a, b) =
+        state->Transform(spatial_vars, spatial_forward, spatial_backward,
+                         reduce_vars, reduce_forward, reduce_backward);
+    OpState upper(a), lower(b);
+    int bias = 0, num_ops = (int)all_ops.size();
+    for (; bias < num_ops; ++bias) {
+      if (all_ops[bias] == op) {
+        break;
+      }
+    }
+    CHECK(bias < num_ops) << "Can't find op " << op << ".\n";
+    op_states.erase(op);
+    op_states[op] = upper;
+
+    std::unordered_set<te::Operation> consumers;
+    if (feed_graph.count(op)) {
+      consumers = feed_graph.at(op);
+
+      for (auto c : consumers) {
+        CHECK(op_states.count(c));
+        OpState old_state = op_states.at(c);
+        CHECK(read_graph.count(c));
+        int num_inputs = (int)read_graph.at(c).size();
+        int original_producer_location = num_inputs;
+        for (int i = 0; i < num_inputs; ++i) {
+          if (read_graph.at(c)[i] == op) {
+            original_producer_location = i;
+            break;
+          }
+        }
+        CHECK(original_producer_location < num_inputs);
+        te::Operation new_producer = upper->op; // this seems not important
+        Array<tir::Var> original_vars;
+        Array<tir::Var> new_vars = spatial_vars;
+        Map<tir::Var, PrimExpr> new_vars_mapping;
+        int num_axis = (int)(state->axis.size());
+        for (int i = 0; i < num_axis; ++i) {
+          original_vars.push_back(state->axis[i]->var);
+          new_vars_mapping.Set(state->axis[i]->var, spatial_backward[i]);
+        }
+        te::Operation new_c = old_state->TransformRemapInput(
+            original_producer_location, new_producer, original_vars, new_vars,
+            new_vars_mapping);
+
+        OpState new_state(new_c);
+        op_states[c] = new_state;
+      }
+    }
+
     return op;
   }
 }

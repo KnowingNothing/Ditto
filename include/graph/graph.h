@@ -431,6 +431,30 @@ public:
     Map<te::Operation, te::Operation> mapping_;
   };
 
+  class RemapInput : public tir::ExprMutator {
+  public:
+    using tir::ExprMutator::VisitExpr;
+
+    RemapInput(OpStateNode *self, te::Operation original_producer,
+               te::Operation new_producer, Array<tir::Var> original_vars,
+               Array<tir::Var> new_vars,
+               Map<tir::Var, PrimExpr> new_vars_mapping)
+        : self_(self), original_producer_(original_producer),
+          new_producer_(new_producer), original_vars_(original_vars),
+          new_vars_(new_vars), new_vars_mapping_(new_vars_mapping) {}
+
+  protected:
+    using tir::ExprMutator::VisitExpr_;
+    PrimExpr VisitExpr_(const tir::ProducerLoadNode *op) override;
+
+  private:
+    OpStateNode *self_;
+    te::Operation original_producer_, new_producer_;
+    Array<tir::Var> original_vars_;
+    Array<tir::Var> new_vars_;
+    Map<tir::Var, PrimExpr> new_vars_mapping_;
+  };
+
   /*!
    * \brief Get the axis.
    */
@@ -495,6 +519,20 @@ public:
   Transform(Array<tir::Var> spatial_vars, Array<PrimExpr> spatial_forward,
             Array<PrimExpr> spatial_backward, Array<tir::Var> reduce_vars,
             Array<PrimExpr> reduce_forward, Array<PrimExpr> reduce_backward);
+
+  /*!
+   * \brief Transform input access.
+   * \param original_producer_location The first place producer occurs
+   * \param new_producer New producer op
+   * \param original_vars Original producer spatial vars
+   * \param new_vars New producer spatial vars
+   * \param new_vars_mapping Mapping from new vars to original vars
+   */
+  te::Operation TransformRemapInput(int original_producer_location,
+                                    te::Operation new_producer,
+                                    Array<tir::Var> original_vars,
+                                    Array<tir::Var> new_vars,
+                                    Map<tir::Var, PrimExpr> new_vars_mapping);
 
   /*!
    * \brief Make the transformed compute.
