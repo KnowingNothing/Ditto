@@ -21,6 +21,10 @@ class LayerTensor(Object):
         if not isinstance(other, LayerTensor):
             return False
         return _ffi_api.LayerTensorEqual(self, other)
+    
+    @property
+    def shape(self):
+        return self.tensor.shape
 
 
 def create_op_state(op):
@@ -215,25 +219,110 @@ class LayerState(Object):
             spatial_forward, fspatial_backward)
         reduce_vars, reduce_backward = _make_vars(
             reduce_forward, freduce_backward)
-        return _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
+        ret = _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
                                             spatial_backward, reduce_vars,
                                             reduce_forward, reduce_backward,
                                             1 if explicit_transform else 0)
+        return ret.output(0)
 
     def _split(self, k, axis, factor, explicit=True):
+        if isinstance(k, tensor.Tensor):
+            k = k.op
+        if not isinstance(k, tensor.Operation):
+            raise ValueError("Expect state key to be Tensor or Operation")
         if not isinstance(axis, tvm.tir.IterVar):
             raise ValueError("Expect axis to be IterVar")
         if not isinstance(factor, (int, tvm.tir.IntImm)):
             raise ValueError("Expect axis to be int or IntImm")
-        if axis.iter_type == 0:  # spatial
-            pass
-        elif axis.iter_type == 2:  # reduce
-            pass
-        else:
-            raise ValueError(f"Don't support axis type:{axis.iter_type}.\n")
+
+        def _inner(vars, forward, backward, ivs):
+            for iv in ivs:
+                if iv == axis:
+                    outer = tvm.tir.Var(axis.var.name + ".outer", "int32")
+                    inner = tvm.tir.Var(axis.var.name + ".inner", "int32")
+                    vars.extend([outer, inner])
+                    forward.extend([iv.var//factor, iv.var % factor])
+                    backward.append(outer*factor + inner)
+                else:
+                    var = tvm.tir.Var(iv.var.name, "int32")
+                    vars.append(var)
+                    forward.append(iv.var)
+                    backward.append(var)
+
+        spatial_vars = []
+        spatial_forward = []
+        spatial_backward = []
+        _inner(spatial_vars, spatial_forward, spatial_backward, self[k].axis())
+
+        reduce_vars = []
+        reduce_forward = []
+        reduce_backward = []
+        _inner(reduce_vars, reduce_forward,
+               reduce_backward, self[k].reduce_axis())
+
+        ret = _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
+                                            spatial_backward, reduce_vars,
+                                            reduce_forward, reduce_backward,
+                                            1 if explicit else 0)
+        return ret.output(0)
+    
+    def _reorder(self, k, *axes, explicit=True):
+        if isinstance(k, tensor.Tensor):
+            k = k.op
+        if not isinstance(k, tensor.Operation):
+            raise ValueError("Expect state key to be Tensor or Operation")
+        visit = set()
+        for i, iv in enumerate(axes):
+            assert not iv in visit, f"Repeated iter_var in reorder: {iv}.\n"
+            assert iv.iter_type == 0, f"Only expect spatial axis in reorder.\n"
+            visit.add(iv)
+        select_mapping = {}
+        for iv in self[k].axis():
+            var = tvm.tir.Var(iv.var.name, "int32")
+            select_mapping[iv] = var
+        for iv in axes:
+            assert iv in select_mapping, f"axis {iv} is not part of the op {k}.\n"
+
+        pos = 0
+        spatial_vars = []
+        spatial_forward = []
+        spatial_backward = []
+        for i, iv in enumerate(self[k].axis()):
+            if iv in visit:
+                spatial_vars.append(select_mapping[axes[pos]])
+                spatial_forward.append(axes[pos].var)
+                spatial_backward.append(select_mapping[iv])
+                pos += 1
+            else:
+                spatial_vars.append(select_mapping[iv])
+                spatial_forward.append(iv.var)
+                spatial_backward.append(select_mapping[iv])
+        assert pos == len(visit), f"{pos} vs {len(visit)}.\n"
+        
+        reduce_vars = []
+        reduce_forward = []
+        reduce_backward = []
+        for iv in self[k].reduce_axis():
+            var = tvm.tir.Var(iv.var.name, "int32")
+            reduce_vars.append(var)
+            reduce_forward.append(iv.var)
+            reduce_backward.append(var)
+        
+        ret = _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
+                                            spatial_backward, reduce_vars,
+                                            reduce_forward, reduce_backward,
+                                            1 if explicit else 0)
+        return ret.output(0)
+        
 
     def explicit_split(self, k, axis, factor):
         return self._split(k, axis, factor, True)
 
     def implicit_split(self, k, axis, factor):
         return self._split(k, axis, factor, False)
+    
+    def explicit_reorder(self, k, *axes):
+        return self._reorder(k, *axes, explicit=True)
+
+    def implicit_reorder(self, k, *axes):
+        return self._reorder(k, *axes, explicit=False)

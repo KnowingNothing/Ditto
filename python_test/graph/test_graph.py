@@ -1,6 +1,7 @@
 import tvm
 from ditto import graph
 from tvm import topi
+import numpy as np
 from collections import OrderedDict
 
 
@@ -35,25 +36,9 @@ def test1():
 
     # make a layer
     layer = graph.layer(y.op, inputs=[x], weights=[w1, w2])
-    print(layer)
-    print(layer.ops)
-    print(layer.inputs)
-    print(layer.weights)
-    print(layer.const_scalars)
-    print(layer.const_tensors)
-    print(layer.gradients)
-
     new_x = graph.layer_tensor((32, 3, 28, 28), name='new_x')
     new_y = layer(new_x)
-    print(new_y)
-    print(new_y.layer == layer)
-    t_y = new_y.tensor
-    print(t_y.op.input_tensors[0].op.input_tensors[0]
-          .op.input_tensors[0].op.input_tensors[0].op.body)
-
     block = graph.block(new_y)
-    print(block.out_tensors)
-
 
 def _2mm(M, L, K, N):
     A = tvm.te.placeholder([M, K], name="A", dtype="float32")
@@ -89,18 +74,41 @@ def _2mm(M, L, K, N):
 
 @register_test
 def test2():
-    outs, ins = _2mm(100, 40, 50, 60)
+    M, L, K, N = 100, 40, 50, 60
+    outs, ins = _2mm(M, L, K, N)
     F, = outs
     A, B, C, D, alpha, beta = ins
     layer = graph.layer(F.op, inputs=[A], weights=[
                         B, C, D], const_scalars=[alpha, beta])
     layer_state = graph.create_layer_state(layer)
-    print(layer_state)
+
+    out = layer.ops[0]
+    sch = tvm.te.create_schedule(out)
+    all_tensors = [*layer.inputs,
+                   *layer.weights,
+                   *layer.const_scalars,
+                   *layer.const_tensors,
+                   out.output(0)]
+    print("Original IR")
+    print(tvm.lower(sch, all_tensors, simple_mode=True))
+    old_func = tvm.build(sch, all_tensors, "llvm")
+    A_np = np.random.uniform(-10, 10, [M, K]).astype("float32")
+    B_np = np.random.uniform(-10, 10, [K, L]).astype("float32")
+    C_np = np.random.uniform(-10, 10, [L, N]).astype("float32")
+    D_np = np.random.uniform(-10, 10, [M, N]).astype("float32")
+    F_np = np.random.uniform(-10, 10, [M, N]).astype("float32")
+    ctx = tvm.cpu(0)
+    A_tvm = tvm.nd.array(A_np, ctx)
+    B_tvm = tvm.nd.array(B_np, ctx)
+    C_tvm = tvm.nd.array(C_np, ctx)
+    D_tvm = tvm.nd.array(D_np, ctx)
+    F_tvm = tvm.nd.array(F_np, ctx)
+    old_func(A_tvm, B_tvm, C_tvm, D_tvm, 1.0, 1.0, F_tvm)
     
+    # transform the compute
     E = F.op.input_tensors[0]
     tmp = E.op.input_tensors[0]
-        
-    print(layer_state[A])
+
     m, k = layer_state[A].axis()
     trans_A = layer_state.transform(
         A,
@@ -110,9 +118,15 @@ def test2():
         lambda : None)
     
     m, k = layer_state[trans_A].axis()
-    trans_trans_A = layer_state.explicit_split(trans_A, m, factor=7)
+    trans_trans_A = layer_state.implicit_split(trans_A, m, factor=7)
+    m1, m2, k = layer_state[trans_trans_A].axis()
+    trans_trans_trans_A = layer_state.explicit_split(trans_trans_A, k, factor=5)
+    m1, m2, k1, k2 = layer_state[trans_trans_A].axis()
+    trans4_A = layer_state.explicit_reorder(trans_trans_A, m1, k1, m2, k2)
     
-    print(layer_state[A].op.output(0).shape)
+    m, n = layer_state[E].axis()
+    trans_E = layer_state.explicit_split(E, m, factor=3)
+
     input_A = graph.layer_tensor(layer_state[A].op.output(0).shape, name="real_A", dtype="float32")
     new_layer = layer_state.make_compute([input_A])
     out = new_layer.ops[0]
@@ -122,7 +136,25 @@ def test2():
                    *new_layer.const_scalars,
                    *new_layer.const_tensors,
                    out.output(0)]
+    print("New IR")
     print(tvm.lower(sch, all_tensors, simple_mode=True))
+    new_func = tvm.build(sch, all_tensors, "llvm")
+    M1, K1, M2, K2 = [int(x) for x in input_A.shape]
+    new_A_np = np.random.uniform(-10, 10, [M1, K1, M2, K2]).astype("float32")
+    for m1 in range(M1):
+        for k1 in range(K1):
+            for m2 in range(M2):
+                for k2 in range(K2):
+                    if m1 * 16 + m2 < M and k1 * 16 + k2 < K:
+                        new_A_np[m1, k1, m2, k2] = A_np[m1 * 16 + m2, k1 * 16 + k2]
+    new_F_np = np.random.uniform(-10, 10, [M, N]).astype("float32")
+    new_A_tvm = tvm.nd.array(new_A_np, ctx)
+    new_F_tvm = tvm.nd.array(new_F_np, ctx)
+    new_func(new_A_tvm, B_tvm, C_tvm, D_tvm, 1.0, 1.0, new_F_tvm)
+
+    from tvm import testing
+    testing.assert_allclose(F_tvm.asnumpy(), new_F_tvm.asnumpy())
+    print("Transform keeps the correctness!")
 
 
 @register_test
