@@ -1,9 +1,9 @@
-#include <graph/state.h>
+#include <auto_compute/state.h>
 #include <utils/iter_domain.h>
 
 namespace ditto {
 
-namespace graph {
+namespace auto_compute {
 
 TVM_REGISTER_NODE_TYPE(TensorStateNode);
 TVM_REGISTER_NODE_TYPE(OpStateNode);
@@ -598,17 +598,17 @@ BlockState::BlockState(Block block) {
   data_ = node;
 }
 
-TVM_REGISTER_GLOBAL("ditto.CreateOpState").set_body_typed([](te::Operation op) {
+TVM_REGISTER_GLOBAL("ditto.auto_compute.CreateOpState").set_body_typed([](te::Operation op) {
   return OpState(op);
 });
 
-TVM_REGISTER_GLOBAL("ditto.OpStateGetAxis")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.OpStateGetAxis")
     .set_body_typed([](OpState op_state) { return op_state->GetAxis(); });
 
-TVM_REGISTER_GLOBAL("ditto.OpStateGetReduceAxis")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.OpStateGetReduceAxis")
     .set_body_typed([](OpState op_state) { return op_state->GetReduceAxis(); });
 
-TVM_REGISTER_GLOBAL("ditto.OpStateTransform")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.OpStateTransform")
     .set_body_typed([](OpState op_state, Array<tir::Var> spatial_vars,
                        Array<PrimExpr> spatial_forward,
                        Array<PrimExpr> spatial_backward,
@@ -622,22 +622,22 @@ TVM_REGISTER_GLOBAL("ditto.OpStateTransform")
       return Array<te::Operation>({a, b});
     });
 
-TVM_REGISTER_GLOBAL("ditto.OpStateMakeCompute")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.OpStateMakeCompute")
     .set_body_typed([](OpState op_state, Array<te::Tensor> inputs) {
       auto ret = op_state->MakeCompute(inputs);
       return ret;
     });
 
-TVM_REGISTER_GLOBAL("ditto.CreateLayerState").set_body_typed([](Layer layer) {
+TVM_REGISTER_GLOBAL("ditto.auto_compute.CreateLayerState").set_body_typed([](Layer layer) {
   return LayerState(layer);
 });
 
-TVM_REGISTER_GLOBAL("ditto.LayerStateGetOpState")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerStateGetOpState")
     .set_body_typed([](LayerState layer_state, te::Operation op) {
       return layer_state->GetOpState(op);
     });
 
-TVM_REGISTER_GLOBAL("ditto.LayerStateTransform")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerStateTransform")
     .set_body_typed(
         [](LayerState layer_state, te::Operation op,
            Array<tir::Var> spatial_vars, Array<PrimExpr> spatial_forward,
@@ -649,12 +649,12 @@ TVM_REGISTER_GLOBAL("ditto.LayerStateTransform")
               reduce_forward, reduce_backward, explicit_transform == 1);
         });
 
-TVM_REGISTER_GLOBAL("ditto.LayerStateMakeCompute")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerStateMakeCompute")
     .set_body_typed([](LayerState layer_state, Array<LayerTensor> inputs) {
       auto ret = layer_state->MakeCompute(inputs);
       return ret;
     });
 
-} // namespace graph
+} // namespace auto_compute
 
 } // namespace ditto

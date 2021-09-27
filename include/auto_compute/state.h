@@ -1,6 +1,6 @@
 #pragma once
 
-#include <graph/graph.h>
+#include <auto_compute/graph.h>
 #include <tvm/runtime/data_type.h>
 #include <tvm/runtime/object.h>
 #include <tvm/te/operation.h>
@@ -15,7 +15,7 @@
 
 namespace ditto {
 
-namespace graph {
+namespace auto_compute {
 /////////////////////////////////////
 // Definitions for TensorState, OpState,
 // LayerState, and GraphState
@@ -56,7 +56,7 @@ public:
    */
   void SubstituteIndexVars(Map<tir::Var, PrimExpr> mapping);
 
-  static constexpr const char *_type_key = "ditto.TensorState";
+  static constexpr const char *_type_key = "ditto.auto_compute.TensorState";
   TVM_DECLARE_BASE_OBJECT_INFO(TensorStateNode, Object);
 };
 
@@ -198,7 +198,7 @@ public:
    */
   te::Operation MakeCompute(Array<te::Tensor> inputs);
 
-  static constexpr const char *_type_key = "ditto.OpState";
+  static constexpr const char *_type_key = "ditto.auto_compute.OpState";
   TVM_DECLARE_BASE_OBJECT_INFO(OpStateNode, Object);
 };
 
@@ -258,7 +258,7 @@ public:
    */
   Layer MakeCompute(Array<LayerTensor> inputs);
 
-  static constexpr const char *_type_key = "ditto.LayerState";
+  static constexpr const char *_type_key = "ditto.auto_compute.LayerState";
   TVM_DECLARE_BASE_OBJECT_INFO(LayerStateNode, Object);
 };
 
@@ -288,7 +288,7 @@ public:
 
   void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("block", &block); }
 
-  static constexpr const char *_type_key = "ditto.BlockState";
+  static constexpr const char *_type_key = "ditto.auto_compute.BlockState";
   TVM_DECLARE_BASE_OBJECT_INFO(BlockStateNode, Object);
 };
 
@@ -304,6 +304,6 @@ public:
   TVM_DEFINE_OBJECT_REF_COW_METHOD(BlockStateNode);
 };
 
-} // namespace graph
+} // namespace auto_compute
 
 } // namespace ditto

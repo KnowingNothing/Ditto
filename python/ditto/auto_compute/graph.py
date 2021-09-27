@@ -10,7 +10,7 @@ def layer_tensor(shape, name="layer_tensor", dtype="float32"):
     return _ffi_api.LayerTensor(name, None, t, 0)
 
 
-@tvm._ffi.register_object("ditto.LayerTensor")
+@tvm._ffi.register_object("ditto.auto_compute.LayerTensor")
 class LayerTensor(Object):
     """LayerTensor object"""
 
@@ -32,7 +32,7 @@ def create_op_state(op):
     return _ffi_api.CreateOpState(op)
 
 
-@tvm._ffi.register_object("ditto.Layer")
+@tvm._ffi.register_object("ditto.auto_compute.Layer")
 class Layer(Object):
     """Layer object"""
 
@@ -128,7 +128,7 @@ def create_layer_state(layer):
     return _ffi_api.CreateLayerState(layer)
 
 
-@tvm._ffi.register_object("ditto.Block")
+@tvm._ffi.register_object("ditto.auto_compute.Block")
 class Block(Object):
     """Block object"""
 
@@ -139,7 +139,7 @@ def block(out_tensors, name="block"):
     return _ffi_api.Block(name, out_tensors)
 
 
-@tvm._ffi.register_object("ditto.Graph")
+@tvm._ffi.register_object("ditto.auto_compute.Graph")
 class Graph(Object):
     """Graph object"""
 
@@ -150,12 +150,12 @@ def graph(blocks, name="graph"):
     return _ffi_api.Graph(name, blocks)
 
 
-@tvm._ffi.register_object("ditto.TensorState")
+@tvm._ffi.register_object("ditto.auto_compute.TensorState")
 class TensorState(Object):
     """TensorState object"""
 
 
-@tvm._ffi.register_object("ditto.OpState")
+@tvm._ffi.register_object("ditto.auto_compute.OpState")
 class OpState(Object):
     """OpState object"""
 
@@ -185,7 +185,7 @@ class OpState(Object):
                                          reduce_forward, reduce_backward)
 
 
-@tvm._ffi.register_object("ditto.LayerState")
+@tvm._ffi.register_object("ditto.auto_compute.LayerState")
 class LayerState(Object):
     """LayerState object"""
 

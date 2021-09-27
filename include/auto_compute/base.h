@@ -3,11 +3,11 @@
 
 namespace ditto {
 
-namespace graph {
+namespace auto_compute {
 
 
 
-}  // namespace graph
+}  // namespace auto_compute
 
 
 }  // namespace ditto

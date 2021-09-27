@@ -1,4 +1,4 @@
-#include <graph/graph.h>
+#include <auto_compute/graph.h>
 #include <tvm/arith/analyzer.h>
 #include <tvm/ir/expr.h>
 #include <tvm/tir/op.h>
@@ -11,7 +11,7 @@
 using namespace tvm;
 namespace ditto {
 
-namespace graph {
+namespace auto_compute {
 
 TVM_REGISTER_NODE_TYPE(LayerTensorNode);
 TVM_REGISTER_NODE_TYPE(LayerNode);
@@ -239,21 +239,21 @@ Graph::Graph(std::string name, Array<Block> block_list) {
   data_ = node;
 }
 
-TVM_REGISTER_GLOBAL("ditto.LayerTensor")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerTensor")
     .set_body_typed([](std::string name, Layer layer, te::Tensor tensor,
                        int value_idx) {
       return LayerTensor(name, layer, tensor, value_idx);
     });
 
-TVM_REGISTER_GLOBAL("ditto.LayerTensorHash")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerTensorHash")
     .set_body_typed([](LayerTensor tensor) -> int64_t {
       return static_cast<int64_t>(std::hash<LayerTensor>()(tensor));
     });
 
-TVM_REGISTER_GLOBAL("ditto.LayerTensorEqual")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerTensorEqual")
     .set_body_method(&LayerTensor::operator==);
 
-TVM_REGISTER_GLOBAL("ditto.Layer")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.Layer")
     .set_body_typed([](std::string name, Array<te::Operation> ops,
                        Array<te::Tensor> inputs, Array<te::Tensor> weights,
                        Array<PrimExpr> const_scalars,
@@ -263,7 +263,7 @@ TVM_REGISTER_GLOBAL("ditto.Layer")
                    gradients);
     });
 
-TVM_REGISTER_GLOBAL("ditto.MakeLayer")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.MakeLayer")
     .set_body_typed([](std::string name, Array<te::Operation> ops,
                        Array<te::Tensor> inputs, Array<te::Tensor> weights,
                        Array<PrimExpr> const_scalars,
@@ -273,22 +273,22 @@ TVM_REGISTER_GLOBAL("ditto.MakeLayer")
                    gradients);
     });
 
-TVM_REGISTER_GLOBAL("ditto.LayerHash")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerHash")
     .set_body_typed([](Layer layer) -> int64_t {
       return static_cast<int64_t>(std::hash<Layer>()(layer));
     });
 
-TVM_REGISTER_GLOBAL("ditto.Block")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.Block")
     .set_body_typed([](std::string name, Array<LayerTensor> out_tensors) {
       return Block(name, out_tensors);
     });
 
-TVM_REGISTER_GLOBAL("ditto.Graph")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.Graph")
     .set_body_typed([](std::string name, Array<Block> block_list) {
       return Graph(name, block_list);
     });
 
-TVM_REGISTER_GLOBAL("ditto.ProduceOutputs")
+TVM_REGISTER_GLOBAL("ditto.auto_compute.ProduceOutputs")
     .set_body_typed([](Layer layer, Array<LayerTensor> inputs) {
       std::vector<LayerTensor> layer_inputs;
       for (auto inp : inputs) {
@@ -302,6 +302,6 @@ TVM_REGISTER_GLOBAL("ditto.ProduceOutputs")
       return returns;
     });
 
-} // namespace graph
+} // namespace auto_compute
 
 } // namespace ditto

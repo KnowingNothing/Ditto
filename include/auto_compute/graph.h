@@ -15,7 +15,7 @@
 using namespace tvm;
 namespace ditto {
 
-namespace graph {
+namespace auto_compute {
 
 bool IsConstInt(const PrimExpr &expr);
 
@@ -130,7 +130,7 @@ public:
     v->Visit("value_idx", &value_idx);
   }
 
-  static constexpr const char *_type_key = "ditto.LayerTensor";
+  static constexpr const char *_type_key = "ditto.auto_compute.LayerTensor";
   TVM_DECLARE_FINAL_OBJECT_INFO(LayerTensorNode, Object);
 };
 
@@ -209,7 +209,7 @@ public:
    */
   Array<te::Operation> GetAllOps() const;
 
-  static constexpr const char *_type_key = "ditto.Layer";
+  static constexpr const char *_type_key = "ditto.auto_compute.Layer";
   TVM_DECLARE_FINAL_OBJECT_INFO(LayerNode, Object);
 };
 
@@ -244,7 +244,7 @@ public:
    */
   Array<Layer> GetAllLayers() const;
 
-  static constexpr const char *_type_key = "ditto.Block";
+  static constexpr const char *_type_key = "ditto.auto_compute.Block";
   TVM_DECLARE_BASE_OBJECT_INFO(BlockNode, Object);
 };
 
@@ -280,7 +280,7 @@ public:
     v->Visit("block_list", &block_list);
   }
 
-  static constexpr const char *_type_key = "ditto.Graph";
+  static constexpr const char *_type_key = "ditto.auto_compute.Graph";
   TVM_DECLARE_BASE_OBJECT_INFO(GraphNode, Object);
 };
 
@@ -297,15 +297,15 @@ public:
   TVM_DEFINE_OBJECT_REF_COW_METHOD(GraphNode);
 };
 
-} // namespace graph
+} // namespace auto_compute
 
 } // namespace ditto
 
 namespace std {
-template <> struct hash<::ditto::graph::Layer> : public ::tvm::ObjectPtrHash {};
+template <> struct hash<::ditto::auto_compute::Layer> : public ::tvm::ObjectPtrHash {};
 
-template <> struct hash<::ditto::graph::LayerTensor> {
-  std::size_t operator()(const ::ditto::graph::LayerTensor &k) const {
+template <> struct hash<::ditto::auto_compute::LayerTensor> {
+  std::size_t operator()(const ::ditto::auto_compute::LayerTensor &k) const {
     ::tvm::ObjectPtrHash hasher;
     if (k.defined() && k->layer.defined()) {
       return hasher(k->layer);
