@@ -1,6 +1,7 @@
 # Ditto
 ---
 Ditto is an automatic framework built on top of deep learning compilers.
+It focuses on the front-end.
 The three critical modules of Ditto include:
 - AutoScheduler
 - AutoTensorize

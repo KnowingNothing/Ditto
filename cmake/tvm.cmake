@@ -250,7 +250,8 @@ file(GLOB_RECURSE COMPILER_SRCS
     3rdparty/tvm/src/printer/*.cc
     3rdparty/tvm/src/support/*.cc
     src/*.cc
-    src/graph/*.cc
+    src/auto_compute/*.cc
+    src/utils/*.cc
     )
 
 file(GLOB CODEGEN_SRCS
