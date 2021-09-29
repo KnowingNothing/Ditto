@@ -13,7 +13,16 @@ namespace ditto {
 namespace region {
 
 Region::Region(Operation op) {
-    std::cout<<"hello"<<std::endl;
+  auto n = make_object<RegionNode>();
+  n->op = op;
+  n->iter_vars = op->root_iter_vars();
+  // remove opaque var from leaf.
+  Array<IterVar> clean;
+  for (IterVar iv : n->iter_vars) {
+    if (iv->iter_type != kOpaque) clean.push_back(iv);
+  }
+  n->iter_vars = clean;
+  data_ = std::move(n);
 }
 
 TVM_REGISTER_NODE_TYPE(RegionNode);

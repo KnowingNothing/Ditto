@@ -44,10 +44,25 @@ class Region : public ObjectRef {
 /*! \brief node container for region */
 class RegionNode : public Object {
  public:
-  
-  // contents here
+  /*!
+   * \brief The operation of region.
+   */
+  Operation op;
+  /*! \brief All the nodes in the iter var */
+  Array<IterVar> iter_vars;
+  /*!
+   * \brief Subregions of this region.
+   * Used to store regions generated after slicing.
+   */
+  Array<Region> subregions;
+  /*! \brief inidicate whether this region is leaf */
+  bool is_leaf{true};
 
   void VisitAttrs(AttrVisitor* v) {
+    v->Visit("op", &op);
+    v->Visit("iter_vars", &iter_vars);
+    v->Visit("subregions", &subregions);
+    v->Visit("is_leaf", &is_leaf);
   }
 
   static constexpr const char* _type_key = "Region";
