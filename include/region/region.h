@@ -28,6 +28,27 @@ class Region : public ObjectRef {
   TVM_DLL explicit Region(Operation op);
 
   /*!
+   * \brief Split the parent by factor
+   * \param parent The parent iteration domain.
+   * \param factor The split factor of the loop.
+   * \param p_outer The result outer domain
+   * \param p_inner The result inner domain.
+   * \return reference to self.
+   */
+  TVM_DLL Region& split_by_factor(IterVar parent, PrimExpr factor, IterVar* p_outer, IterVar* p_inner);
+  /*!
+   * \brief Split the parent by nparts
+   * \param parent The parent iteration domain.
+   * \param nparts The number of parts in the outer domain.
+   * \param p_outer The result outer domain.
+   * \param p_inner The result inner domain.
+   * \return reference to self.
+   */
+  TVM_DLL Region& split_by_nparts(IterVar parent, PrimExpr nparts, IterVar* p_outer, IterVar* p_inner);
+
+  // Other schedule primitives here!
+
+  /*!
    * \brief access the internal node container
    * \return the pointer to the internal node container
    */
@@ -48,7 +69,7 @@ class RegionNode : public Object {
    * \brief The operation of region.
    */
   Operation op;
-  /*! \brief All the nodes in the iter var */
+  /*! \brief Nodes in the iter var */
   Array<IterVar> iter_vars;
   /*!
    * \brief Subregions of this region.

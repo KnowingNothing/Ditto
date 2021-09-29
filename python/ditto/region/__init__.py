@@ -1,1 +1,1 @@
-from .region import create_region
+from .region import create_region, Region
