@@ -12,7 +12,7 @@ using namespace te;
 namespace ditto {
 namespace region {
 
-Region::Region(Array<Operation> ops) {
+Region::Region(Operation op) {
     std::cout<<"hello"<<std::endl;
 }
 

@@ -25,7 +25,7 @@ class Region : public ObjectRef {
    * \param ops The ops to be created as region.
    * \return sch The created Region.
    */
-  TVM_DLL explicit Region(Array<Operation> ops);
+  TVM_DLL explicit Region(Operation op);
 
   /*!
    * \brief access the internal node container
@@ -54,7 +54,7 @@ class RegionNode : public Object {
   TVM_DECLARE_FINAL_OBJECT_INFO(RegionNode, Object);
 };
 
-inline Region create_region(Array<Operation> ops) { return Region(ops); }
+inline Region create_region(Operation op) { return Region(op); }
 
 }  // namespace ditto
 }  // namespace region
