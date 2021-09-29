@@ -92,5 +92,9 @@ class RegionNode : public Object {
 
 inline Region create_region(Operation op) { return Region(op); }
 
+// implementations
+inline const RegionNode* Region::operator->() const { return static_cast<const RegionNode*>(get()); }
+inline RegionNode* Region::operator->() { return static_cast<RegionNode*>(get_mutable()); }
+
 }  // namespace ditto
 }  // namespace region
