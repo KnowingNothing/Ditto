@@ -2,4 +2,4 @@
 import tvm._ffi
 
 
-tvm._ffi._init_api("ditto", __name__)
+tvm._ffi._init_api("ditto.auto_compute", __name__)

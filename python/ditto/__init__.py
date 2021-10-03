@@ -1,5 +1,5 @@
 # ditto.graph
-from . import graph
+from . import auto_compute
 
 # ditto.region
 from . import region
