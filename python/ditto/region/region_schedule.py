@@ -159,5 +159,11 @@ class RegionSchedule(Object):
         """
         factored = _ffi_api.ScheduleRFactor(self.sch, tensor, axis, factor_axis)
         return factored[0] if len(factored) == 1 else factored
+    
+    def slice(self, tensor, axis, slice_point):
+        """
+        slice a stage into two stages by slicing a loop.
+        """
+        return _ffi_api.RegionScheduleSlice(self, tensor, axis, slice_point)
 
 tvm._ffi._init_api("region", __name__)

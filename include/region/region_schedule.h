@@ -34,6 +34,9 @@ class RegionSchedule : public ObjectRef {
 
   // new schedule primitives here!
 
+  TVM_DLL RegionSchedule& slice(Tensor tensor, IterVar axis, PrimExpr slice_point, Tensor* tensor_l, Tensor* tensor_r);
+
+
   /*!
    * \brief access the internal node container
    * \return the pointer to the internal node container
