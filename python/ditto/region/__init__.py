@@ -1,1 +1,1 @@
-from .region import Schedule, Stage, create_schedule, SpecializedCondition
+from .region_schedule import create_region_schedule, RegionSchedule
