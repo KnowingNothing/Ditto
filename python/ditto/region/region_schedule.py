@@ -6,6 +6,7 @@ from tvm.runtime import Object, convert
 from tvm.ir import container as _container
 from tvm.tir import IterVar, Buffer
 
+from tvm.te import tensor as _tensor
 from . import _ffi_api
 
 def create_region_schedule(ops):
