@@ -118,14 +118,14 @@ def test2():
         lambda : None)
     
     m, k = layer_state[trans_A].axis()
-    trans_trans_A = layer_state.implicit_split(trans_A, m, factor=7)
+    trans_trans_A = layer_state.implicit_fold(trans_A, m, factor=7)
     m1, m2, k = layer_state[trans_trans_A].axis()
-    trans_trans_trans_A = layer_state.explicit_split(trans_trans_A, k, factor=5)
+    trans_trans_trans_A = layer_state.explicit_fold(trans_trans_A, k, factor=5)
     m1, m2, k1, k2 = layer_state[trans_trans_A].axis()
-    trans4_A = layer_state.explicit_reorder(trans_trans_A, m1, k1, m2, k2)
+    trans4_A = layer_state.explicit_shuffle(trans_trans_A, m1, k1, m2, k2)
     
     m, n = layer_state[E].axis()
-    trans_E = layer_state.explicit_split(E, m, factor=3)
+    trans_E = layer_state.explicit_fold(E, m, factor=3)
 
     input_A = ac.layer_tensor(layer_state[A].op.output(0).shape, name="real_A", dtype="float32")
     new_layer = layer_state.make_compute([input_A])

@@ -225,7 +225,7 @@ class LayerState(Object):
                                             1 if explicit_transform else 0)
         return ret.output(0)
 
-    def _split(self, k, axis, factor, explicit=True):
+    def _fold(self, k, axis, factor, explicit=True):
         if isinstance(k, tensor.Tensor):
             k = k.op
         if not isinstance(k, tensor.Operation):
@@ -266,15 +266,15 @@ class LayerState(Object):
                                             1 if explicit else 0)
         return ret.output(0)
     
-    def _reorder(self, k, *axes, explicit=True):
+    def _shuffle(self, k, *axes, explicit=True):
         if isinstance(k, tensor.Tensor):
             k = k.op
         if not isinstance(k, tensor.Operation):
             raise ValueError("Expect state key to be Tensor or Operation")
         visit = set()
         for i, iv in enumerate(axes):
-            assert not iv in visit, f"Repeated iter_var in reorder: {iv}.\n"
-            assert iv.iter_type == 0, f"Only expect spatial axis in reorder.\n"
+            assert not iv in visit, f"Repeated iter_var in shuffle: {iv}.\n"
+            assert iv.iter_type == 0, f"Only expect spatial axis in shuffle.\n"
             visit.add(iv)
         select_mapping = {}
         for iv in self[k].axis():
@@ -315,14 +315,14 @@ class LayerState(Object):
         return ret.output(0)
         
 
-    def explicit_split(self, k, axis, factor):
-        return self._split(k, axis, factor, True)
+    def explicit_fold(self, k, axis, factor):
+        return self._fold(k, axis, factor, True)
 
-    def implicit_split(self, k, axis, factor):
-        return self._split(k, axis, factor, False)
+    def implicit_fold(self, k, axis, factor):
+        return self._fold(k, axis, factor, False)
     
-    def explicit_reorder(self, k, *axes):
-        return self._reorder(k, *axes, explicit=True)
+    def explicit_shuffle(self, k, *axes):
+        return self._shuffle(k, *axes, explicit=True)
 
-    def implicit_reorder(self, k, *axes):
-        return self._reorder(k, *axes, explicit=False)
+    def implicit_shuffle(self, k, *axes):
+        return self._shuffle(k, *axes, explicit=False)
