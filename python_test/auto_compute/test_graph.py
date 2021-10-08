@@ -126,6 +126,8 @@ def test2():
     
     m, n = layer_state[E].axis()
     trans_E = layer_state.explicit_fold(E, m, factor=3)
+    m1, m2, n = layer_state[E].axis()
+    E_unfold = layer_state.explicit_unfold(E, m1, m2)
 
     input_A = ac.layer_tensor(layer_state[A].op.output(0).shape, name="real_A", dtype="float32")
     new_layer = layer_state.make_compute([input_A])

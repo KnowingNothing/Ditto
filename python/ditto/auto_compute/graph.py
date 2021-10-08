@@ -21,7 +21,7 @@ class LayerTensor(Object):
         if not isinstance(other, LayerTensor):
             return False
         return _ffi_api.LayerTensorEqual(self, other)
-    
+
     @property
     def shape(self):
         return self.tensor.shape
@@ -220,9 +220,9 @@ class LayerState(Object):
         reduce_vars, reduce_backward = _make_vars(
             reduce_forward, freduce_backward)
         ret = _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
-                                            spatial_backward, reduce_vars,
-                                            reduce_forward, reduce_backward,
-                                            1 if explicit_transform else 0)
+                                           spatial_backward, reduce_vars,
+                                           reduce_forward, reduce_backward,
+                                           1 if explicit_transform else 0)
         return ret.output(0)
 
     def _fold(self, k, axis, factor, explicit=True):
@@ -261,11 +261,105 @@ class LayerState(Object):
                reduce_backward, self[k].reduce_axis())
 
         ret = _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
-                                            spatial_backward, reduce_vars,
-                                            reduce_forward, reduce_backward,
-                                            1 if explicit else 0)
+                                           spatial_backward, reduce_vars,
+                                           reduce_forward, reduce_backward,
+                                           1 if explicit else 0)
         return ret.output(0)
-    
+
+    def _unfold(self, k, *axis, explicit=True):
+        if isinstance(k, tensor.Tensor):
+            k = k.op
+        if not isinstance(k, tensor.Operation):
+            raise ValueError("Expect state key to be Tensor or Operation")
+
+        # check all spatial or reduce
+        iter_type = None
+        for iv in axis:
+            if iter_type is None:
+                iter_type = iv.iter_type
+            else:
+                if iter_type != iv.iter_type:
+                    raise ValueError("Can't unfold different types of axis.\n")
+
+        def _inner(all_axis, vars, forward, backward):
+            pos_dict = {}
+            for i, iv in enumerate(all_axis):
+                pos_dict[iv] = i
+
+            # check valid input arguments
+            curr_id = -1
+            for iv in axis:
+                assert iv in pos_dict
+                next_id = pos_dict[iv]
+                if curr_id < 0:
+                    curr_id = next_id
+                else:
+                    if curr_id + 1 != next_id:
+                        raise ValueError("Must unfold adjacent axis.\n")
+                    curr_id = next_id
+            num_axis = len(axis)
+            start_id = curr_id - num_axis + 1
+            end_id = curr_id + 1
+
+            fused_var = None
+            factors = [1 for i in range(num_axis + 1)]
+
+            for i, iv in enumerate(all_axis):
+                if i < start_id or i >= end_id:
+                    var = tvm.tir.Var(iv.var.name, "int32")
+                    vars.append(var)
+                    forward.append(iv.var)
+                    backward.append(var)
+                elif i == start_id:
+                    names = []
+                    unfold_expr = 0
+                    for siv in all_axis[i:i+num_axis]:
+                        names.append(siv.var.name)
+                        unfold_expr = unfold_expr * siv.dom.extent + siv.var
+                    for j, siv in enumerate(reversed(all_axis[i:i+num_axis])):
+                        factors[num_axis - j -
+                                1] = factors[num_axis - j] * siv.dom.extent
+                    name = ".".join(names) + ".unfold"
+                    var = tvm.tir.Var(name, "int32")
+                    fused_var = var
+                    vars.append(var)
+                    forward.append(unfold_expr)
+                    backward.append(fused_var//factors[i-start_id+1])
+                else:
+                    backward.append(fused_var %
+                                    factors[i-start_id]//factors[i-start_id+1])
+        spatial_vars = []
+        spatial_forward = []
+        spatial_backward = []
+        reduce_vars = []
+        reduce_forward = []
+        reduce_backward = []
+        if iter_type == 0:
+            # spatial
+            all_axis = self[k].axis()
+            _inner(all_axis, spatial_vars, spatial_forward, spatial_backward)
+            for iv in self[k].reduce_axis():
+                var = tvm.tir.Var(iv.var.name, "int32")
+                reduce_vars.append(var)
+                reduce_forward.append(iv.var)
+                reduce_backward.append(var)
+        elif iter_type == 2:
+            # reduce
+            all_axis = self[k].reduce_axis()
+            _inner(all_axis, reduce_vars, reduce_forward, reduce_backward)
+            for iv in self[k].axis():
+                var = tvm.tir.Var(iv.var.name, "int32")
+                spatial_vars.append(var)
+                spatial_forward.append(iv.var)
+                spatial_backward.append(var)
+        else:
+            raise ValueError(f"Unsupported iter var type: {iter_type}.\n")
+        ret = _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
+                                           spatial_backward, reduce_vars,
+                                           reduce_forward, reduce_backward,
+                                           1 if explicit else 0)
+        return ret.output(0)
+
     def _shuffle(self, k, *axes, explicit=True):
         if isinstance(k, tensor.Tensor):
             k = k.op
@@ -298,7 +392,7 @@ class LayerState(Object):
                 spatial_forward.append(iv.var)
                 spatial_backward.append(select_mapping[iv])
         assert pos == len(visit), f"{pos} vs {len(visit)}.\n"
-        
+
         reduce_vars = []
         reduce_forward = []
         reduce_backward = []
@@ -307,20 +401,25 @@ class LayerState(Object):
             reduce_vars.append(var)
             reduce_forward.append(iv.var)
             reduce_backward.append(var)
-        
+
         ret = _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
-                                            spatial_backward, reduce_vars,
-                                            reduce_forward, reduce_backward,
-                                            1 if explicit else 0)
+                                           spatial_backward, reduce_vars,
+                                           reduce_forward, reduce_backward,
+                                           1 if explicit else 0)
         return ret.output(0)
-        
 
     def explicit_fold(self, k, axis, factor):
         return self._fold(k, axis, factor, True)
 
     def implicit_fold(self, k, axis, factor):
         return self._fold(k, axis, factor, False)
-    
+
+    def explicit_unfold(self, k, *axis):
+        return self._unfold(k, *axis, explicit=True)
+
+    def implicit_unfold(self, k, *axis):
+        return self._unfold(k, *axis, explicit=False)
+
     def explicit_shuffle(self, k, *axes):
         return self._shuffle(k, *axes, explicit=True)
 
