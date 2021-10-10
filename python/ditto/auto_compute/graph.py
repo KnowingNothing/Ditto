@@ -407,6 +407,55 @@ class LayerState(Object):
                                            reduce_forward, reduce_backward,
                                            1 if explicit else 0)
         return ret.output(0)
+    
+    def _eliminate(self, k, axis, explicit=True):
+        if isinstance(k, tensor.Tensor):
+            k = k.op
+        if not isinstance(k, tensor.Operation):
+            raise ValueError("Expect state key to be Tensor or Operation")
+        
+        exist = False
+        for iv in self[k].axis():
+            if iv == axis:
+                exist = True
+                if len(self[k].axis()) == 1:
+                    raise ValueError("Can't eliminate the only spatial dimension of the compute")
+                break
+        for iv in self[k].reduce_axis():
+            if iv == axis:
+                exist = True
+                if len(self[k].reduce_axis()) == 1:
+                    raise ValueError("Can't eliminate the only reduce dimension of the tensor")
+                break
+            
+        if not exist:
+            raise ValueError(f"The axis {axis} is not part of the op {k}.\n");
+        
+        def _inner(all_axis, vars, forward, backward):
+            for iv in all_axis:
+                if iv == axis:
+                    backward.append(0)
+                else:
+                    var = tvm.tir.Var(iv.var.name, "int32")
+                    vars.append(var)
+                    forward.append(iv.var)
+                    backward.append(var)
+                    
+        spatial_vars = []
+        spatial_forward = []
+        spatial_backward = []
+        _inner(self[k].axis(), spatial_vars, spatial_forward, spatial_backward)
+        
+        reduce_vars = []
+        reduce_forward = []
+        reduce_backward = []
+        _inner(self[k].reduce_axis(), reduce_vars, reduce_forward, reduce_backward)
+        
+        ret = _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
+                                            spatial_backward, reduce_vars,
+                                            reduce_forward, reduce_backward,
+                                            1 if explicit else 0)
+        return ret.output(0)
 
     def explicit_fold(self, k, axis, factor):
         return self._fold(k, axis, factor, True)
@@ -425,3 +474,9 @@ class LayerState(Object):
 
     def implicit_shuffle(self, k, *axes):
         return self._shuffle(k, *axes, explicit=False)
+    
+    def explicit_eliminate(self, k, axis):
+        return self._eliminate(k, axis, explicit=True)
+
+    def implicit_eliminate(self, k, axis):
+        return self._eliminate(k, axis, explicit=False)
