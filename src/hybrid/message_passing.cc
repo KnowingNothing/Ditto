@@ -27,10 +27,10 @@ void Update(std::unordered_map<IterVar, Range>* p_state, const IterVar& iv, Rang
  * \param Upward propagating whether an IterVar derives at least one leaf IterVar that binds to
  * a thread.
  *
- * \param stage The stage to operate on.
+ * \param stage The hybrid_stage to operate on.
  * \param p_state The propagation result of each IterVar.
  */
-void PassUpThreadBinding(const Stage& stage, std::unordered_map<IterVar, bool>* p_state) {
+void PassUpThreadBinding(const HybridStage& stage, std::unordered_map<IterVar, bool>* p_state) {
   auto bound_to_thread = [&stage](const IterVar& iv) {
     bool bound = false;
     auto it = stage->iter_var_attrs.find(iv);
@@ -62,7 +62,7 @@ void PassUpThreadBinding(const Stage& stage, std::unordered_map<IterVar, bool>* 
   }
 }
 
-void PassDownDomain(const Stage& stage, std::unordered_map<IterVar, Range>* p_state,
+void PassDownDomain(const HybridStage& stage, std::unordered_map<IterVar, Range>* p_state,
                     arith::Analyzer* actx, bool allow_missing) {
   auto ceil_div = [actx](const PrimExpr& a, const PrimExpr& b) {
     if (actx->CanProve(indexmod(a, b) == 0)) {
@@ -94,7 +94,7 @@ void PassDownDomain(const Stage& stage, std::unordered_map<IterVar, Range>* p_st
       // Tighten iv's extent to min(parent_extent, factor_or_nparts), only if all of the
       // following conditions are met:
       // 1. No leaf IterVar derived from iv binds to any thread.  People may use split
-      // to force an IterVar extent to match the number of allocated threads to fuse stages
+      // to force an IterVar extent to match the number of allocated threads to fuse hybrid_stages
       // that require different number of threads.  We don't want to change these extents.
       // 2. allow_missing is false, i.e. that PassDownDomain is called by the final InferBound,
       // rather than by an early compiler phase, such as rfactor().  We don't want to tighten an
@@ -147,7 +147,7 @@ void PassDownDomain(const Stage& stage, std::unordered_map<IterVar, Range>* p_st
   }
 }
 
-void PassUpIndex(const Stage& stage, const Map<IterVar, Range>& dom_map,
+void PassUpIndex(const HybridStage& stage, const Map<IterVar, Range>& dom_map,
                  std::unordered_map<IterVar, PrimExpr>* p_state, bool allow_missing) {
   auto& state = *p_state;
   for (size_t i = stage->relations.size(); i != 0; --i) {
@@ -208,7 +208,7 @@ void PassUpIndex(const Stage& stage, const Map<IterVar, Range>& dom_map,
   }
 }
 
-void PassDownIndex(const Stage& stage, const Map<IterVar, Range>& dom_map,
+void PassDownIndex(const HybridStage& stage, const Map<IterVar, Range>& dom_map,
                    std::unordered_map<IterVar, PrimExpr>* p_state, bool allow_missing) {
   auto& state = *p_state;
   for (IterVarRelation rel : stage->relations) {
@@ -328,7 +328,7 @@ void PassUpDomain(const RebaseNode* s, const std::unordered_map<IterVar, Range>&
   *parent = arith::EvalSet(s->rebased->var + parent_min, {{s->rebased, rebased}});
 }
 
-void PassUpDomain(const Stage& stage, const std::unordered_map<IterVar, Range>& dom_map,
+void PassUpDomain(const HybridStage& stage, const std::unordered_map<IterVar, Range>& dom_map,
                   std::unordered_map<IterVar, IntSet>* p_state) {
   auto& state = *p_state;
   for (size_t i = stage->relations.size(); i != 0; --i) {
@@ -354,7 +354,7 @@ void PassUpDomain(const Stage& stage, const std::unordered_map<IterVar, Range>& 
 }
 
 // Pass up bit mask with or relation.
-void PassUpBitMaskOr(const Stage& stage, std::unordered_map<IterVar, int>* p_state,
+void PassUpBitMaskOr(const HybridStage& stage, std::unordered_map<IterVar, int>* p_state,
                      bool allow_missing) {
   auto& state = *p_state;
   for (size_t i = stage->relations.size(); i != 0; --i) {
@@ -401,7 +401,7 @@ void PassUpBitMaskOr(const Stage& stage, std::unordered_map<IterVar, int>* p_sta
   }
 }
 
-void PassDownBitMaskOr(const Stage& stage, std::unordered_map<IterVar, int>* p_state,
+void PassDownBitMaskOr(const HybridStage& stage, std::unordered_map<IterVar, int>* p_state,
                        bool allow_missing) {
   auto& state = *p_state;
   for (IterVarRelation rel : stage->relations) {
@@ -450,11 +450,11 @@ void PassDownBitMaskOr(const Stage& stage, std::unordered_map<IterVar, int>* p_s
 
 /*!
  * \brief message passing to find if boundary checking on IterVar is needed.
- * \param s The stage to be used.
+ * \param s The hybrid_stage to be used.
  * \param p_state The message passing state
  *     IterVar->flag
  */
-void PassUpBoundCheck(const Stage& s, const Map<IterVar, Range>& dom_map,
+void PassUpBoundCheck(const HybridStage& s, const Map<IterVar, Range>& dom_map,
                       std::unordered_map<IterVar, bool>* p_state, arith::Analyzer* analyzer) {
   auto& state = *p_state;
   for (size_t i = s->relations.size(); i != 0; --i) {
@@ -500,7 +500,7 @@ bool IsRangeSame(const Range input_1, const Range input_2) {
           analyzer.CanProve(input_1->extent == input_2->extent));
 }
 
-std::vector<PrimExpr> MakeBoundCheck(const Stage& stage, const Map<IterVar, Range>& dom_map,
+std::vector<PrimExpr> MakeBoundCheck(const HybridStage& stage, const Map<IterVar, Range>& dom_map,
                                      const std::unordered_map<IterVar, PrimExpr>& value_map,
                                      bool skip_ivar_domain,
                                      const std::unordered_set<IterVar>& skip_iter) {

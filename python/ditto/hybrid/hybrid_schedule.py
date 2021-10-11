@@ -166,4 +166,321 @@ class HybridSchedule(Object):
     #     """
     #     return _ffi_api.HybridScheduleSlice(self, tensor, axis, slice_point)
 
+@tvm._ffi.register_object
+class HybridStage(Object):
+    """A HybridStage represents schedule for one operation."""
+
+    def split(self, parent, factor=None, nparts=None):
+        """Split the stage either by factor providing outer scope, or both
+
+        Parameters
+        ----------
+        parent : IterVar
+             The parent iter var.
+
+        factor : Expr, optional
+             The splitting factor
+
+        nparts : Expr, optional
+             The number of outer parts.
+
+        Returns
+        -------
+        outer : IterVar
+            The outer variable of iteration.
+
+        inner : IterVar
+            The inner variable of iteration.
+        """
+        if nparts is not None:
+            if factor is not None:
+                raise ValueError("Do not need to provide both outer and nparts")
+            outer, inner = _ffi_api.HybridStageSplitByNParts(self, parent, nparts)
+        else:
+            if factor is None:
+                raise ValueError("Either nparts or factor need to be provided")
+            outer, inner = _ffi_api.HybridStageSplitByFactor(self, parent, factor)
+        return outer, inner
+
+    def fuse(self, *args):
+        """Fuse multiple consecutive iteration variables into a single iteration variable.
+
+        fused = fuse(...fuse(fuse(args[0], args[1]), args[2]),..., args[-1])
+        The order is from outer to inner.
+
+        Parameters
+        ----------
+        args : list of IterVars
+            Itervars that proceeds each other
+
+        Returns
+        -------
+        fused : IterVar
+            The fused variable of iteration.
+        """
+        fused = _ffi_api.HybridStageFuse(self, args)
+        return fused
+
+    def set_scope(self, scope):
+        """Set the thread scope of this stage
+
+        Parameters
+        ----------
+        scope : str
+            The thread scope of this stage
+        """
+        return _ffi_api.HybridStageSetScope(self, scope)
+
+    def bind(self, ivar, thread_ivar):
+        """Bind ivar to thread index thread_ivar
+
+        Parameters
+        ----------
+        ivar : IterVar
+            The iteration to be binded to thread.
+
+        thread_ivar : IterVar
+            The thread to be binded.
+        """
+        _ffi_api.HybridStageBind(self, ivar, thread_ivar)
+
+    def env_threads(self, threads):
+        """Mark threads to be launched at the outer scope of composed op.
+
+        Parameters
+        ----------
+        threads : list of threads
+            The threads to be launched.
+        """
+        if isinstance(threads, IterVar):
+            threads = [threads]
+        _ffi_api.HybridStageEnvThreads(self, threads)
+
+    def set_store_predicate(self, predicate):
+        """Set predicate under which store to the array can be performed.
+
+        Use this when there are duplicated threads doing the same store and we only
+        need one of them to do the store.
+
+        Parameters
+        ----------
+        predicate : Expr
+            The guard condition fo store.
+        """
+        _ffi_api.HybridStageSetStorePredicate(self, predicate)
+
+    def compute_at(self, parent, scope):
+        """Attach the stage at parent's scope
+
+        Parameters
+        ----------
+        parent : Stage
+            The parent stage
+
+        scope : IterVar
+            The loop scope t be attached to.
+        """
+        _ffi_api.HybridStageComputeAt(self, parent, scope)
+
+    def compute_inline(self):
+        """Mark stage as inline
+
+        Parameters
+        ----------
+        parent : Stage
+            The parent stage
+        """
+        _ffi_api.HybridStageComputeInline(self)
+
+    def compute_root(self):
+        """Attach the stage at parent, and mark it as root
+
+        Parameters
+        ----------
+        parent : Stage
+            The parent stage
+        """
+        _ffi_api.HybridStageComputeRoot(self)
+
+    def reorder(self, *args):
+        """reorder the arguments in the specified order.
+
+        Parameters
+        ----------
+        args : list of IterVar
+            The order to be ordered
+        """
+        _ffi_api.HybridStageReorder(self, args)
+
+    def tile(self, x_parent, y_parent, x_factor, y_factor):
+        """Perform tiling on two dimensions
+
+        The final loop order from outmost to inner most are
+        [x_outer, y_outer, x_inner, y_inner]
+
+        Parameters
+        ----------
+        x_parent : IterVar
+            The original x dimension
+        y_parent : IterVar
+            The original y dimension
+        x_factor : Expr
+            The stride factor on x axis
+        y_factor : Expr
+            The stride factor on y axis
+
+        Returns
+        -------
+        x_outer : IterVar
+            Outer axis of x dimension
+        y_outer : IterVar
+            Outer axis of y dimension
+        x_inner : IterVar
+            Inner axis of x dimension
+        p_y_inner : IterVar
+            Inner axis of y dimension
+        """
+        x_outer, y_outer, x_inner, y_inner = _ffi_api.HybridStageTile(
+            self, x_parent, y_parent, x_factor, y_factor
+        )
+        return x_outer, y_outer, x_inner, y_inner
+
+    def vectorize(self, var):
+        """Vectorize the iteration.
+
+        Parameters
+        ----------
+        var : IterVar
+            The iteration to be vectorize
+        """
+        _ffi_api.HybridStageVectorize(self, var)
+
+    def tensorize(self, var, tensor_intrin):
+        """Tensorize the computation enclosed by var with tensor_intrin
+
+        Parameters
+        ----------
+        var : IterVar
+            The iteration boundary of tensorization.
+
+        tensor_intrin : TensorIntrin
+            The tensor intrinsic used for computation.
+        """
+        _ffi_api.HybridStageTensorize(self, var, tensor_intrin)
+
+    def unroll(self, var):
+        """Unroll the iteration.
+
+        Parameters
+        ----------
+        var : IterVar
+            The iteration to be unrolled.
+        """
+        _ffi_api.HybridStageUnroll(self, var)
+
+    def parallel(self, var):
+        """Parallelize the iteration.
+
+        Parameters
+        ----------
+        var : IterVar
+            The iteration to be parallelized.
+        """
+        _ffi_api.HybridStageParallel(self, var)
+
+    def pragma(self, var, pragma_type, pragma_value=None):
+        """Annotate the iteration with pragma
+
+        This will translate to a pragma_scope surrounding
+        the corresponding loop generated.
+        Useful to support experimental features and extensions.
+
+        Parameters
+        ----------
+        var : IterVar
+            The iteration to be anotated
+
+        pragma_type : str
+             The pragma string to be annotated
+
+        pragma_value : Expr, optional
+             The pragma value to pass along the pragma
+
+        Note
+        ----
+        Most pragmas are advanced/experimental features
+        and may subject to change. List of supported pragmas:
+
+        - **debug_skip_region**
+
+          Force skip the region marked by the axis and turn it into no-op.
+          This is useful for debug purposes.
+
+        - **parallel_launch_point**
+
+          Specify to launch parallel threads outside the
+          specified iteration loop. By default the threads
+          launch at the point of parallel construct.
+          This pragma moves the launching point to even outer scope.
+          The threads are launched once and reused across multiple
+          parallel constructs as BSP style program.
+
+        - **parallel_barrier_when_finish**
+
+          Insert a synchronization barrier between working threads
+          after the specified loop iteration finishes.
+
+        - **parallel_stride_pattern**
+
+          Hint parallel loop to execute in strided pattern.
+          :code:`for (int i = task_id; i < end; i += num_task)`
+
+        """
+        if isinstance(pragma_value, string_types):
+            pragma_value = convert(pragma_value)
+        _ffi_api.HybridStagePragma(self, var, pragma_type, pragma_value)
+
+    def prefetch(self, tensor, var, offset):
+        """Prefetch the specified variable
+
+        Parameters
+        ----------
+        tensor : Tensor
+            The tensor to be prefetched
+        var : IterVar
+            The loop point at which the prefetching is applied
+        offset : Expr
+            The number of iterations to be prefetched before actual execution
+        """
+        _ffi_api.HybridStagePrefetch(self, tensor, var, offset)
+
+    def storage_align(self, axis, factor, offset):
+        """Set alignment requirement for specific axis
+
+        This ensures that stride[axis] == k * factor + offset for some k.
+        This is useful to set memory layout to for more friendly memory
+        access pattern. For example, we can set alignment to be
+        factor=2, offset=1 to avoid bank conflict for thread access on
+        higher dimension in GPU shared memory.
+
+        Parameters
+        ----------
+        axis : IterVar
+            The axis dimension to be aligned.
+        factor : int
+            The factor in alignment specification.
+        offset : int
+            The offset in the alignment specification.
+        """
+        _ffi_api.HybridStageStorageAlign(self, axis, factor, offset)
+
+    def double_buffer(self):
+        """Compute the current stage via double buffering.
+
+        This can only be applied to intermediate stage.
+        This will double the storage cost of the current stage.
+        Can be useful to hide load latency.
+        """
+        _ffi_api.HybridStageDoubleBuffer(self)
+
 tvm._ffi._init_api("hybrid", __name__)

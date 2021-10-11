@@ -83,12 +83,12 @@ PrimExpr InjectPredicate(const Array<PrimExpr>& predicates, PrimExpr body) {
                 body, make_zero(body.dtype()));
 }
 
-// Replace data flow appears in all stages given the tensor change.
+// Replace data flow appears in all hybrid_stages given the tensor change.
 // Also update vmap if subsequent dataflow need to be replaced.
 // Need to keep an update to the date transitive closure property on the vmap by a reverse map.
-void ReplaceDataFlow(const Array<Stage>& stages, std::unordered_map<Tensor, Tensor>* vmap,
+void ReplaceDataFlow(const Array<HybridStage>& stages, std::unordered_map<Tensor, Tensor>* vmap,
                      std::unordered_map<Tensor, Tensor>* rvmap) {
-  for (Stage s : stages) {
+  for (HybridStage s : stages) {
     Operation op = s->op->ReplaceInputs(s->op, *vmap);
     if (!op.same_as(s->op)) {
       for (int i = 0; i < op->num_outputs(); ++i) {
@@ -132,7 +132,7 @@ Tensor HybridSchedule::cache_read(const Tensor& tensor, const std::string& scope
   os << "." << scope;
 
   std::unordered_map<Tensor, Tensor> vsub;
-  Stage s = operator[](tensor->op);
+  HybridStage s = operator[](tensor->op);
   Tensor sugar_tensor = s->op.output(tensor->value_index);
   Tensor cache = compute(
       sugar_tensor->shape,
@@ -145,7 +145,7 @@ Tensor HybridSchedule::cache_read(const Tensor& tensor, const std::string& scope
   std::unordered_map<Tensor, Tensor> vmap;
   std::unordered_map<Tensor, Tensor> rvmap;
   for (Operation op : readers) {
-    Stage s = operator[](op);
+    HybridStage s = operator[](op);
     Operation repl_op = s->op->ReplaceInputs(s->op, vsub);
     ICHECK(!repl_op.same_as(s->op)) << "Cannot find " << tensor << " in the inputs of " << s->op;
     vmap[s->op.output(0)] = repl_op.output(0);
@@ -153,10 +153,10 @@ Tensor HybridSchedule::cache_read(const Tensor& tensor, const std::string& scope
     s->op = repl_op;
   }
   ReplaceDataFlow((*this)->stages, &vmap, &rvmap);
-  Array<Stage>& stages = (*this)->stages;
-  Stage op_stage = operator[](tensor->op);
+  Array<HybridStage>& stages = (*this)->stages;
+  HybridStage op_stage = operator[](tensor->op);
   size_t pos = FindNodeRef(stages.GetArrayNode(), op_stage);
-  Stage cache_stage = Stage(cache->op);
+  HybridStage cache_stage = HybridStage(cache->op);
   cache_stage.set_scope(scope);
   ICHECK_LT(pos, stages.size());
   stages.insert(stages.begin() + pos + 1, cache_stage);
@@ -170,7 +170,7 @@ Tensor HybridSchedule::cache_read(const Tensor& tensor, const std::string& scope
 }
 
 template <typename OpType>
-void PrepareAxisMapping(Stage orig_stage, OpType* op, std::unordered_set<IterVar>* p_red_axis,
+void PrepareAxisMapping(HybridStage orig_stage, OpType* op, std::unordered_set<IterVar>* p_red_axis,
                         Array<IterVar>* p_new_axis, std::unordered_map<IterVar, Range>* p_dom_map,
                         std::unordered_map<const VarNode*, PrimExpr>* p_vsub,
                         std::unordered_map<const VarNode*, PrimExpr>* p_vsub2newvar,
@@ -223,7 +223,7 @@ void PrepareAxisMapping(Stage orig_stage, OpType* op, std::unordered_set<IterVar
   }
 }
 
-Array<Tensor> ReplaceOriginalOp(HybridSchedule sch, Stage orig_stage, const std::string& scope,
+Array<Tensor> ReplaceOriginalOp(HybridSchedule sch, HybridStage orig_stage, const std::string& scope,
                                 Operation cache_op, Operation orig_new_op, size_t tensor_size) {
   Array<Tensor> cache_tensor_list;
   for (size_t i = 0; i < tensor_size; i++) {
@@ -240,15 +240,15 @@ Array<Tensor> ReplaceOriginalOp(HybridSchedule sch, Stage orig_stage, const std:
     rvmap[orig_new_op.output(0)] = orig_stage->op.output(0);
   }
   ReplaceDataFlow(sch->stages, &vmap, &rvmap);
-  // mutate orig stage
+  // mutate orig hybrid_stage
   orig_stage->op = orig_new_op;
   orig_stage->all_iter_vars = orig_stage->op->root_iter_vars();
   orig_stage->leaf_iter_vars = orig_stage->all_iter_vars;
   orig_stage->relations = Array<IterVarRelation>();
-  // create hybrid_schedule for new cached stage.
-  Array<Stage>& stages = sch->stages;
+  // create hybrid_schedule for new cached hybrid_stage.
+  Array<HybridStage>& stages = sch->stages;
   size_t pos = FindNodeRef(stages.GetArrayNode(), orig_stage);
-  Stage cache_stage = Stage(cache_op);
+  HybridStage cache_stage = HybridStage(cache_op);
   cache_stage.set_scope(scope);
   ICHECK_LT(pos, stages.size());
   stages.insert(stages.begin() + pos, cache_stage);
@@ -267,7 +267,7 @@ Array<Tensor> CacheWriteWithReLayout(HybridSchedule sch, const Array<Tensor>& te
   size_t tensor_size = tensor_array.size();
   sch->InvalidateCache();
   Tensor tensor = tensor_array[0];
-  Stage orig_stage = sch[tensor->op];
+  HybridStage orig_stage = sch[tensor->op];
   const ComputeOpNode* compute = orig_stage->op.as<ComputeOpNode>();
 
   std::unordered_set<IterVar> red_axis;
@@ -337,7 +337,7 @@ Array<Tensor> CacheWriteWithReLayoutTensor(HybridSchedule sch, const Array<Tenso
   size_t tensor_size = tensor_array.size();
   sch->InvalidateCache();
   Tensor tensor = tensor_array[0];
-  Stage orig_stage = sch[tensor->op];
+  HybridStage orig_stage = sch[tensor->op];
   const TensorComputeOpNode* tensor_op = orig_stage->op.as<TensorComputeOpNode>();
   ICHECK_EQ(tensor_op->num_outputs(), 1)
       << "cache write only support single output tensor_compute_op";
@@ -421,12 +421,12 @@ Array<Tensor> HybridSchedule::cache_write(const Array<Tensor>& tensor_array, con
   (*this)->InvalidateCache();
   ICHECK(tensor_array.size() > 0) << "size of tensor_array must be greater than 0";
   Tensor tensor = tensor_array[0];
-  Stage orig_stage = operator[](tensor->op);
+  HybridStage orig_stage = operator[](tensor->op);
   const ComputeOpNode* compute = tensor->op.as<ComputeOpNode>();
   ICHECK(static_cast<size_t>(compute->num_outputs()) == tensor_array.size())
-      << "size of input tensor list must be same as number of stage outputs";
+      << "size of input tensor list must be same as number of hybrid_stage outputs";
   for (size_t i = 1; i < tensor_array.size(); i++) {
-    Stage tmp_stage = operator[](tensor_array[i]->op);
+    HybridStage tmp_stage = operator[](tensor_array[i]->op);
     ICHECK(orig_stage.same_as(tmp_stage)) << "Input tensor list must be generated by ONE computeOp";
   }
   return CacheWriteWithReLayout(*this, tensor_array, scope);
@@ -447,7 +447,7 @@ Tensor HybridSchedule::cache_write(const Tensor& tensor, const std::string& scop
 
 void RebaseNonZeroMinLoop(HybridScheduleNode* sch) {
   std::unordered_map<IterVar, IterVar> rebase_map;
-  for (Stage s : sch->stages) {
+  for (HybridStage s : sch->stages) {
     if (s->attach_type == kInlinedAlready) continue;
 
     auto root_iter_vars = s->op->root_iter_vars();
@@ -472,13 +472,13 @@ void RebaseNonZeroMinLoop(HybridScheduleNode* sch) {
     }
   }
   // remap the parent relation
-  for (Stage s : sch->stages) {
+  for (HybridStage s : sch->stages) {
     if (s->attach_type != kScope) continue;
     if (rebase_map.count(s->attach_ivar)) {
       s->attach_ivar = rebase_map.at(s->attach_ivar);
     }
   }
-  for (Stage s : sch->groups) {
+  for (HybridStage s : sch->groups) {
     if (s->attach_type != kScope) continue;
     if (rebase_map.count(s->attach_ivar)) {
       s->attach_ivar = rebase_map.at(s->attach_ivar);
@@ -495,7 +495,7 @@ void InjectInline(HybridScheduleNode* sch, bool feature_extraction_mode) {
   std::vector<bool> hybrid_changed(sch->stages.size(), false);
   // inline all the ops
   for (size_t i = sch->stages.size(); i != 0; --i) {
-    Stage stage = sch->stages[i - 1];
+    HybridStage stage = sch->stages[i - 1];
     if (stage->attach_type == kInline) {
       stage->attach_type = kInlinedAlready;
       Array<Var> args;
@@ -519,7 +519,7 @@ void InjectInline(HybridScheduleNode* sch, bool feature_extraction_mode) {
         }
       }
       for (size_t j = i; j < sch->stages.size(); ++j) {
-        Stage s = sch->stages[j];
+        HybridStage s = sch->stages[j];
         const ComputeOpNode* compute = s->op.as<ComputeOpNode>();
         const HybridOpNode* hybrid = s->op.as<HybridOpNode>();
         if (compute) {
@@ -577,7 +577,7 @@ void InjectInline(HybridScheduleNode* sch, bool feature_extraction_mode) {
   std::unordered_map<Tensor, Tensor> repl;
   // rewrite dataflow
   for (size_t i = 0; i < sch->stages.size(); ++i) {
-    Stage s = sch->stages[i];
+    HybridStage s = sch->stages[i];
     if (s->attach_type == kInlinedAlready) continue;
     if (new_body[i].size()) {
       // Logics from ReplaceDataFlow
@@ -628,14 +628,14 @@ void LegalizeInvalidAttach(HybridScheduleNode* sch) {
   // Map an old invalid attach point to its new valid attach point
   std::unordered_map<IterVar, IterVar> replace_map;
 
-  for (Stage stage : sch->stages) {
+  for (HybridStage stage : sch->stages) {
     std::unordered_set<const Object*> visited;
-    for (Stage s = stage; s.defined();) {
+    for (HybridStage s = stage; s.defined();) {
       // The following logic is simiar to the `CreateAttachPath` in `src/te/schedule/graph.h`,
       // because we follow the validation check in that function to legalize the attach.
       ICHECK(!visited.count(s.get())) << "Find loop in compute_at attach group";
       visited.insert(s.get());
-      Stage spec = s.GetAttachSpec();
+      HybridStage spec = s.GetAttachSpec();
       if (spec->attach_type != kScope) {
         break;
       }
@@ -679,13 +679,13 @@ void LegalizeInvalidAttach(HybridScheduleNode* sch) {
   }
 
   // remap the parent relation
-  for (Stage s : sch->stages) {
+  for (HybridStage s : sch->stages) {
     if (s->attach_type != kScope) continue;
     if (replace_map.count(s->attach_ivar)) {
       s->attach_ivar = replace_map.at(s->attach_ivar);
     }
   }
-  for (Stage s : sch->groups) {
+  for (HybridStage s : sch->groups) {
     if (s->attach_type != kScope) continue;
     if (replace_map.count(s->attach_ivar)) {
       s->attach_ivar = replace_map.at(s->attach_ivar);
@@ -714,7 +714,7 @@ Array<Tensor> HybridSchedule::rfactor(const Tensor& tensor, const IterVar& axis,
   (*this)->InvalidateCache();
   using tir::ReduceNode;
   ICHECK_EQ(axis->iter_type, kCommReduce) << "Can only factor reduction axis";
-  Stage reduce_stage = operator[](tensor->op);
+  HybridStage reduce_stage = operator[](tensor->op);
   const ComputeOpNode* compute_op = reduce_stage->op.as<ComputeOpNode>();
   ICHECK(compute_op) << "Can only factor ComputeOp";
   ArrayNode* leaf_vars = reduce_stage->leaf_iter_vars.CopyOnWrite();
@@ -849,9 +849,9 @@ Array<Tensor> HybridSchedule::rfactor(const Tensor& tensor, const IterVar& axis,
   }
   // initialize the factored stage.
   Operation factor_op(n);
-  Array<Stage>& stages = (*this)->stages;
+  Array<HybridStage>& stages = (*this)->stages;
   size_t stage_pos = FindNodeRef(stages.GetArrayNode(), reduce_stage);
-  Stage factor_stage = Stage(factor_op);
+  HybridStage factor_stage = HybridStage(factor_op);
   factor_stage->relations = rels;
   ICHECK_LT(stage_pos, stages.size());
   stages.insert(stages.begin() + stage_pos, factor_stage);
@@ -921,7 +921,7 @@ Array<Tensor> HybridSchedule::rfactor(const Tensor& tensor, const IterVar& axis,
     rvmap[repl_tensors[idx]] = old_tensors[idx];
   }
   ReplaceDataFlow((*this)->stages, &vmap, &rvmap);
-  // revamp the reduction stage.
+  // revamp the reduction hybrid_stage.
   reduce_stage->op = repl_tensors[0]->op;
   reduce_stage->all_iter_vars = repl_tensors[0]->op->root_iter_vars();
   reduce_stage->leaf_iter_vars = reduce_stage->all_iter_vars;

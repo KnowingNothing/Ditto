@@ -150,13 +150,13 @@ FeedGraph CreateFeedGraph(const ReadGraph& g) {
 
 AttachPath CreateAttachPath(HybridSchedule sch) {
   AttachPath ret;
-  for (Stage stage : sch->stages) {
+  for (HybridStage stage : sch->stages) {
     std::unordered_set<const Object*> visited;
     Array<IterVar> path;
-    for (Stage s = stage; s.defined();) {
+    for (HybridStage s = stage; s.defined();) {
       ICHECK(!visited.count(s.get())) << "Find loop in compute_at attach group";
       visited.insert(s.get());
-      Stage spec = s.GetAttachSpec();
+      HybridStage spec = s.GetAttachSpec();
       bool start_attach;
       IterVar attach_ivar;
       if (spec->attach_type == kScope) {

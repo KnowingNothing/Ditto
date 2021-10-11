@@ -15,8 +15,225 @@ using namespace te;
 namespace ditto {
 namespace hybrid {
 
-// Node container for Schedule
+// Node container for HybridStage
+class HybridStageNode;
+// Node container for HybridSchedule
 class HybridScheduleNode;
+
+/*! \brief HybridStage, contains scheduling for a hybrid_stage of computation. */
+class HybridStage : public ObjectRef {
+ public:
+  HybridStage() {}
+  explicit HybridStage(ObjectPtr<Object> n) : ObjectRef(n) {}
+  /*!
+   * \brief create a new schedule for op.
+   * \param op The operator in the schedule
+   */
+  explicit HybridStage(Operation op);
+  /*!
+   * \brief access the internal node container
+   * \return the pointer to the internal node container
+   */
+  inline const HybridStageNode* operator->() const;
+  /*!
+   * \brief access the internal node container
+   * \return the pointer to the internal node container
+   */
+  inline HybridStageNode* operator->();
+  /*!
+   * \brief set the memory scope of the stage
+   * \param scope The memory scope.
+   */
+  TVM_DLL HybridStage& set_scope(std::string scope);  // NOLINT(*)
+  /*!
+   * \brief specify the schedule to be computed at the parent schedule's scope.
+   * \param parent The parent schedule.
+   * \param scope The iteration point to carry the schedule.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& compute_at(HybridStage parent, IterVar scope);  // NOLINT(*)
+  /*!
+   * \brief Compute the function inline.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& compute_inline();  // NOLINT(*)
+  /*!
+   * \brief Compute the function at group root.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& compute_root();  // NOLINT(*)
+  /*!
+   * \brief Bind the IterVar to thread index.
+   *
+   * \param ivar The IterVar to be bound.
+   * \param thread_ivar The thread axis to be bound.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& bind(IterVar ivar, IterVar thread_ivar);
+  /*!
+   * \brief Set the predicate to determine whether a store to the array should be performed.
+   *  Use this when there are multiple threads performing the same store and we only
+   *  need one of them to do the store.
+   *
+   * \note This is a dangerous scheduling primitive that can change behavior of program.
+   *    Only do when we are certain that thare are duplicated stores.
+   * \param predicate The condition to be checked.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& set_store_predicate(PrimExpr predicate);
+  /*!
+   * \brief Specify environment threads that launched around the group's scope.
+   *  This can only be used in group hybrid_stage.
+   * \param threads The threads to be launched around the scope.
+   * \note Each thread can only appear in one env_threads.
+   *    This is a beta feature.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& env_threads(Array<IterVar> threads);
+  /*!
+   * \brief Split the parent by factor, generate
+   * \param parent The parent iteration domain.
+   * \param factor The split factor of the loop.
+   * \param p_outer The result outer domain
+   * \param p_inner The result inner domain.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& split(IterVar parent, PrimExpr factor, IterVar* p_outer,
+                       IterVar* p_inner);  // NOLINT(*)
+  /*!
+   * \brief Split the iteration with given number of parts.
+   *
+   * \param parent The parent domain.
+   * \param nparts The number of parts in the outer domain.
+   * \param p_outer The result outer domain.
+   * \param p_inner The result inner domain.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& split_by_nparts(IterVar parent, PrimExpr nparts, IterVar* p_outer,
+                                 IterVar* p_inner);  // NOLINT(*)
+  /*!
+   * \brief Fuse the inner outer domain to the target
+   * \param outer The outer domain to be fused.
+   * \param inner The inner domain to be fused
+   * \param p_target The result target domain.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& fuse(IterVar outer, IterVar inner, IterVar* p_target);  // NOLINT(*)
+  /*!
+   * \brief Fuse all the axes together into a single axis.
+   *
+   * \param axes All the axes to be fused.
+   * \param p_target The result target domain.
+   *
+   * \note axes can be an empty array,
+   *       in that case, a singleton IterVar is created and
+   *       inserted to the outermost loop.
+   *       The fuse of empty array is used to support zero-dimension tensors.
+   *
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& fuse(const Array<IterVar>& axes, IterVar* p_target);  // NOLINT(*)
+  /*!
+   * \brief Reorder the iteration
+   * \param order The order of iteration variable.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& reorder(const Array<IterVar>& order);  // NOLINT(*)
+  /*!
+   * \brief Perform tiling on two dimensions
+   *  The final loop order from outmost to inner most are
+   *  [x_outer, y_outer, x_inner, y_inner]
+   *
+   * \param x_parent The original x dimension
+   * \param y_parent The original y dimension
+   * \param x_factor The stride factor on x axis
+   * \param y_factor The stride factor on y axis
+   * \param p_x_outer Outer axis of x dimension
+   * \param p_y_outer Outer axis of y dimension
+   * \param p_x_inner Inner axis of x dimension
+   * \param p_y_inner Inner axis of y dimension
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& tile(IterVar x_parent, IterVar y_parent,  // NOLINT(*)
+                      PrimExpr x_factor, PrimExpr y_factor, IterVar* p_x_outer, IterVar* p_y_outer,
+                      IterVar* p_x_inner, IterVar* p_y_inner);
+  /*!
+   * \brief Vectorize iteration.
+   * \param var The axis to be vectorized.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& vectorize(IterVar var);  // NOLINT(*)
+  /*!
+   * \brief Replace computation of the current stage by tensor intrinsic f.
+   * \param var The axis marks beginning of tensorization.
+   *  Every operations inside the axis(include axis itself is tensorized).
+   * \param f The Tensor compute intrinsics.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& tensorize(IterVar var, TensorIntrin f);  // NOLINT(*)
+  /*!
+   * \brief Unroll iteration.
+   * \param var The axis to be unrolled.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& unroll(IterVar var);  // NOLINT(*)
+  /*!
+   * \brief Parallelize iteration.
+   * \param var The axis to be parallelized.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& parallel(IterVar var);  // NOLINT(*)
+  /*!
+   * \brief Annotate the iteration with pragma
+   *
+   * \param var The axis to be parallelized.
+   * \param pragma_type The pragma type.
+   * \param pragma_value The pragma value
+   *
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& pragma(IterVar var, const std::string& pragma_type,
+                        const PrimExpr& pragma_value = PrimExpr());  // NOLINT(*)
+  /*!
+   * \brief Fetch data in advance.
+   * \param domain the tensor to be prefetched
+   * \param var the iteration point at which to apply prefetching
+   * \param offset the number of iterations be to fetched in advance
+   * \return reference to self
+   */
+  TVM_DLL HybridStage& prefetch(const Tensor& domain, IterVar var, PrimExpr offset);  // NOLINT(*)
+  /*!
+   * \brief Set alignment requirement for specific dimension.
+   *
+   *  Such that stride[axis] == k * factor + offset for some k.
+   *
+   * \param axis The dimension to be specified for alignment.
+   * \param factor The factor multiple of alignment
+   * \param offset The required offset factor.
+   * \return reference to self
+   */
+  TVM_DLL HybridStage& storage_align(IterVar axis, int factor, int offset);  // NOLINT(*)
+  /*!
+   * \brief Compute current stage with double buffering.
+   * \return reference to self.
+   */
+  TVM_DLL HybridStage& double_buffer();  // NOLINT(*)
+  /*!
+   * \brief whether the stage has been scheduled.
+   * \return whether the stage has been scheduled.
+   */
+  bool is_scheduled() const;
+  /*!
+   * \brief Get attachment spec of current hybrid_stage.
+   *  If the hybrid_stage compute at Group root, this function
+   *  will traverse the group function to get the
+   *  final spec from the group.
+   * \return A hybrid_stage representing the attach spec of the group.
+   */
+  HybridStage GetAttachSpec() const;
+  // declare container type
+  using ContainerType = HybridStageNode;
+};
 
 /*!
  * \brief Global hybrid_schedule container
@@ -37,31 +254,31 @@ class HybridSchedule : public ObjectRef {
    */
   HybridSchedule copy() const;
   /*!
-   * \brief Get the stage corresponds to the op
+   * \brief Get the hybrid_stage corresponds to the op
    * \param op The operation.
    */
-  TVM_DLL Stage operator[](const Operation& op);
+  TVM_DLL HybridStage operator[](const Operation& op);
   /*!
-   * \brief Short hand for getting the stage of tensor's operation.
+   * \brief Short hand for getting the hybrid_stage of tensor's operation.
    * \param tensor The tensor
-   * \return The stage corresponding to the tensor's op
+   * \return The hybrid_stage corresponding to the tensor's op
    */
-  TVM_DLL Stage operator[](const Tensor& tensor) { return this->operator[](tensor->op); }
+  TVM_DLL HybridStage operator[](const Tensor& tensor) { return this->operator[](tensor->op); }
   /*!
-   * \brief Create a new stage group for all intermediate
+   * \brief Create a new hybrid_stage group for all intermediate
    *  operations between inputs and outputs.
    *
    * \param outputs The output boundary of the group.
    * \param inputs The input boundary of the group.
    * \param include_inputs Whether include inputs if they are reachable from outputs.
-   * \return The new grouped stage.
+   * \return The new grouped hybrid_stage.
    */
-  TVM_DLL Stage create_group(const Array<Tensor>& outputs, const Array<Tensor>& inputs,
+  TVM_DLL HybridStage create_group(const Array<Tensor>& outputs, const Array<Tensor>& inputs,
                              bool include_inputs = false);
   /*!
    * \brief create a cache read of original tensor for readers.
    *  This will mutate the body of the readers.
-   *  A new stage will be created for the tensor.
+   *  A new hybrid_stage will be created for the tensor.
    * \param tensor The tensor cached.
    * \param scope The scope of the cache.
    * \param readers The readers to redirect to the tensor.
@@ -105,7 +322,7 @@ class HybridSchedule : public ObjectRef {
   TVM_DLL Tensor cache_write(const Tensor& tensor, const std::string& scope);
   /*!
    * \brief Factor a reduction axis in tensor's hybrid_schedule to be an explicit axis.
-   * This will create a new stage that generated the new tensor with axis
+   * This will create a new hybrid_stage that generated the new tensor with axis
    * as the first dimension. The tensor's body will be rewritten as a reduction
    * over the factored tensor.
    *
@@ -152,27 +369,117 @@ class HybridSchedule : public ObjectRef {
   using ContainerType = HybridScheduleNode;
 };
 
+/*!
+ * \brief represents a hybrid_stage.
+ *
+ *  relations form a Directed acylic hypergraph in bipartite manner.
+ *  With each node is represented by a IterVar,
+ *  and each hyper-edge is represented by a IterVarRelation.
+ *  The relations connects the IterVars in the graph.
+ *
+ *  Besides typical hybrid_stage that corresponds to operations.
+ *  There is also group hybrid_stage, which groups hybrid_stages together.
+ *  Each hybrid_stage's group(given by group) represent an constraint,
+ *  the hybrid_stage can only be attached to hybrid_stages within the group.
+ *
+ *  The group hybrid_stage node can be attached to IterVars as in normal hybrid_stage.
+ */
+class HybridStageNode : public Object {
+ public:
+  /*!
+   * \brief The operation of hybrid_stage, can be different from original op.
+   *  If it is null, then this hybrid_stage is a group hybrid_stage.
+   */
+  Operation op;
+  /*!
+   * \brief The original operator.
+   *  The op field can change during schedule to alternate the dataflow,
+   *  while origin_op remains fixed.
+   */
+  Operation origin_op;
+  /*! \brief All the nodes in the iter var */
+  Array<IterVar> all_iter_vars;
+  /*! \brief The current active leaf iter vars in the hybrid_stage. */
+  Array<IterVar> leaf_iter_vars;
+  /*!
+   * \brief Specify threads to be launched at the hybrid_stage.
+   *  This is only valid for composite ops such as Scan.
+   * \note Experimental primitive: used for thread persistence.
+   */
+  Array<IterVar> env_threads;
+  /*!
+   * \brief The predicate under which store can happen
+   *  Use this when there can be duplicated threads doing the same store.
+   * \note Experimental primitive: used by cross thread-reduction.
+   */
+  PrimExpr store_predicate;
+  /*! \brief The relation bwteen of IterVars */
+  Array<IterVarRelation> relations;
+  /*! \brief additional attributes about iter var. */
+  Map<IterVar, IterVarAttr> iter_var_attrs;
+  /*! \brief The attachment type of the schedule */
+  AttachType attach_type{kGroupRoot};
+  /*! \brief The attach point of this schedule. */
+  IterVar attach_ivar;
+  /*! \brief The hybrid_stage this node attaches to */
+  HybridStage attach_stage;
+  /*! \brief The thread storage scope level of the hybrid_stage */
+  std::string scope;
+  /*! \brief Whether this is an output hybrid_stage */
+  bool is_output{false};
+  /*! \brief Whether apply double buffer optimization to this hybrid_stage */
+  bool double_buffer{false};
+  /*!
+   * \brief The parent group of the current hybrid_stage.
+   *  The hybrid_stage cannot be assigned to hybrid_stages outside the group.
+   */
+  HybridStage group;
+  /*! \brief Number of direct child hybrid_stages, only used for group hybrid_stage.*/
+  int num_child_stages{0};
+
+  void VisitAttrs(AttrVisitor* v) {
+    v->Visit("op", &op);
+    v->Visit("origin_op", &origin_op);
+    v->Visit("all_iter_vars", &all_iter_vars);
+    v->Visit("leaf_iter_vars", &leaf_iter_vars);
+    v->Visit("env_threads", &env_threads);
+    v->Visit("relations", &relations);
+    v->Visit("iter_var_attrs", &iter_var_attrs);
+    v->Visit("attach_type", &attach_type);
+    v->Visit("attach_ivar", &attach_ivar);
+    v->Visit("attach_stage", &attach_stage);
+    v->Visit("scope", &scope);
+    v->Visit("is_output", &is_output);
+    v->Visit("double_buffer", &double_buffer);
+    v->Visit("group", &group);
+    v->Visit("num_child_stages", &num_child_stages);
+  }
+
+  static constexpr const char* _type_key = "HybridStage";
+  TVM_DECLARE_FINAL_OBJECT_INFO(HybridStageNode, Object);
+};
+
 /*! \brief node container for hybrid_schedule */
 class HybridScheduleNode : public Object {
  public:
   /*! \brief The output operations in original data flow graph */
   Array<Operation> outputs;
   /*!
-   * \brief list of all stages for ops.
-   * The stages are sorted in dependency order.
+   * \brief list of all hybrid_stages for ops.
+   * The hybrid_stages are sorted in dependency order.
    */
-  Array<Stage> stages;
+  Array<HybridStage> stages;
   /*!
    * \brief List of all stage groups.
    */
-  Array<Stage> groups;
-  /*! \brief map of original operation to the stages */
-  Map<Operation, Stage> stage_map;
+  Array<HybridStage> groups;
+  /*! \brief map of original operation to the hybrid_stages */
+  Map<Operation, HybridStage> stage_map;
   /*!
-   * \brief Internal stage map to map internal ops to stages.
+   * \brief Internal hybrid_stage map to map internal ops to hybrid_stages.
    *  This is created on demand and can be invalidated.
    */
-  std::unordered_map<const Object*, Stage> op2stage_cache_;
+  std::unordered_map<const Object*, HybridStage> op2stage_cache_;
 
   void VisitAttrs(AttrVisitor* v) {
     v->Visit("outputs", &outputs);
@@ -212,6 +519,9 @@ class HybridScheduleNode : public Object {
 inline HybridSchedule create_hybrid_schedule(Array<Operation> ops) { return HybridSchedule(ops); }
 
 // implementations
+inline const HybridStageNode* HybridStage::operator->() const { return static_cast<const HybridStageNode*>(get()); }
+inline HybridStageNode* HybridStage::operator->() { return static_cast<HybridStageNode*>(get_mutable()); }
+
 inline const HybridScheduleNode* HybridSchedule::operator->() const {
   return static_cast<const HybridScheduleNode*>(get());
 }
