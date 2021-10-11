@@ -1,4 +1,4 @@
-"""The computation region api of TVM."""
+"""The computation hybrid api of TVM."""
 import tvm._ffi
 from tvm._ffi.base import string_types
 
@@ -9,8 +9,8 @@ from tvm.tir import IterVar, Buffer
 from tvm.te import tensor as _tensor
 from . import _ffi_api
 
-def create_region_schedule(ops):
-    """Create a region_schedule for list of ops
+def create_hybrid_schedule(ops):
+    """Create a hybrid_schedule for list of ops
 
     Parameters
     ----------
@@ -19,17 +19,17 @@ def create_region_schedule(ops):
 
     Returns
     -------
-    sch : region.RegionSchedule
-        The created region_schedule.
+    sch : hybrid.hybridSchedule
+        The created hybrid_schedule.
     """
     if not isinstance(ops, (list, _container.Array)):
         ops = [ops]
-    return _ffi_api.CreateRegionSchedule(ops)
+    return _ffi_api.CreateHybridSchedule(ops)
 
 
 @tvm._ffi.register_object
-class RegionSchedule(Object):
-    """RegionSchedule for all the stages."""
+class HybridSchedule(Object):
+    """HybridSchedule for all the stages."""
 
     def __getitem__(self, k):
         if isinstance(k, _tensor.Tensor):
@@ -164,6 +164,6 @@ class RegionSchedule(Object):
         """
         slice a stage into two stages by slicing a loop.
         """
-        return _ffi_api.RegionScheduleSlice(self, tensor, axis, slice_point)
+        return _ffi_api.HybridScheduleSlice(self, tensor, axis, slice_point)
 
-tvm._ffi._init_api("region", __name__)
+tvm._ffi._init_api("hybrid", __name__)

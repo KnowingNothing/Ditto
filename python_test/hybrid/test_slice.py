@@ -4,4 +4,8 @@ import ditto
 A = tvm.te.placeholder([6, 6], name="A")
 C = tvm.te.compute([6, 6], lambda i, j: A[i, j] + 1, name="C")
 
-s = ditto.region.create_region_schedule(C.op)
+s = ditto.hybrid.create_hybrid_schedule(C.op)
+
+i, j = s[C].op.axis
+
+s.slice(C, i, slice_point=4)
