@@ -36,9 +36,9 @@ class HybridSchedule(Object):
             k = k.op
         if not isinstance(k, _tensor.Operation):
             raise ValueError("Expect schedule key to be Tensor or Operation")
-        if k not in self.sch.stage_map:
+        if k not in self.stage_map:
             raise ValueError("Cannot find the operation %s in schedule" % (str(k)))
-        return self.sch.stage_map[k]
+        return self.stage_map[k]
 
     def normalize(self):
         """Build a normalized schedule from the current schedule.
@@ -51,7 +51,7 @@ class HybridSchedule(Object):
         sch : Schedule
             The normalized schedule.
         """
-        return _ffi_api.ScheduleNormalize(self.sch)
+        return _ffi_api.HybridScheduleNormalize(self)
 
     def create_group(self, outputs, inputs, include_inputs=False):
         """Create stage group by giving output and input boundary.
@@ -80,7 +80,7 @@ class HybridSchedule(Object):
             outputs = [outputs]
         if isinstance(inputs, _tensor.Tensor):
             inputs = [inputs]
-        return _ffi_api.ScheduleCreateGroup(self.sch, outputs, inputs, include_inputs)
+        return _ffi_api.HybridScheduleCreateGroup(self, outputs, inputs, include_inputs)
 
     def cache_read(self, tensor, scope, readers):
         """Create a cache read of original tensor for readers.
@@ -106,7 +106,7 @@ class HybridSchedule(Object):
         if isinstance(readers, (_tensor.Tensor, _tensor.Operation)):
             readers = [readers]
         readers = [t.op if isinstance(t, _tensor.Tensor) else t for t in readers]
-        return _ffi_api.ScheduleCacheRead(self.sch, tensor, scope, readers)
+        return _ffi_api.HybridScheduleCacheRead(self, tensor, scope, readers)
 
     def cache_write(self, tensor, scope):
         """Create a cache write of original tensor, before storing into tensor.
@@ -134,7 +134,7 @@ class HybridSchedule(Object):
         cache : Tensor
             The created cache tensor.
         """
-        return _ffi_api.ScheduleCacheWrite(self.sch, tensor, scope)
+        return _ffi_api.HybridScheduleCacheWrite(self, tensor, scope)
 
     def rfactor(self, tensor, axis, factor_axis=0):
         """Factor a reduction axis in tensor's schedule to be an explicit axis.
@@ -157,13 +157,13 @@ class HybridSchedule(Object):
         tfactor : Tensor or Array of Tensor
             The created factored tensor.
         """
-        factored = _ffi_api.ScheduleRFactor(self.sch, tensor, axis, factor_axis)
+        factored = _ffi_api.HybridScheduleRFactor(self, tensor, axis, factor_axis)
         return factored[0] if len(factored) == 1 else factored
     
-    def slice(self, tensor, axis, slice_point):
-        """
-        slice a stage into two stages by slicing a loop.
-        """
-        return _ffi_api.HybridScheduleSlice(self, tensor, axis, slice_point)
+    # def slice(self, tensor, axis, slice_point):
+    #     """
+    #     slice a stage into two stages by slicing a loop.
+    #     """
+    #     return _ffi_api.HybridScheduleSlice(self, tensor, axis, slice_point)
 
 tvm._ffi._init_api("hybrid", __name__)
