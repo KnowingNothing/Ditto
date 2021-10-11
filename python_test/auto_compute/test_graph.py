@@ -118,14 +118,16 @@ def test2():
         lambda : None)
     
     m, k = layer_state[trans_A].axis()
-    trans_trans_A = layer_state.implicit_split(trans_A, m, factor=7)
+    trans_trans_A = layer_state.implicit_fold(trans_A, m, factor=7)
     m1, m2, k = layer_state[trans_trans_A].axis()
-    trans_trans_trans_A = layer_state.explicit_split(trans_trans_A, k, factor=5)
+    trans_trans_trans_A = layer_state.explicit_fold(trans_trans_A, k, factor=5)
     m1, m2, k1, k2 = layer_state[trans_trans_A].axis()
-    trans4_A = layer_state.explicit_reorder(trans_trans_A, m1, k1, m2, k2)
+    trans4_A = layer_state.explicit_shuffle(trans_trans_A, m1, k1, m2, k2)
     
     m, n = layer_state[E].axis()
-    trans_E = layer_state.explicit_split(E, m, factor=3)
+    trans_E = layer_state.explicit_fold(E, m, factor=3)
+    m1, m2, n = layer_state[E].axis()
+    E_unfold = layer_state.explicit_unfold(E, m1, m2)
 
     input_A = ac.layer_tensor(layer_state[A].op.output(0).shape, name="real_A", dtype="float32")
     new_layer = layer_state.make_compute([input_A])
@@ -159,7 +161,73 @@ def test2():
 
 @register_test
 def test3():
-    pass
+    M, L, K, N = 100, 40, 50, 60
+    outs, ins = _2mm(M, L, K, N)
+    F, = outs
+    A, B, C, D, alpha, beta = ins
+    layer = ac.layer(F.op, inputs=[A], weights=[
+                        B, C, D], const_scalars=[alpha, beta])
+    layer_state = ac.create_layer_state(layer)
+
+    out = layer.ops[0]
+    sch = tvm.te.create_schedule(out)
+    all_tensors = [*layer.inputs,
+                   *layer.weights,
+                   *layer.const_scalars,
+                   *layer.const_tensors,
+                   out.output(0)]
+    print("Original IR")
+    print(tvm.lower(sch, all_tensors, simple_mode=True))
+    old_func = tvm.build(sch, all_tensors, "llvm")
+    A_np = np.random.uniform(-10, 10, [M, K]).astype("float32")
+    B_np = np.random.uniform(-10, 10, [K, L]).astype("float32")
+    C_np = np.random.uniform(-10, 10, [L, N]).astype("float32")
+    D_np = np.random.uniform(-10, 10, [M, N]).astype("float32")
+    F_np = np.random.uniform(-10, 10, [M, N]).astype("float32")
+    ctx = tvm.cpu(0)
+    A_tvm = tvm.nd.array(A_np, ctx)
+    B_tvm = tvm.nd.array(B_np, ctx)
+    C_tvm = tvm.nd.array(C_np, ctx)
+    D_tvm = tvm.nd.array(D_np, ctx)
+    F_tvm = tvm.nd.array(F_np, ctx)
+    old_func(A_tvm, B_tvm, C_tvm, D_tvm, 1.0, 1.0, F_tvm)
+    
+    # transform the compute
+    E = F.op.input_tensors[0]
+    tmp = E.op.input_tensors[0]
+
+    m, n = layer_state[E].axis()
+    layer_state.implicit_fold(E, m, factor=5)
+    m1, m2, n = layer_state[E].axis()
+    layer_state.implicit_eliminate(E, m1)
+    
+    k, = layer_state[E].reduce_axis()
+    layer_state.implicit_fold(E, k, factor=4)
+    k1, k2 = layer_state[E].reduce_axis()
+    layer_state.implicit_eliminate(E, k2)
+    
+    l, n = layer_state[C].axis()
+    layer_state.implicit_fold(C, l, factor=4)
+    l1, l2, n = layer_state[C].axis()
+    layer_state.implicit_eliminate(C, l2)
+
+    input_A = ac.layer_tensor(layer_state[A].op.output(0).shape, name="real_A", dtype="float32")
+    new_layer = layer_state.make_compute([input_A])
+    out = new_layer.ops[0]
+    sch = tvm.te.create_schedule(out)
+    all_tensors = [*new_layer.inputs,
+                   *new_layer.weights,
+                   *new_layer.const_scalars,
+                   *new_layer.const_tensors,
+                   out.output(0)]
+    print("New IR")
+    print(tvm.lower(sch, all_tensors, simple_mode=True))
+    new_func = tvm.build(sch, all_tensors, "llvm")
+    new_C_np = np.random.uniform(-10, 10, [int(x) for x in layer_state[C].op.output(0).shape]).astype("float32")
+    new_C_tvm = tvm.nd.array(new_C_np, ctx)
+    new_F_np = np.random.uniform(-10, 10, [M, N]).astype("float32")
+    new_F_tvm = tvm.nd.array(new_F_np, ctx)
+    new_func(A_tvm, B_tvm, new_C_tvm, D_tvm, 1.0, 1.0, new_F_tvm)
 
 
 if __name__ == "__main__":
