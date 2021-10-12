@@ -6,6 +6,7 @@
 #include <tvm/tir/expr.h>
 #include <tvm/te/schedule.h>
 
+#include <hybrid/tree.h>
 #include <string>
 #include <unordered_map>
 
@@ -399,8 +400,10 @@ class HybridStageNode : public Object {
   Operation origin_op;
   /*! \brief All the nodes in the iter var */
   Array<IterVar> all_iter_vars;
-  /*! \brief The current active leaf iter vars in the hybrid_stage. */
+  /*! \brief The current active leaf iter vars in the hybrid_stage as a array. */
   Array<IterVar> leaf_iter_vars;
+  /*! \brief The current active leaf iter vars in the hybrid_stage as a tree. */
+  TreeNode<IterVar> leaf_iter_vars_tree;
   /*!
    * \brief Specify threads to be launched at the hybrid_stage.
    *  This is only valid for composite ops such as Scan.
