@@ -198,6 +198,9 @@ class LayerState(Object):
 
     def make_compute(self, layer_inputs):
         return _ffi_api.LayerStateMakeCompute(self, layer_inputs)
+    
+    def get_current_ops(self):
+        return _ffi_api.LayerStateGetCurrentOps(self)
 
     def transform(self, k, spatial_forward, fspatial_backward,
                   reduce_forward, freduce_backward, explicit_transform=True):
