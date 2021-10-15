@@ -581,6 +581,10 @@ Layer LayerStateNode::MakeCompute(Array<LayerTensor> inputs) {
                layer->const_scalars, new_const_tensors, layer->gradients);
 }
 
+Array<te::Operation> LayerStateNode::GetCurrentOps() {
+  return Array<te::Operation>(all_ops);
+}
+
 BlockState::BlockState(Block block) {
   auto node = make_object<BlockStateNode>();
   node->block = block;
@@ -653,6 +657,11 @@ TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerStateMakeCompute")
     .set_body_typed([](LayerState layer_state, Array<LayerTensor> inputs) {
       auto ret = layer_state->MakeCompute(inputs);
       return ret;
+    });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerStateGetCurrentOps")
+    .set_body_typed([](LayerState layer_state) {
+      return layer_state->GetCurrentOps();
     });
 
 } // namespace auto_compute
