@@ -257,6 +257,10 @@ public:
    * \param inputs The input tensors
    */
   Layer MakeCompute(Array<LayerTensor> inputs);
+  /*!
+   * \brief Get the current ops in this layer state.
+   */
+  Array<te::Operation> GetCurrentOps();
 
   static constexpr const char *_type_key = "ditto.auto_compute.LayerState";
   TVM_DECLARE_BASE_OBJECT_INFO(LayerStateNode, Object);

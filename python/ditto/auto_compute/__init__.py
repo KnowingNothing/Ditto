@@ -1,3 +1,4 @@
+from .designer import design, auto_compute
 from .graph import (
     layer_tensor,
     create_op_state,
