@@ -6,6 +6,7 @@
 #include <tvm/tir/expr.h>
 #include <tvm/te/schedule.h>
 
+#include <hybrid/test.h>
 #include <hybrid/tree.h>
 #include <string>
 #include <unordered_map>
@@ -41,6 +42,7 @@ class HybridStage : public ObjectRef {
    * \return the pointer to the internal node container
    */
   inline HybridStageNode* operator->();
+  void Test();
   /*!
    * \brief set the memory scope of the stage
    * \param scope The memory scope.
@@ -403,7 +405,8 @@ class HybridStageNode : public Object {
   /*! \brief The current active leaf iter vars in the hybrid_stage as a array. */
   Array<IterVar> leaf_iter_vars;
   /*! \brief The current active leaf iter vars in the hybrid_stage as a tree. */
-  TreeNode<IterVar> leaf_iter_vars_tree;
+  // TreeNode<IterVar> leaf_iter_vars_tree;
+  Tree<IterVar> leaf_iter_vars_tree;
   /*!
    * \brief Specify threads to be launched at the hybrid_stage.
    *  This is only valid for composite ops such as Scan.

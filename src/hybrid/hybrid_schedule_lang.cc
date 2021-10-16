@@ -2,8 +2,9 @@
 #include <tvm/runtime/registry.h>
 #include <tvm/te/operation.h>
 #include <tvm/te/schedule.h>
+#include <hybrid/tree.h>
+#include <hybrid/test.h>
 #include <hybrid/hybrid_schedule.h>
-
 #include "graph.h"
 
 #include <stack>
@@ -14,6 +15,44 @@ using namespace te;
 
 namespace ditto {
 namespace hybrid{
+
+// for test for tree
+void HybridStage::Test(){
+  test a(1), b(2), c(3), d(4), e(5), f(6), g(7);
+  Tree<test> t;
+  t.insertChild(a);
+  t.insertChild(a, b);
+  t.insertChild(a, c);
+  t.insertChild(b, d);
+  t.insertChild(b, e);
+  t.insertChild(e, f);
+  t.display("t");
+  Tree<test> b_subTree = t.getSubTree(b);
+  b_subTree.display("b_subTree");
+  Tree<test> t_(b_subTree);
+  t_.display("t_");
+  t_.apply([](test & tmp)->void{
+    tmp.operator->()->data += 1;
+  });
+  t_.display("t_ after + 1");
+  t.display("before insert");
+  t.insertTree(t_);
+  t.display("after insert");
+  t.eraseTree(b);
+  t.display("after erase Tree");
+  // std::cout << "a is b's parent" << t.is_parent(a, b) << std::endl;
+  // std::cout << "c is a's parent" << t.is_parent(c, a) << std::endl;
+  // t.display("t");
+  // t.erase(a);
+  // t.display("t after erase");
+  // Tree<test> t_ = Tree<test>(t);
+  // t_.display("t_ copied");
+  // t_.insert(a);
+  // t_.display("t_ after insert");
+  // t.setValue(f, g);
+  // t.display("t");
+  // t_.display("t_");
+}
 
 // find first occurance location in leaf
 template <typename T>
@@ -658,11 +697,15 @@ HybridSchedule::HybridSchedule(Array<Operation> ops) {
 TVM_REGISTER_NODE_TYPE(HybridStageNode);
 TVM_REGISTER_NODE_TYPE(HybridScheduleNode);
 
+
+
 TVM_REGISTER_GLOBAL("ditto.CreateHybridSchedule").set_body_typed(create_hybrid_schedule);
 
 TVM_REGISTER_GLOBAL("ditto.HybridStageSetScope").set_body_method(&HybridStage::set_scope);
 
 TVM_REGISTER_GLOBAL("ditto.HybridStageBind").set_body_method(&HybridStage::bind);
+
+TVM_REGISTER_GLOBAL("ditto.Test").set_body_method(&HybridStage::Test);
 
 TVM_REGISTER_GLOBAL("ditto.HybridStageSplitByFactor")
     .set_body_typed([](HybridStage stage, IterVar parent, PrimExpr factor) {
