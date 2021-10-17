@@ -31,7 +31,7 @@ def register_test(func):
 def user_input():
     # a layer
     # conv->bn->relu->conv->bn->relu->conv->relu
-    N = 1
+    N = 12
     C = 256
     H = 56
     W = 56
@@ -80,8 +80,8 @@ def test1():
     #####################################
     # design a new compute
     #####################################
-    action = ac.design(layer_state)
-    
+    action = ac.design(layer)
+    return
     def compute():
         layer = user_input()
         layer_state = ac.create_layer_state(layer)        

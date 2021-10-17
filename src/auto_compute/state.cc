@@ -164,18 +164,18 @@ std::pair<te::Operation, te::Operation> OpStateNode::TransformIsolation(
 
     Map<tir::Var, Range> new_var_mapping =
         utils::InferRange(var_mapping, original_ranges);
-    std::unordered_map<const tir::VarNode *, tir::IterVarType> new_types =
-        utils::InferIterVarType(var_mapping, original_types);
+    // std::unordered_map<const tir::VarNode *, tir::IterVarType> new_types =
+    //     utils::InferIterVarType(var_mapping, original_types);
 
     Array<tir::IterVar> new_itervars;
     for (auto var : new_vars) {
       CHECK(new_var_mapping.count(var))
           << "Can't find the var " << var << " after infer range.\n";
-      CHECK(new_types.count(var.get()))
-          << "Can't find the var " << var << " after infer type.\n";
-      CHECK(new_types.at(var.get()) == type)
-          << "Expect type " << type << " but get " << new_types.at(var.get())
-          << ".\n";
+      // CHECK(new_types.count(var.get()))
+      //     << "Can't find the var " << var << " after infer type.\n";
+      // CHECK(new_types.at(var.get()) == type)
+      //     << "Expect type " << type << " but get " << new_types.at(var.get())
+      //     << ".\n";
       tir::IterVar new_iter(new_var_mapping.at(var), var, type, "");
       new_itervars.push_back(new_iter);
     }

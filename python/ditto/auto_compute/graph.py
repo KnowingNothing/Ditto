@@ -201,6 +201,13 @@ class LayerState(Object):
     
     def get_current_ops(self):
         return _ffi_api.LayerStateGetCurrentOps(self)
+    
+    def get_op_id_in_current_ops(self, op):
+        all_ops = self.get_current_ops()
+        for i, p in enumerate(all_ops):
+            if op == p:
+                return i
+        raise ValueError(f"op: {op} is not part of this layer: {self}.\n")
 
     def transform(self, k, spatial_forward, fspatial_backward,
                   reduce_forward, freduce_backward, explicit_transform=True):
