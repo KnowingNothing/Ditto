@@ -1,16 +1,23 @@
-// #include <hybrid/tree.h>
-// #include <hybrid/test.h>
+#include <hybrid/tree.h>
+#include <hybrid/test.h>
 
 
-// using namespace tvm;
-// using namespace te;
+using namespace tvm;
+using namespace te;
 
-// namespace ditto{
-// namespace hybrid{
-// std::ostream& operator <<(std::ostream& o, const test & t){
-//     o << t.operator->()->data;
-//     return o; 
-// }
+namespace ditto{
+namespace hybrid{
+
+std::string to_string__(IterVar i){
+    return i->var->name_hint.operator std::string();
+}
+
+std::string to_string__(test i){
+    return i.str();
+}
+
+}  // namespace hybrid
+}  // namespace ditto
 
 // /*!
 // * \brief class tree

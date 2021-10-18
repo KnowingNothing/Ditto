@@ -5,6 +5,7 @@
 #include <tvm/te/tensor_intrin.h>
 #include <tvm/tir/expr.h>
 #include <tvm/te/schedule.h>
+#include <hybrid/test.h>
 
 #include <algorithm>
 #include <iostream>
@@ -540,6 +541,11 @@ public:
         return;
     }
 };
+
+std::string to_string__(IterVar i);
+
+std::string to_string__(test i);
+
 template <typename T>
 class TreeUnitNode{
 public:
@@ -560,7 +566,9 @@ public:
         }
     }
 
-    std::string Value(){return data_ptr->str();}
+    std::string Value(){
+        return to_string__(*data_ptr);
+    }
     TreeUnitNode<T>* deepCopy(std::function<T(const T&)> const & f){
         TreeUnitNode<T> * node_ = new TreeUnitNode<T>(f(*data_ptr));
         if(pChild)

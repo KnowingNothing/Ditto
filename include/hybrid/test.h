@@ -8,8 +8,6 @@
 #include <tvm/tir/expr_functor.h>
 #include <tvm/tir/stmt_functor.h>
 
-#include <hybrid/tree.h>
-
 #include <functional>
 #include <string>
 #include <unordered_map>
