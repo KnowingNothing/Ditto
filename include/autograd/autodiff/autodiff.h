@@ -3,6 +3,7 @@
 #include <tvm/runtime/object.h>
 #include <tvm/tir/expr.h>
 #include <tvm/te/tensor.h>
+#include <tvm/tir/expr_functor.h>
 
 namespace ditto {
 using namespace tvm;

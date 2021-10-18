@@ -5,26 +5,7 @@ namespace ditto {
 
 namespace autograd {
 
-bool NameGenerator::has_name(std::string &name) {
-  return name_map_.count(name) != 0;
-}
-
-
-std::string NameGenerator::unique_name(const std::string hint) {
-  std::ostringstream oss;
-  oss.str("");
-  if (name_map_.find(hint) == name_map_.end()) {
-    name_map_[hint] = 0;
-  } else {
-    name_map_[hint]++;
-  }
-  
-  oss << hint.c_str();
-  oss << name_map_[hint];
-  std::string ret = oss.str();
-  return ret;
-}
-
+std::unordered_map<std::string, int> NameGenerator::name_map_;
 
 int SubstituteContext::find_bound(PrimExpr &expr) {
   CheckExprEqual cee;

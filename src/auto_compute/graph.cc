@@ -84,8 +84,7 @@ Array<te::Operation> LayerNode::GetAllOps() const {
 
 Layer::Layer(std::string name, Array<te::Operation> ops,
              Array<te::Tensor> inputs, Array<te::Tensor> weights,
-             Array<PrimExpr> const_scalars, Array<te::Tensor> const_tensors,
-             Array<te::Tensor> gradients) {
+             Array<PrimExpr> const_scalars, Array<te::Tensor> const_tensors) {
   auto node = make_object<LayerNode>();
   node->name = name;
   node->ops = ops;
@@ -93,7 +92,6 @@ Layer::Layer(std::string name, Array<te::Operation> ops,
   node->weights = weights;
   node->const_scalars = const_scalars;
   node->const_tensors = const_tensors;
-  node->gradients = gradients;
   data_ = node;
   CheckValidity();
 }
@@ -257,20 +255,16 @@ TVM_REGISTER_GLOBAL("ditto.auto_compute.Layer")
     .set_body_typed([](std::string name, Array<te::Operation> ops,
                        Array<te::Tensor> inputs, Array<te::Tensor> weights,
                        Array<PrimExpr> const_scalars,
-                       Array<te::Tensor> const_tensors,
-                       Array<te::Tensor> gradients) {
-      return Layer(name, ops, inputs, weights, const_scalars, const_tensors,
-                   gradients);
+                       Array<te::Tensor> const_tensors) {
+      return Layer(name, ops, inputs, weights, const_scalars, const_tensors);
     });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.MakeLayer")
     .set_body_typed([](std::string name, Array<te::Operation> ops,
                        Array<te::Tensor> inputs, Array<te::Tensor> weights,
                        Array<PrimExpr> const_scalars,
-                       Array<te::Tensor> const_tensors,
-                       Array<te::Tensor> gradients) {
-      return Layer(name, ops, inputs, weights, const_scalars, const_tensors,
-                   gradients);
+                       Array<te::Tensor> const_tensors) {
+      return Layer(name, ops, inputs, weights, const_scalars, const_tensors);
     });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerHash")

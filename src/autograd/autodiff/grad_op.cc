@@ -1927,10 +1927,10 @@ PrimExpr ensure_unique_var(const ComputeOpNode *op, SubstituteContext &context,
   PrimExpr body = op->body[idx];
   for (auto iter_var : op->axis) {
     std::string name_hint = iter_var->var->name_hint;
-    if (generator.has_name(name_hint)) {
-      LOG(FATAL) << "Find repeat axis iter_var name: " << name_hint;
-      throw;
-    }
+    // if (generator.has_name(name_hint)) {
+    //   LOG(FATAL) << "Find repeat axis iter_var name: " << name_hint;
+    //   throw;
+    // }
     std::string new_name = generator.unique_name(name_hint);
     context.index_names.push_back(new_name);
     Var new_var = Var(new_name);

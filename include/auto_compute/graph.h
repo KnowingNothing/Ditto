@@ -85,12 +85,10 @@ public:
    * \param weights The weights of this layer
    * \param const_scalars The constant scalars
    * \param const_tensors The constant tensors
-   * \param gradients The gradients of this layer
    */
   TVM_DLL Layer(std::string name, Array<te::Operation> ops,
                 Array<te::Tensor> inputs, Array<te::Tensor> weights,
-                Array<PrimExpr> const_scalars, Array<te::Tensor> const_tensors,
-                Array<te::Tensor> gradients);
+                Array<PrimExpr> const_scalars, Array<te::Tensor> const_tensors);
   /*!
    * \brief Self-checking if the given compute is valid.
    */
@@ -185,8 +183,6 @@ public:
   Array<PrimExpr> const_scalars;
   /*! \brief The const tensors of this layer, can by [] */
   Array<te::Tensor> const_tensors;
-  /*! \brief The gradients of this layer, can by [] */
-  Array<te::Tensor> gradients;
   /*! \brief The input layer tensors */
   std::vector<LayerTensor> input_layer_tensors_;
 
@@ -197,7 +193,6 @@ public:
     v->Visit("weights", &weights);
     v->Visit("const_scalars", &const_scalars);
     v->Visit("const_tensors", &const_tensors);
-    v->Visit("gradients", &gradients);
   }
   /*!
    * \brief Get the input tensors.

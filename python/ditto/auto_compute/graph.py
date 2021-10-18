@@ -51,10 +51,41 @@ class Layer(Object):
     def num_inputs(self):
         """Number of inputs required by this layer."""
         return len(self.inputs)
+    
+    def __str__(self) -> str:
+        ret = ""
+        ret += f"====== Layer({self.name}) ======\n"
+        ret += "inputs:\n"
+        for inp in self.inputs:
+            ret += str(inp)
+            ret += "\n"
+        ret += "weights:\n"
+        for w in self.weights:
+            ret += str(w)
+            ret += "\n"
+        ret += "---------------------------------\n"
+        layer_state = create_layer_state(self)
+        all_ops = layer_state.get_current_ops()
+        for op in all_ops:
+            if hasattr(op, "body"):
+                ret += op.name
+                ret += ":  "
+                ret += str(op.body[0])
+                ret += "\n"
+        ret += "---------------------------------\n"
+        ret += "outputs:\n"
+        for op in self.ops:
+            ret += str(op.output(0))
+            ret += "\n"
+        ret += "=================================\n"
+        return ret
+    
+    def __repr__(self) -> str:
+        return str(self)
 
 
 def layer(ops, inputs=None, weights=None, const_scalars=None,
-          const_tensors=None, gradients=None, requires_grad=False, name="layer"):
+          const_tensors=None, requires_grad=False, name="layer"):
     """Make a network layer through IR.
 
     Parameters
@@ -74,12 +105,7 @@ def layer(ops, inputs=None, weights=None, const_scalars=None,
     const_tensors : optional List[te.Tensor]
         The list of constant tensors.
 
-    gradients : optional List[te.Tensor]
-        The list of gradients.
-
     requires_grad : optional bool
-        If gradients is None and requires_grad is set True, autodiff is used
-        to calculate the gradients for this layer.
 
     name: str
 
@@ -113,14 +139,8 @@ def layer(ops, inputs=None, weights=None, const_scalars=None,
         const_scalars = []
     if const_tensors is None:
         const_tensors = []
-    if gradients is None:
-        if requires_grad:
-            # TODO: integrate autodiff into this function
-            raise RuntimeError("Currently not support autodiff in MakeLayer")
-        else:
-            gradients = []
     return _ffi_api.MakeLayer(name, ops, inputs, weights,
-                              const_scalars, const_tensors, gradients)
+                              const_scalars, const_tensors)
 
 
 def create_layer_state(layer):

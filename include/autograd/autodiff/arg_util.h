@@ -304,11 +304,26 @@ class CheckExprEqual : public ExprFunctor<bool(const PrimExpr&, const PrimExpr&)
 
 class NameGenerator {
  public:
-  std::unordered_map<std::string, int> name_map_;
+  static std::unordered_map<std::string, int> name_map_;
 
-  bool has_name(std::string& name);
+  static bool has_name(std::string& name) {
+    return NameGenerator::name_map_.count(name) != 0;
+  }
 
-  std::string unique_name(const std::string hint);
+  static std::string unique_name(const std::string hint) {
+    std::ostringstream oss;
+    oss.str("");
+    if (NameGenerator::name_map_.find(hint) == NameGenerator::name_map_.end()) {
+      NameGenerator::name_map_[hint] = 0;
+    } else {
+      NameGenerator::name_map_[hint]++;
+    }
+    
+    oss << hint.c_str();
+    oss << NameGenerator::name_map_[hint];
+    std::string ret = oss.str();
+    return ret;
+  }
 };
 
 class SubstituteContext {

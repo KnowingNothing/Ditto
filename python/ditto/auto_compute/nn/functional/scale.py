@@ -21,5 +21,5 @@ def channel_scale_nchw(x, alpha, beta):
         x.shape,
         lambda n, c, h, w:
             x[n, c, h, w] * alpha[c] + beta[c],
-        name="channel_scalue_nchw"
+        name="channel_scale_nchw"
     )

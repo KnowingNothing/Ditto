@@ -380,8 +380,6 @@ OpState LayerStateNode::GetOpState(te::Operation op) const {
 LayerState::LayerState(Layer layer) {
   auto node = make_object<LayerStateNode>();
   node->layer = layer;
-  CHECK(!layer->gradients.size())
-      << "Please set the gradients after compute transformation.\n";
   Array<te::Operation> ops = layer->GetAllOps();
   for (auto op : ops) {
     node->all_ops.push_back(op);
@@ -578,7 +576,7 @@ Layer LayerStateNode::MakeCompute(Array<LayerTensor> inputs) {
   }
 
   return Layer(layer->name, new_ops, new_inputs, new_weights,
-               layer->const_scalars, new_const_tensors, layer->gradients);
+               layer->const_scalars, new_const_tensors);
 }
 
 Array<te::Operation> LayerStateNode::GetCurrentOps() {
