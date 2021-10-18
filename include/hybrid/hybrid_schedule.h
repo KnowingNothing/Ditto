@@ -558,6 +558,53 @@ class HybridScheduleNode : public Object {
  */
 inline HybridSchedule create_hybrid_schedule(Array<Operation> ops) { return HybridSchedule(ops); }
 
+
+/*!
+ * \brief Slice.
+ */
+class SliceNode : public IterVarRelationNode {
+ public:
+  /*! \brief The old domain */
+  Array<IterVar> old;
+  /*! \brief The left domain */
+  Array<IterVar> left;
+  /*! \brief The right domain */
+  Array<IterVar> right;
+  /*! \brief The slice point */
+  IterVar slicept;
+  /*! \brief The pin point */
+  IterVar pinpt;
+  /*! \brief The slice mode */
+  std::string mode;
+  /*! \brief The slice factor */
+  PrimExpr factor;
+
+  void VisitAttrs(AttrVisitor* v) {
+    v->Visit("old", &old);
+    v->Visit("left", &left);
+    v->Visit("right", &right);
+    v->Visit("slicept", &slicept);
+    v->Visit("pinpt", &pinpt);
+    v->Visit("mode", &mode);
+    v->Visit("factor", &factor);
+  }
+
+  static constexpr const char* _type_key = "Slice";
+  TVM_DECLARE_FINAL_OBJECT_INFO(SliceNode, IterVarRelationNode);
+};
+
+/*!
+ * \brief Managed reference to SliceNode
+ * \sa SliceNode
+ */
+class Slice : public IterVarRelation {
+ public:
+  TVM_DLL Slice(Array<IterVar> old, Array<IterVar> left, Array<IterVar> right, IterVar slicept, IterVar pinpt, std::string mode, PrimExpr factor);
+
+  TVM_DEFINE_OBJECT_REF_METHODS(Slice, IterVarRelation, SliceNode);
+};
+
+
 // implementations
 inline const HybridStageNode* HybridStage::operator->() const { return static_cast<const HybridStageNode*>(get()); }
 inline HybridStageNode* HybridStage::operator->() { return static_cast<HybridStageNode*>(get_mutable()); }

@@ -835,10 +835,22 @@ HybridSchedule::HybridSchedule(Array<Operation> ops) {
   }
 }
 
+Slice::Slice(Array<IterVar> old, Array<IterVar> left, Array<IterVar> right, IterVar slicept, IterVar pinpt, std::string mode, PrimExpr factor) {
+  auto n = make_object<SliceNode>();
+  n->old = old;
+  n->left = left;
+  n->right = right;
+  n->slicept = slicept;
+  n->pinpt = pinpt;
+  n->mode = mode;
+  n->factor = factor;
+  data_ = std::move(n);
+}
 
 
 TVM_REGISTER_NODE_TYPE(HybridStageNode);
 TVM_REGISTER_NODE_TYPE(HybridScheduleNode);
+TVM_REGISTER_NODE_TYPE(SliceNode);
 
 TVM_REGISTER_GLOBAL("ditto.Display").set_body_method(&HybridStage::display);
 

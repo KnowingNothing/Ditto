@@ -9,6 +9,9 @@ from tvm.tir import IterVar, Buffer
 from tvm.te import tensor as _tensor
 from . import _ffi_api
 
+@tvm._ffi.register_object
+class Slice(Object):
+    """Slice operation on axis."""
 
 def create_hybrid_schedule(ops):
     """Create a hybrid_schedule for list of ops
