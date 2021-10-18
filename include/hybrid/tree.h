@@ -123,6 +123,12 @@ class Tree: public ObjectRef{
     *   \brief erase
     *   \param  v value to erase
     */
+    /*!
+    *   \brief replace the old node with the new node
+    */
+    void replace(const T & old, const T & now){
+        operator->() -> replace(old, now);
+    }
     void erase(const T& v){operator->()->erase(v);}
     /*!
     * \brief display the tree structure 
@@ -427,6 +433,25 @@ public:
             delete tmp;
         }
         delete ptr;
+    }
+    void replace(const T & old, const T & now){
+        TreeUnitNode<T> * self = getUnit(old);
+        TreeUnitNode<T> * parent = Parent(self);
+        ICHECK(self != NULL) << "the old node not in tree.";
+        ICHECK(getUnit(now) == NULL) << " the new node is in the tree.";
+        TreeUnitNode<T>* newUnit = new TreeUnitNode<T> (now);
+        if(parent->pChild == self)
+            parent -> pChild = newUnit;
+        else{
+            TreeUnitNode<T> * tmp = parent->pChild;
+            while(tmp -> pSibling != self){
+                tmp = tmp->pSibling;
+            }
+            tmp->pSibling = newUnit;
+        }            
+        newUnit->pChild = self->pChild;
+        newUnit->pSibling = self->pSibling;
+        delete self;
     }
     bool isEmpty(){return base->pChild == NULL;}
     /*!
