@@ -19,6 +19,7 @@ namespace hybrid{
 // for test for tree
 void HybridStage::Test(){
   test a(1), b(2), c(3), d(4), e(5), f(6), g(7);
+
   Tree<test> t;
   t.insertChild(a);
   t.insertChild(a, b);
@@ -26,10 +27,16 @@ void HybridStage::Test(){
   t.insertChild(b, d);
   t.insertChild(b, e);
   t.insertChild(e, f);
+
+  // std::cout << "a is b' s imm parent? " <<   t.is_immediate_parent(a, b) << std::endl; 
+  // std::cout << "c is a' s imm parent? " <<   t.is_immediate_parent(c, a) << std::endl; 
+  // std::cout << "num of a' s child" << t.count_children(a) << std::endl;
+  // std::cout << "test a node not in tree" << t.count_children(g) << std::endl;
   t.display("before replace");
   t.replace(f, g);
   t.display("after replace");
   Tree<test> b_subTree = t.getSubTree(b);
+  std::cout << "parent correct after subTree ? " << t.check_parent(false) << std::endl;
   b_subTree.display("b_subTree");
   Tree<test> t_(b_subTree);
   t_.display("t_");
@@ -139,8 +146,6 @@ HybridStage::HybridStage(Operation op) {
       n->leaf_iter_vars_tree.insert(n->leaf_iter_vars[i-1], n->leaf_iter_vars[i]);
     }
   }
-  n->leaf_iter_vars_tree.display(n->op->name);
-
   data_ = std::move(n);
 }
 
@@ -161,6 +166,72 @@ HybridStage HybridStage::GetAttachSpec() const {
 HybridStage& HybridStage::set_scope(std::string scope) {  // NOLINT(*)
   (*this)->scope = scope;
   return *this;
+}
+
+HybridStage& HybridStage::slice(
+  TreeUnitNode<IterVar>* slicept, 
+  TreeUnitNode<IterVar>* pinpt, 
+  PrimExpr factor, 
+  std::string mode, 
+  Array<IterVar> *left, 
+  Array<IterVar> *right
+){
+  return *this;
+}
+
+HybridStage& HybridStage::slice(
+  IterVar slicept, 
+  IterVar pinpt, 
+  PrimExpr factor, 
+  std::string mode, 
+  Array<IterVar> *left, 
+  Array<IterVar> *right
+){
+  Tree<IterVar> & tree = (*this)->leaf_iter_vars_tree;
+  return slice(tree.getUnit(slicept), tree.getUnit(pinpt), factor, mode, left, right);
+  /*
+  deepcopy(f)
+  left,right = pinpt, deepCopy(f) * 2
+  all vars push back subTree(slice pt)
+  leaf vars . remove (pinpt)
+  while (slicept. parent is not pinpt) {
+    parent_l, parent_r = slicept .parent . deepcopy() * 2
+    left . setparent (slice pt . parent)
+    right . setparent (slice pt . parent)
+    delete (slicept .parent)
+    slice pt = slice pt. parent
+    all vars push back (parent_l)
+    leaf vars push back (paraent_l, parent_r )
+  }
+  pinpt insert child(left, right)
+  */
+ return *this;
+  HybridStageNode* self = operator->();
+  Array<IterVar>& all_vars = self->all_iter_vars;
+  Array<IterVar>& leaf_vars = self->leaf_iter_vars;
+  Tree<IterVar>& leaf_vars_tree = self->leaf_iter_vars_tree;
+  TreeUnitNode<IterVar> * slicept_ = leaf_vars_tree.getUnit(slicept);
+  TreeUnitNode<IterVar> * pinpt_ = leaf_vars_tree.getUnit(pinpt);
+  // checking
+  ICHECK(leaf_vars_tree.is_parent(pinpt, slicept)) << "slice pt not in the subtree of the pin point.";
+  Tree<IterVar> subTree = leaf_vars_tree.getSubTree(slicept);
+  Tree<IterVar> l(subTree, [](const IterVar & e)->IterVar{
+      return IterVar(Range(), e->var.copy_with_suffix(".left"), e->iter_type);
+  });
+  Tree<IterVar> r(subTree, [](const IterVar & e)->IterVar{
+      return IterVar(Range(), e->var.copy_with_suffix(".left"), e->iter_type);
+  });
+}
+
+HybridStage& HybridStage::slice(
+  IterVar slicept, 
+  PrimExpr factor, 
+  std::string mode, 
+  Array<IterVar> *left, 
+  Array<IterVar> *right
+){
+  Tree<IterVar> & tree = (*this)->leaf_iter_vars_tree;
+  return slice(tree.getUnit(slicept), tree.getBase(), factor, mode, left, right);
 }
 
 HybridStage& HybridStage::compute_at(HybridStage parent, IterVar scope) {  // NOLINT(*)
@@ -235,12 +306,16 @@ HybridStage& HybridStage::env_threads(Array<IterVar> threads) {
   ICHECK_EQ(self->env_threads.size(), 0U) << "Already set env_threads";
   Array<IterVar>& leaf_vars = self->leaf_iter_vars;
   Array<IterVar>& all_vars = self->all_iter_vars;
+  Tree<IterVar>& leaf_vars_tree = self->leaf_iter_vars_tree;
   std::vector<ObjectRef> temp;
   for (IterVar iv : threads) {
     temp.push_back(iv);
   }
   leaf_vars.insert(leaf_vars.begin(), temp.begin(), temp.end());
   all_vars.insert(all_vars.end(), temp.begin(), temp.end());
+  for(size_t i = 0; i < temp.size(); i++){
+    leaf_vars_tree.insert(leaf_vars[temp.size() - i - 1]);
+  }
   self->env_threads = threads;
   return *this;
 }
@@ -281,19 +356,26 @@ HybridStage& HybridStage::fuse(IterVar outer, IterVar inner, IterVar* p_target) 
 
   Array<IterVar>& all_vars = self->all_iter_vars;
   Array<IterVar>& leaf_vars = self->leaf_iter_vars;
+  Tree<IterVar>& leaf_vars_tree = self->leaf_iter_vars_tree;
 
   size_t pos_inner = FindLeafVar(all_vars.GetArrayNode(), leaf_vars.GetArrayNode(), inner);
   size_t pos_outer = FindLeafVar(all_vars.GetArrayNode(), leaf_vars.GetArrayNode(), outer);
-  if (pos_inner + 1 == pos_outer) {
+  if(leaf_vars_tree.is_immediate_parent(inner, outer)){
     std::swap(outer, inner);
     std::swap(pos_inner, pos_outer);
   }
-  ICHECK_EQ(pos_inner, pos_outer + 1)
+  ICHECK(leaf_vars_tree.is_immediate_parent(outer, inner))
       << "Can only fuse iterations that are consecutive between each other";
+  ICHECK_EQ(leaf_vars_tree.count_children(outer), 1)
+      << "Can only fuse iterations that have only 1 child iter_var";
   self->relations.push_back(Fuse(outer, inner, fused));
   all_vars.push_back(fused);
-  leaf_vars.erase(leaf_vars.begin() + pos_outer, leaf_vars.begin() + pos_inner + 1);
-  leaf_vars.insert(leaf_vars.begin() + pos_outer, fused);
+  leaf_vars.erase(leaf_vars.begin() + pos_outer, leaf_vars.begin() + pos_outer + 1);
+  pos_inner = FindLeafVar(all_vars.GetArrayNode(), leaf_vars.GetArrayNode(), inner);
+  leaf_vars.erase(leaf_vars.begin() + pos_inner, leaf_vars.begin() + pos_inner + 1);
+  leaf_vars.insert(leaf_vars.begin() + pos_inner, fused);
+  leaf_vars_tree.erase(inner);
+  leaf_vars_tree.replace(outer, fused);
   *p_target = fused;
   return *this;
 }
@@ -314,8 +396,10 @@ HybridStage& HybridStage::fuse(const Array<IterVar>& axes, IterVar* p_target) { 
     self->relations.push_back(Singleton(singleton));
     Array<IterVar>& all_vars = self->all_iter_vars;
     Array<IterVar>& leaf_vars = self->leaf_iter_vars;
+    Tree<IterVar>& leaf_vars_tree = self->leaf_iter_vars_tree;
     all_vars.push_back(singleton);
     leaf_vars.insert(leaf_vars.begin(), singleton);
+    leaf_vars_tree.insert(singleton);
     *p_target = singleton;
   }
   return *this;
@@ -334,8 +418,11 @@ HybridStage& HybridStage::reorder(const Array<IterVar>& order) {  // NOLINT(*)
   }
   ArrayNode* all_vars = self->all_iter_vars.CopyOnWrite();
   ArrayNode* leaf_vars = self->leaf_iter_vars.CopyOnWrite();
+  Tree<IterVar>& leaf_vars_tree = self->leaf_iter_vars_tree;
+
   std::vector<size_t> pos;
 
+  // reorder on array
   for (size_t i = 0; i < order.size(); ++i) {
     pos.push_back(FindLeafVar(all_vars, leaf_vars, order[i]));
   }
@@ -347,8 +434,46 @@ HybridStage& HybridStage::reorder(const Array<IterVar>& order) {  // NOLINT(*)
   for (size_t i = 0; i < pos.size(); ++i) {
     leaf_vars->SetItem(pos[i], temp[i]);
   }
+
+  // reorder on tree
+  std::vector<int> children_count;
+  for (size_t i = 0; i < order.size(); i++) {
+    children_count.push_back(0);
+    for(size_t j = 0; j < order.size(); j++)
+      if(i != j && leaf_vars_tree.is_parent(order[i], order[j])) 
+        children_count[i]++;
+  }
+  for (size_t i = 0; i < order.size(); i++)
+    ICHECK_EQ(std::count(children_count.begin(), children_count.end(), i), 1)
+      << "Reorder must perform on a single path on IterVar tree.";
+  size_t deepest = 0;
+  for (size_t i = 0; i < order.size(); i++)
+    if(children_count[i] < children_count[deepest]) deepest = i;
+  size_t shallowest = 0;
+  for (size_t i = 0; i < order.size(); i++)
+    if(children_count[i] > children_count[shallowest]) shallowest = i;
+  TreeUnitNode<IterVar>* ptr = leaf_vars_tree.getUnit(order[deepest]);
+  while(!(*(ptr->data_ptr)).same_as(order[shallowest])){
+    ptr = leaf_vars_tree.getUnit(*(leaf_vars_tree.get_parent_ptr(*(ptr->data_ptr))));
+    ICHECK_EQ(leaf_vars_tree.count_children(*(ptr->data_ptr)), 1)
+      << "Reorder must perform on a path without branches.";
+  }
+  std::vector<TreeUnitNode<IterVar>*> unit_ptr;
+  for (size_t i = 0; i < order.size(); i++) {
+    unit_ptr.push_back(leaf_vars_tree.getUnit(order[i]));
+  }
+  std::vector<IterVar*> iter_ptr;
+  for (size_t i = 0; i < order.size(); i++) {
+    iter_ptr.push_back(unit_ptr[i]->data_ptr);
+  }
+  for (size_t i = 0; i < order.size(); i++) {
+    unit_ptr[i]->data_ptr = iter_ptr[order.size()-children_count[i]-1];
+  }
+
   return *this;
 }
+
+
 // ** change **
 HybridStage& HybridStage::tile(IterVar x_parent, IterVar y_parent, PrimExpr x_factor, PrimExpr y_factor,
                    IterVar* p_x_outer, IterVar* p_y_outer, IterVar* p_x_inner, IterVar* p_y_inner) {
@@ -710,6 +835,8 @@ HybridSchedule::HybridSchedule(Array<Operation> ops) {
   }
 }
 
+
+
 TVM_REGISTER_NODE_TYPE(HybridStageNode);
 TVM_REGISTER_NODE_TYPE(HybridScheduleNode);
 
@@ -729,6 +856,21 @@ TVM_REGISTER_GLOBAL("ditto.HybridStageSplitByFactor")
       stage.split(parent, factor, &outer, &inner);
       return Array<IterVar>({outer, inner});
     });
+
+TVM_REGISTER_GLOBAL("ditto.HybridStageSliceByMid")
+    .set_body_typed([](HybridStage stage, IterVar slicept, IterVar pinpt, PrimExpr factor, std::string mode) {
+      Array<IterVar> left, right;
+      stage.slice(slicept, pinpt, factor, mode, &left, &right);
+      return Array<Array<IterVar> >({left, right});
+    });
+
+TVM_REGISTER_GLOBAL("ditto.HybridStageSliceAtRoot")
+    .set_body_typed([](HybridStage stage, IterVar slicept, PrimExpr factor, std::string mode) {
+      Array<IterVar> left, right;
+      stage.slice(slicept, factor, mode, &left, &right);
+      return Array<Array<IterVar> >({left, right});
+    });
+
 
 TVM_REGISTER_GLOBAL("ditto.HybridStageSplitByNParts")
     .set_body_typed([](HybridStage stage, IterVar parent, PrimExpr nparts) {

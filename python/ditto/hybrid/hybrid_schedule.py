@@ -171,6 +171,11 @@ class HybridSchedule(Object):
 class HybridStage(Object):
     """A HybridStage represents schedule for one operation."""
 
+    def slice(self, slicept, mid, pinpt = None, mode = "serial"):
+        if pinpt == None:
+            return _ffi_api.HybridStageSliceAtRoot(self, slicept, mid, mode)
+        return _ffi_api.HybridStageSliceByMid(self, slicept, pinpt, mid, mode)
+
     def split(self, parent, factor=None, nparts=None):
         """Split the stage either by factor providing outer scope, or both
 

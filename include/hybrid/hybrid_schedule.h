@@ -45,6 +45,12 @@ class HybridStage : public ObjectRef {
   void Test();
   void display(std::string);
   /*!
+  * \brief slice the stage into array.
+  * \param slicept the itervar to slice. 
+  * \param pinpoint the root to insert the sliced tree.
+  */
+  TVM_DLL HybridStage& slice(IterVar slicept, IterVar pinpt, PrimExpr factor);
+  /*!
    * \brief set the memory scope of the stage
    * \param scope The memory scope.
    */
@@ -222,6 +228,33 @@ class HybridStage : public ObjectRef {
    * \return reference to self.
    */
   TVM_DLL HybridStage& double_buffer();  // NOLINT(*)
+  
+  TVM_DLL HybridStage& slice(
+    TreeUnitNode<IterVar>* slicept, 
+    TreeUnitNode<IterVar>* pinpt, 
+    PrimExpr factor, 
+    std::string mode, 
+    Array<IterVar> *left, 
+    Array<IterVar> *right
+  );
+  
+  TVM_DLL HybridStage& slice(
+    IterVar slicept, 
+    IterVar pinpt, 
+    PrimExpr factor, 
+    std::string mode, 
+    Array<IterVar> *left, 
+    Array<IterVar> *right
+  );
+  
+  TVM_DLL HybridStage& slice(
+    IterVar slicept, 
+    PrimExpr factor, 
+    std::string mode, 
+    Array<IterVar> *left, 
+    Array<IterVar> *right
+  );
+
   /*!
    * \brief whether the stage has been scheduled.
    * \return whether the stage has been scheduled.
