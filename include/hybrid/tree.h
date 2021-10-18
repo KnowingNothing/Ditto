@@ -165,6 +165,18 @@ class Tree: public ObjectRef{
         return operator->()->is_parent(parent, child);
     }
     /*!
+    *   \brief check whether parent is an immediate parent of child.
+    */
+    bool is_immediate_parent(const T& parent, const T& child){
+        return true;
+    }
+    /*!
+    *   \brief count the number of children.
+    */
+    int count_children(const T& parent){
+        return 1;
+    }
+    /*!
     * \brief access the internal node container
     * \return the pointer to the internal node container
     */
@@ -372,7 +384,7 @@ public:
             return NULL;
         }
         TreeUnitNode<T>*parent = Parent(pos);
-        if(parent->pChlid == pos){
+        if(parent->pChild == pos){
             TreeUnitNode<T>*lastChild = pos->pChild;
             if (lastChild == NULL)
                 parent->pChild = pos->pSibling;
