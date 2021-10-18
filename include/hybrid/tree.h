@@ -168,13 +168,13 @@ class Tree: public ObjectRef{
     *   \brief check whether parent is an immediate parent of child.
     */
     bool is_immediate_parent(const T& parent, const T& child){
-        return true;
+        return operator->()->is_immediate_parent(parent, child);
     }
     /*!
     *   \brief count the number of children.
     */
     int count_children(const T& parent){
-        return 1;
+        return operator->()->count_child(parent);
     }
     /*!
     * \brief access the internal node container
@@ -254,6 +254,29 @@ public:
         ICHECK(ptr) << "root node not in tree";
         TreeBaseNode<T> subTree(ptr, 1);
         return subTree;
+    }
+    TreeBaseNode<T> getSubTree(TreeUnitNode<T> * root_){
+        TreeBaseNode<T> subTree(root_, 1);
+        return subTree;
+    }
+    bool is_immediate_parent(const T & parent, const T & child){
+        TreeUnitNode<T> * child_ptr = getUnit(child);
+        ICHECK(child_ptr) << "child not in the tree";
+        TreeUnitNode<T> * p = Parent(child_ptr);
+        TreeUnitNode<T> * p_ = getUnit(parent);
+        ICHECK(p_) << "parent not in the tree";
+        return p_ == p;
+    }
+    int count_child(const T & parent){
+        TreeUnitNode<T> * ptr = getUnit(parent);
+        ICHECK(ptr) << "parent node not in the tree";
+        TreeUnitNode<T> * child = ptr -> pChild;
+        int ret = 0;
+        while(child){
+            child = child->pSibling;
+            ret += 1;
+        }
+        return ret;
     }
     /*!
     *   \brief check whether child is in the subtree of parent.  
