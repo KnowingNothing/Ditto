@@ -133,7 +133,7 @@ class Tree: public ObjectRef{
     /*!
     * \brief display the tree structure 
     */
-    void display(std::string name = ""){operator->()->display(name);}
+    void display(std::string name = "", std::string attr = ""){operator->()->display(name, attr);}
     /*!
     *   \brief get the SubTree, note that this use the old tree, not a new one. 
     *   \param t, the root node on the tree
@@ -541,9 +541,10 @@ public:
             }
         }
     }
-    void display(std::string name = ""){
+    void display(std::string name = "", std::string attr = ""){
         std::cout <<"--------------display begin----------------\n";
-        std::cout << "name: " << name << std::endl;
+        std::cout << "opName: " << name << std::endl;
+        std::cout << "decription:   " << attr << std::endl;
         std::cout << "is_subTree: " << is_subTree << std::endl;
         std::queue<TreeUnitNode<T> *> q;
         q.push(base);

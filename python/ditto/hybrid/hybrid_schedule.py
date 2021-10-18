@@ -10,7 +10,6 @@ from tvm.te import tensor as _tensor
 from . import _ffi_api
 
 
-
 def create_hybrid_schedule(ops):
     """Create a hybrid_schedule for list of ops
 
@@ -226,6 +225,8 @@ class HybridStage(Object):
     def test(self):
         return _ffi_api.Test(self)
 
+    def display(self, s = ""):
+        return _ffi_api.Display(self, s)
 
     def set_scope(self, scope):
         """Set the thread scope of this stage

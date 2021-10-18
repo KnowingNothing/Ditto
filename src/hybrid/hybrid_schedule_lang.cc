@@ -26,7 +26,9 @@ void HybridStage::Test(){
   t.insertChild(b, d);
   t.insertChild(b, e);
   t.insertChild(e, f);
-  t.display("t");
+  t.display("before replace");
+  t.replace(f, g);
+  t.display("after replace");
   Tree<test> b_subTree = t.getSubTree(b);
   b_subTree.display("b_subTree");
   Tree<test> t_(b_subTree);
@@ -53,7 +55,9 @@ void HybridStage::Test(){
   // t.display("t");
   // t_.display("t_");
 }
-
+void HybridStage::display(std::string s){
+  (*this)->leaf_iter_vars_tree.display((*this)->op->name, s);
+}
 // find first occurance location in leaf
 template <typename T>
 size_t FindNodeRef(ArrayNode* array_node, const T& v) {
@@ -85,7 +89,7 @@ DataType MatchDataType(std::vector<DataType> dtypes) {
   }
   return DataType::Int(max_bits);
 }
-
+// ** changed, need testing.
 void SplitHelper(HybridStageNode* self, IterVar parent, PrimExpr factor, PrimExpr nparts,
                  IterVar* p_outer, IterVar* p_inner) {
   // Check if split is valid.
@@ -99,6 +103,7 @@ void SplitHelper(HybridStageNode* self, IterVar parent, PrimExpr factor, PrimExp
   // The splits
   Array<IterVar>& all_vars = self->all_iter_vars;
   Array<IterVar>& leaf_vars = self->leaf_iter_vars;
+  Tree<IterVar>& leaf_vars_tree = self->leaf_iter_vars_tree;
   size_t pos = FindLeafVar(all_vars.GetArrayNode(), leaf_vars.GetArrayNode(), parent);
   self->relations.push_back(Split(parent, outer, inner, factor, nparts));
   // add vars to all vars
@@ -108,8 +113,10 @@ void SplitHelper(HybridStageNode* self, IterVar parent, PrimExpr factor, PrimExp
   leaf_vars.erase(leaf_vars.begin() + pos);
   leaf_vars.insert(leaf_vars.begin() + pos, inner);
   leaf_vars.insert(leaf_vars.begin() + pos, outer);
+  leaf_vars_tree.replace(parent, outer);
+  leaf_vars_tree.insert(outer, inner);
 }
-
+// spd modify
 HybridStage::HybridStage(Operation op) {
   auto n = make_object<HybridStageNode>();
   n->op = op;
@@ -125,6 +132,15 @@ HybridStage::HybridStage(Operation op) {
   } else {
     n->leaf_iter_vars = clean;
   }
+
+  if(n->leaf_iter_vars.size()>0){
+    n->leaf_iter_vars_tree.insert(n->leaf_iter_vars[0]);
+    for(size_t i = 1; i < n->leaf_iter_vars.size(); i++) {
+      n->leaf_iter_vars_tree.insert(n->leaf_iter_vars[i-1], n->leaf_iter_vars[i]);
+    }
+  }
+  n->leaf_iter_vars_tree.display(n->op->name);
+
   data_ = std::move(n);
 }
 
@@ -333,7 +349,7 @@ HybridStage& HybridStage::reorder(const Array<IterVar>& order) {  // NOLINT(*)
   }
   return *this;
 }
-
+// ** change **
 HybridStage& HybridStage::tile(IterVar x_parent, IterVar y_parent, PrimExpr x_factor, PrimExpr y_factor,
                    IterVar* p_x_outer, IterVar* p_y_outer, IterVar* p_x_inner, IterVar* p_y_inner) {
   split(x_parent, x_factor, p_x_outer, p_x_inner);
@@ -697,7 +713,7 @@ HybridSchedule::HybridSchedule(Array<Operation> ops) {
 TVM_REGISTER_NODE_TYPE(HybridStageNode);
 TVM_REGISTER_NODE_TYPE(HybridScheduleNode);
 
-
+TVM_REGISTER_GLOBAL("ditto.Display").set_body_method(&HybridStage::display);
 
 TVM_REGISTER_GLOBAL("ditto.CreateHybridSchedule").set_body_typed(create_hybrid_schedule);
 

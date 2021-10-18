@@ -43,6 +43,7 @@ class HybridStage : public ObjectRef {
    */
   inline HybridStageNode* operator->();
   void Test();
+  void display(std::string);
   /*!
    * \brief set the memory scope of the stage
    * \param scope The memory scope.
@@ -187,7 +188,7 @@ class HybridStage : public ObjectRef {
    */
   TVM_DLL HybridStage& parallel(IterVar var);  // NOLINT(*)
   /*!
-   * \brief Annotate the iteration with pragma
+   * \brief Annotate the iteration with pragma; no change needed
    *
    * \param var The axis to be parallelized.
    * \param pragma_type The pragma type.
@@ -198,7 +199,7 @@ class HybridStage : public ObjectRef {
   TVM_DLL HybridStage& pragma(IterVar var, const std::string& pragma_type,
                         const PrimExpr& pragma_value = PrimExpr());  // NOLINT(*)
   /*!
-   * \brief Fetch data in advance.
+   * \brief Fetch data in advance. not need change
    * \param domain the tensor to be prefetched
    * \param var the iteration point at which to apply prefetching
    * \param offset the number of iterations be to fetched in advance
