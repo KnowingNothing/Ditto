@@ -1,6 +1,6 @@
 from collections import namedtuple, deque
 
-from .graph import create_layer_state
+from .state import create_layer_state
 from .action.record import TransformApplier
 from .action import GroupingAction, NopAction
 

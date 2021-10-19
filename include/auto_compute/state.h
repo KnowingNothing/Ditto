@@ -163,7 +163,7 @@ public:
   Array<tir::IterVar> GetReduceAxis() const;
 
   void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("op", &op); }
-  
+
   /*!
    * \brief Transform one op and isolate the correction op.
    * \param spatial_vars
@@ -173,10 +173,10 @@ public:
    * \param reduce_forward Affine expressions of reduce vars
    * \param reduce_backward Reverse reduce transformation
    */
-  std::pair<te::Operation, te::Operation>
-  TransformIsolation(Array<tir::Var> spatial_vars, Array<PrimExpr> spatial_forward,
-            Array<PrimExpr> spatial_backward, Array<tir::Var> reduce_vars,
-            Array<PrimExpr> reduce_forward, Array<PrimExpr> reduce_backward);
+  std::pair<te::Operation, te::Operation> TransformIsolation(
+      Array<tir::Var> spatial_vars, Array<PrimExpr> spatial_forward,
+      Array<PrimExpr> spatial_backward, Array<tir::Var> reduce_vars,
+      Array<PrimExpr> reduce_forward, Array<PrimExpr> reduce_backward);
 
   /*!
    * \brief Transform input access.
@@ -278,34 +278,80 @@ public:
   TVM_DEFINE_OBJECT_REF_COW_METHOD(LayerStateNode);
 };
 
+// /*!
+//  * \brief A base class for block stage.
+//  */
+// class BlockStateNode : public Object {
+// public:
+//   /*! \brief The block */
+//   Block block;
+//   std::unordered_map<Layer, LayerState> layer_states;
+//   std::vector<Layer> all_layers;
+//   std::unordered_map<Layer, std::vector<Layer>> read_graph;
+//   std::unordered_map<Layer, std::unordered_set<Layer>> feed_graph;
+
+//   void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("block", &block); }
+
+//   static constexpr const char *_type_key = "ditto.auto_compute.BlockState";
+//   TVM_DECLARE_BASE_OBJECT_INFO(BlockStateNode, Object);
+// };
+
+// class BlockState : public ObjectRef {
+// public:
+//   /*!
+//    * \brief The constructor.
+//    * \param block The block
+//    */
+//   TVM_DLL BlockState(Block block);
+
+//   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(BlockState, ObjectRef,
+//   BlockStateNode); TVM_DEFINE_OBJECT_REF_COW_METHOD(BlockStateNode);
+// };
+
 /*!
- * \brief A base class for block stage.
+ * \brief A base class for graph stage.
  */
-class BlockStateNode : public Object {
+class GraphStateNode : public Object {
 public:
-  /*! \brief The block */
-  Block block;
+  /*! \brief The graph */
+  Graph graph;
   std::unordered_map<Layer, LayerState> layer_states;
   std::vector<Layer> all_layers;
-  std::unordered_map<Layer, std::vector<Layer>> read_graph;
-  std::unordered_map<Layer, std::unordered_set<Layer>> feed_graph;
+  std::unordered_map<Layer, std::vector<LayerTensor>> consume_graph;
+  std::unordered_map<Layer, std::vector<LayerTensor>> produce_graph;
 
-  void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("block", &block); }
+  void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("graph", &graph); }
 
-  static constexpr const char *_type_key = "ditto.auto_compute.BlockState";
-  TVM_DECLARE_BASE_OBJECT_INFO(BlockStateNode, Object);
+  /*!
+   * \brief Get layer state.
+   * \param layer
+   */
+  LayerState GetLayerState(Layer layer) const;
+
+  /*!
+   * \brief Make the transformed compute.
+   * \param inputs The input tensors
+   */
+  Graph MakeCompute(Array<LayerTensor> inputs);
+  /*!
+   * \brief Get the current ops in this layer state.
+   */
+  Array<Layer> GetCurrentLayers();
+
+  static constexpr const char *_type_key = "ditto.auto_compute.GraphState";
+  TVM_DECLARE_BASE_OBJECT_INFO(GraphStateNode, Object);
 };
 
-class BlockState : public ObjectRef {
+class GraphState : public ObjectRef {
 public:
   /*!
    * \brief The constructor.
-   * \param block The block
+   * \param graph The graph
    */
-  TVM_DLL BlockState(Block block);
+  TVM_DLL GraphState(Graph graph);
 
-  TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(BlockState, ObjectRef, BlockStateNode);
-  TVM_DEFINE_OBJECT_REF_COW_METHOD(BlockStateNode);
+  TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(GraphState, ObjectRef, GraphStateNode);
+  TVM_DEFINE_OBJECT_REF_COW_METHOD(GraphStateNode);
 };
 
 } // namespace auto_compute

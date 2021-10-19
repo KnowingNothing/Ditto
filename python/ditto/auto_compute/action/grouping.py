@@ -1,6 +1,6 @@
 import json
 import numpy as np
-from ditto.auto_compute.graph import LayerState
+from ditto.auto_compute.state import LayerState
 from .action_base import Guarder, Actor, Action, ParameterSpace, Parameter
 from .. import _ffi_api
 from .record import TransformApplier, TransformRecord, ActionRecord

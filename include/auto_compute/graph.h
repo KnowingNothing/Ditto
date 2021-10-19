@@ -185,6 +185,8 @@ public:
   Array<te::Tensor> const_tensors;
   /*! \brief The input layer tensors */
   std::vector<LayerTensor> input_layer_tensors_;
+  /*! \brief The output layer tensors */
+  std::vector<LayerTensor> output_layer_tensors_;
 
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("name", &name);
@@ -212,52 +214,46 @@ inline LayerNode *Layer::operator->() const {
   return static_cast<LayerNode *>(data_.get());
 }
 
-/////////////////////////////////////
-// Definitions for Block
-// Block has only one input and one output
-// The input shape and output shape
-// of one block are fixed
-////////////////////////////////////
+// /////////////////////////////////////
+// // Definitions for Block
+// // Block has only one input and one output
+// // The input shape and output shape
+// // of one block are fixed
+// ////////////////////////////////////
 
-/*!
- * \brief A base class for block.
- */
-class BlockNode : public Object {
-public:
-  /*! \brief The name of block */
-  std::string name;
-  /*! \brief The output tensors */
-  Array<LayerTensor> out_tensors;
+// /*!
+//  * \brief A base class for block.
+//  */
+// class BlockNode : public Object {
+// public:
+//   /*! \brief The name of block */
+//   std::string name;
+//   /*! \brief The output tensors */
+//   Array<LayerTensor> out_tensors;
 
-  void VisitAttrs(tvm::AttrVisitor *v) {
-    v->Visit("name", &name);
-    v->Visit("out_tensors", &out_tensors);
-  }
-  /*!
-   * \brief Get all the layers within this block.
-   * from outputs to inputs
-   */
-  Array<Layer> GetAllLayers() const;
+//   void VisitAttrs(tvm::AttrVisitor *v) {
+//     v->Visit("name", &name);
+//     v->Visit("out_tensors", &out_tensors);
+//   }
 
-  static constexpr const char *_type_key = "ditto.auto_compute.Block";
-  TVM_DECLARE_BASE_OBJECT_INFO(BlockNode, Object);
-};
+//   static constexpr const char *_type_key = "ditto.auto_compute.Block";
+//   TVM_DECLARE_BASE_OBJECT_INFO(BlockNode, Object);
+// };
 
-class Block : public ObjectRef {
-public:
-  /*!
-   * \brief The constructor.
-   * \param name The name of block
-   */
-  TVM_DLL Block(std::string name, Array<LayerTensor> out_tensors);
+// class Block : public ObjectRef {
+// public:
+//   /*!
+//    * \brief The constructor.
+//    * \param name The name of block
+//    */
+//   TVM_DLL Block(std::string name, Array<LayerTensor> out_tensors);
 
-  TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(Block, ObjectRef, BlockNode);
-  TVM_DEFINE_OBJECT_REF_COW_METHOD(BlockNode);
-};
+//   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(Block, ObjectRef, BlockNode);
+//   TVM_DEFINE_OBJECT_REF_COW_METHOD(BlockNode);
+// };
 
 /////////////////////////////////////
 // Definitions for Graph
-// Graph = List[Block]
 ////////////////////////////////////
 
 /*!
@@ -267,13 +263,22 @@ class GraphNode : public Object {
 public:
   /*! \brief The name of graph */
   std::string name;
-  /*! \brief The list of blocks */
-  Array<Block> block_list;
+  /*! \brief The list of layer tensors as inputs */
+  Array<LayerTensor> graph_inputs;
+  /*! \brief The list of layer tensors as outputs */
+  Array<LayerTensor> graph_outputs;
 
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("name", &name);
-    v->Visit("block_list", &block_list);
+    v->Visit("graph_inputs", &graph_inputs);
+    v->Visit("graph_outputs", &graph_outputs);
   }
+
+  /*!
+   * \brief Get all the layers within this graph.
+   * from outputs to inputs
+   */
+  Array<Layer> GetAllLayers() const;
 
   static constexpr const char *_type_key = "ditto.auto_compute.Graph";
   TVM_DECLARE_BASE_OBJECT_INFO(GraphNode, Object);
@@ -284,9 +289,11 @@ public:
   /*!
    * \brief The constructor.
    * \param name The name of tensor
-   * \param block_list
+   * \param graph_inputs The inputs for graph
+   * \param graph_outputs The outputs for graph
    */
-  TVM_DLL Graph(std::string name, Array<Block> block_list);
+  TVM_DLL Graph(std::string name, Array<LayerTensor> graph_inputs,
+                Array<LayerTensor> graph_outputs);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(Graph, ObjectRef, GraphNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(GraphNode);
@@ -297,7 +304,8 @@ public:
 } // namespace ditto
 
 namespace std {
-template <> struct hash<::ditto::auto_compute::Layer> : public ::tvm::ObjectPtrHash {};
+template <>
+struct hash<::ditto::auto_compute::Layer> : public ::tvm::ObjectPtrHash {};
 
 template <> struct hash<::ditto::auto_compute::LayerTensor> {
   std::size_t operator()(const ::ditto::auto_compute::LayerTensor &k) const {
