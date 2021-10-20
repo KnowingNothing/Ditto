@@ -222,8 +222,9 @@ HybridStage& HybridStage::slice(
     leaf_vars.erase(leaf_vars.begin() + pos);
     old.push_back(t);
   }, "RootFirst");
-
-  self->relations.push_back(Slice(old, *left, *right, *slicept->data_ptr, *pinpt->data_ptr, mode, factor));
+  if(pinpt == leaf_vars_tree.getBase())
+    self->relations.push_back(Slice(old, *left, *right, *slicept->data_ptr, IterVar(), mode, factor));
+  else  self->relations.push_back(Slice(old, *left, *right, *slicept->data_ptr, *pinpt->data_ptr, mode, factor));
   std::cout << "branch value: " <<  subTree.getRoot()->Value() << std::endl; 
   leaf_vars_tree.eraseTree(subTree_.getRoot());
   //   TVM_DLL Slice(Array<IterVar> old, Array<IterVar> left, Array<IterVar> right, IterVar slicept, IterVar pinpt, std::string mode, PrimExpr factor);
