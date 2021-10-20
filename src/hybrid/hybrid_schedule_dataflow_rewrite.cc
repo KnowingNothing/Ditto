@@ -245,6 +245,8 @@ Array<Tensor> ReplaceOriginalOp(HybridSchedule sch, HybridStage orig_stage, cons
   orig_stage->all_iter_vars = orig_stage->op->root_iter_vars();
   orig_stage->leaf_iter_vars = orig_stage->all_iter_vars;
   orig_stage->relations = Array<IterVarRelation>();
+  // here: to be added
+  // orig_stage->leaf_iter_vars_tree = rebuilt this tree
   // create hybrid_schedule for new cached hybrid_stage.
   Array<HybridStage>& stages = sch->stages;
   size_t pos = FindNodeRef(stages.GetArrayNode(), orig_stage);
@@ -467,6 +469,7 @@ void RebaseNonZeroMinLoop(HybridScheduleNode* sch) {
           s->iter_var_attrs.Set(rebased, s->iter_var_attrs.at(iv));
         }
         leaf_vars->SetItem(idx, rebased);
+        // here: put it into the tree
         rebase_map[iv] = rebased;
       }
     }
@@ -926,6 +929,7 @@ Array<Tensor> HybridSchedule::rfactor(const Tensor& tensor, const IterVar& axis,
   reduce_stage->all_iter_vars = repl_tensors[0]->op->root_iter_vars();
   reduce_stage->leaf_iter_vars = reduce_stage->all_iter_vars;
   reduce_stage->relations = Array<IterVarRelation>();
+  // here: to be added: rebuild leaf_iter_vars_tree
   return factor_tensors;
 }
 }  // namespace hybrid

@@ -55,6 +55,10 @@ void PassUpThreadBinding(const HybridStage& stage, std::unordered_map<IterVar, b
       state[s->outer] = state[s->fused];
     } else if (const RebaseNode* s = rel.as<RebaseNode>()) {
       state[s->parent] = state[s->rebased];
+    } else if (const SliceNode* s = rel.as<SliceNode>()) {
+      for(size_t i = 0; i < s->old.size(); i++){
+        state[s->old[i]] = state[s->left[i]] || state[s->right[i]];
+      }
     } else if (rel.as<SingletonNode>()) {
     } else {
       LOG(FATAL) << "unknown relation type";
@@ -132,6 +136,25 @@ void PassDownDomain(const HybridStage& stage, std::unordered_map<IterVar, Range>
         continue;
       }
       Update(p_state, r->rebased, Range::FromMinExtent(0, state.at(r->parent)->extent), actx);
+    // add begin
+    } else if (const SliceNode* r = rel.as<SliceNode>()){
+      for(size_t i = 0; i < r->old.size(); i++){
+        if (!state.count(r->old[i])) {
+          ICHECK(allow_missing);
+          continue;
+        }
+        if(r->old[i].same_as(r->pinpt)){
+          const Range& range_old = state.at(r->old[i]);
+          Update(p_state, r->left[i], Range::FromMinExtent(range_old->min, r->factor), actx);
+          Update(p_state, r->right[i], Range::FromMinExtent(range_old->min + r->factor, range_old->extent - r->factor), actx);
+        }
+        else{
+          const Range& range_old = state.at(r->old[i]);
+          Update(p_state, r->left[i], range_old, actx);
+          Update(p_state, r->right[i], range_old, actx);
+        }
+      }
+    // add end
     } else if (const SingletonNode* s = rel.as<SingletonNode>()) {
       Update(p_state, s->iter, Range::FromMinExtent(0, 1), actx);
     } else {
@@ -201,6 +224,20 @@ void PassUpIndex(const HybridStage& stage, const Map<IterVar, Range>& dom_map,
       } else {
         state[s->parent] = value;
       }
+    // add begin
+    } else if (const SliceNode* s = rel.as<SliceNode>()) {
+      for(size_t i = 0; i < s->old.size(); i++){
+        if (!state.count(s->left[i]) || !state.count(s->right[i])) {
+          ICHECK(allow_missing);
+          continue;
+        }
+        state[s->old[i]] = state[s->right[i]] + state[s->left[i]];
+        PrimExpr old_min = dom_map.at(s->old[i])->min;
+        if(!is_zero(old_min)){
+          state[s->old[i]] = state[s->old[i]] + old_min;
+        }
+      }
+    // add end
     } else if (rel.as<SingletonNode>()) {
     } else {
       LOG(FATAL) << "unknown relation type";
@@ -245,6 +282,21 @@ void PassDownIndex(const HybridStage& stage, const Map<IterVar, Range>& dom_map,
       PrimExpr parent_min = dom_map.at(s->parent)->min;
       ICHECK(is_zero(parent_min));
       state[s->rebased] = value;
+    // add begin
+    } else if (const SliceNode* s = rel.as<SliceNode>()){
+      for(size_t i = 0; i < s->old.size(); i++){
+        if (!state.count(s->old[i])) {
+          ICHECK(allow_missing);
+          continue;
+        }
+        PrimExpr left_min = dom_map.at(s->left[i])->min;
+        ICHECK(is_zero(left_min));
+        PrimExpr factor = dom_map.at(s->left[i])->extent;
+        PrimExpr parent = state.at(s->old[i]);
+        state[s->left[i]] = factor;
+        state[s->right[i]] = parent - factor;
+      }
+    // add end
     } else if (const SingletonNode* s = rel.as<SingletonNode>()) {
       state[s->iter] = make_zero(s->iter->var.dtype());
     } else {
@@ -328,6 +380,24 @@ void PassUpDomain(const RebaseNode* s, const std::unordered_map<IterVar, Range>&
   *parent = arith::EvalSet(s->rebased->var + parent_min, {{s->rebased, rebased}});
 }
 
+// add begin
+void PassUpDomain(const SliceNode* s, const std::unordered_map<IterVar, Range>& dom_map, const IntSet& left, const IntSet& right, IntSet* old, int i) {
+  if (dom_map.count(s->left[i]) && dom_map.count(s->right[i]) && dom_map.count(s->old[i]) &&
+      left.MatchRange(dom_map.at(s->left[i])) && right.MatchRange(dom_map.at(s->right[i]))) {
+    *old = IntSet::FromRange(dom_map.at(s->old[i]));
+    return;
+  }
+  PrimExpr factor = dom_map.at(s->left[i])->extent;
+  PrimExpr old_min = dom_map.at(s->old[i])->min;
+  ICHECK(left.defined());
+  ICHECK(right.defined());
+  ICHECK(factor.defined());
+  // to be modified
+  *old = arith::EvalSet(s->left[i]->var + (s->right[i]->var + factor) + old_min,
+                           {{s->left[i], left}, {s->right[i], right}});
+}
+// add end
+
 void PassUpDomain(const HybridStage& stage, const std::unordered_map<IterVar, Range>& dom_map,
                   std::unordered_map<IterVar, IntSet>* p_state) {
   auto& state = *p_state;
@@ -346,6 +416,14 @@ void PassUpDomain(const HybridStage& stage, const std::unordered_map<IterVar, Ra
       IntSet parent;
       PassUpDomain(r, dom_map, state.at(r->rebased), &parent);
       state[r->parent] = parent;
+    // add begin
+    } else if (const SliceNode* r = rel.as<SliceNode>()) {
+      for(size_t i = 0; i < r->old.size(); i++){
+        IntSet old;
+        PassUpDomain(r, dom_map, state.at(r->left[i]), state.at(r->right[i]), &old, i);
+        state[r->old[i]] = old;
+      }
+    // add end
     } else if (rel.as<SingletonNode>()) {
     } else {
       LOG(FATAL) << "unknown relation type";
@@ -394,6 +472,20 @@ void PassUpBitMaskOr(const HybridStage& stage, std::unordered_map<IterVar, int>*
       } else {
         state[s->parent] |= state[s->rebased];
       }
+    // add begin
+    } else if (const SliceNode* s = rel.as<SliceNode>()) {
+      for(size_t i = 0; i < s->old.size(); i++){
+        if (!state.count(s->left[i]) && !state.count(s->right[i])) {
+          ICHECK(allow_missing);
+          continue;
+        }
+        int res = 0;
+        if (state.count(s->old[i])) res |= state[s->old[i]];
+        if (state.count(s->left[i])) res |= state[s->left[i]];
+        if (state.count(s->right[i])) res |= state[s->right[i]];
+        state[s->old[i]] = res;
+      }
+    // add end
     } else if (rel.as<SingletonNode>()) {
     } else {
       LOG(FATAL) << "unknown relation type";
@@ -440,6 +532,25 @@ void PassDownBitMaskOr(const HybridStage& stage, std::unordered_map<IterVar, int
       } else {
         state[s->rebased] |= state.at(s->parent);
       }
+    // add begin
+    } else if (const SliceNode* s = rel.as<SliceNode>()) {
+      for(size_t i = 0; i < s->old.size(); i++){
+        if (!state.count(s->old[i])) {
+          ICHECK(allow_missing);
+          continue;
+        }
+        if (!state.count(s->left[i])) {
+          state[s->left[i]] = state.at(s->old[i]);
+        } else {
+          state[s->left[i]] |= state.at(s->old[i]);
+        }
+        if (!state.count(s->right[i])) {
+          state[s->right[i]] = state.at(s->old[i]);
+        } else {
+          state[s->right[i]] |= state.at(s->old[i]);
+        }
+      }
+    // add end
     } else if (const SingletonNode* s = rel.as<SingletonNode>()) {
       state[s->iter] = 0;
     } else {
@@ -484,6 +595,29 @@ void PassUpBoundCheck(const HybridStage& s, const Map<IterVar, Range>& dom_map,
       state[s->inner] = fused;
     } else if (const RebaseNode* s = rel.as<RebaseNode>()) {
       state[s->parent] = state.at(s->rebased);
+    // add begin
+    } else if (const SliceNode* s = rel.as<SliceNode>()) {
+      for(size_t i = 0; i < s->old.size(); i++) {
+        bool left = state.at(s->left[i]);
+        bool right = state.at(s->right[i]);
+
+        if (dom_map.count(s->left[i]) && dom_map.count(s->right[i])) {
+          PrimExpr factor1 = dom_map.at(s->left[i])->extent;
+          PrimExpr factor2 = dom_map.at(s->right[i])->extent;
+          if (left || right) {
+            state[s->old[i]] = true;
+          } else {
+            if (analyzer->CanProve(dom_map.at(s->old[i])->extent == factor1 * factor2)) {
+              state[s->old[i]] = false;
+            } else {
+              state[s->old[i]] = true;
+            }
+          }
+        } else {
+          state[s->old[i]] = true;
+        }
+      }
+    // add end
     } else if (rel.as<SingletonNode>()) {
       // nop
     } else {
