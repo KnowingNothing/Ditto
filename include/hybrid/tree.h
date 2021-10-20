@@ -43,12 +43,10 @@ class Tree: public ObjectRef{
     Tree(){
         auto node = make_object<TreeNode<T> >();
         data_ = node;
-        std::cout << "parent relationship right? ";
-        std::cout << operator->()->check_parent() << std::endl;
+        // std::cout << operator->()->check_parent() << std::endl;
     }
     explicit Tree(ObjectPtr<Object> n) : ObjectRef(n){
-        std::cout << "parent relationship right? "; 
-        std::cout << operator->()->check_parent() << std::endl;
+        // std::cout << operator->()->check_parent() << std::endl;
     }
     /*!
     *   \brief the default copy construtor
@@ -67,8 +65,8 @@ class Tree: public ObjectRef{
         // only delete base in node;
         node.is_subTree = 1;
         data_ = node_;
-        std::cout << "deep copy: parent relationship right? "; 
-        std::cout << operator->()->check_parent() << std::endl;
+        // std::cout << "deep copy: parent relationship right? "; 
+        // std::cout << operator->()->check_parent() << std::endl;
     }
     inline TreeNode<T>* operator->() const;
     int is_subTree(){
@@ -77,10 +75,16 @@ class Tree: public ObjectRef{
     bool check_parent(bool modify = true) const {
         return operator->()->check_parent(modify);
     }
+    TreeUnitNode<T>* getRoot(){
+        return operator->()->getRoot();
+    }
     /*!
     * \brief insertChild at root
     * \param v the value to insert at root
     */
+    void insertChild(TreeUnitNode<T> * t){
+        operator->()->insertChild(t);
+    }
     void insertChild(const T& v){
         operator->()->insertChild(v);}
     /*!
@@ -88,6 +92,9 @@ class Tree: public ObjectRef{
     *   \param p the parent position
     *   \param v the child value
     */
+   void insertChild(TreeUnitNode<T> * p, TreeUnitNode<T> * v){
+        operator->()->insertChild(v, p);
+    }
     void insertChild(const T & p, const T & v){
         operator->()->insertChild(v, p);}
     /*!
@@ -95,6 +102,9 @@ class Tree: public ObjectRef{
     *   \param p the parent
     *   \param tree the tree to insert
     */
+   void insertTree(TreeUnitNode<T> * p, Tree<T> & tree){
+        operator->()->insertTree(p, *tree.operator->());
+    }
     void insertTree(const T & p, Tree<T> & tree){
         operator->()->insertTree(p, *tree.operator->());
     }
@@ -124,12 +134,14 @@ class Tree: public ObjectRef{
     * \brief insert at root
     * \param v the value to insert
     */
+    void insert(TreeUnitNode<T>* v){operator->()->insert(v);}
     void insert(const T& v){operator->()->insert(v);}
     /*!
     *   \brief insert at p
     *   \param  p the parant value
     *   \param  v the value to insert
     */
+    void insert(TreeUnitNode<T>* p, TreeUnitNode<T>* v){operator->()->insert(p, v);}
     void insert(const T & p, const T & v){operator->()->insert(p, v);}
     /*!
     *   \brief erase
@@ -141,6 +153,7 @@ class Tree: public ObjectRef{
     void replace(const T & old, const T & now){
         operator->() -> replace(old, now);
     }
+    void erase(TreeUnitNode<T>* v){operator->()->erase(v);}
     void erase(const T& v){operator->()->erase(v);}
     /*!
     * \brief display the tree structure 
@@ -150,6 +163,16 @@ class Tree: public ObjectRef{
     *   \brief get the SubTree, note that this use the old tree, not a new one. 
     *   \param t, the root node on the tree
     */
+    Tree<T> getSubTree(TreeUnitNode<T>* t){
+        TreeBaseNode<T> node = operator->()->getSubTree(t);
+        // delete nothing
+        auto node_ = make_object<TreeNode<T> >(node, 1);
+        // delete root
+        Tree<T>ret = Tree<T>(node_);
+
+        // node_->is_subTree = 2;
+        return ret;
+    }
     Tree<T> getSubTree(const T& t){
         TreeBaseNode<T> node = operator->()->getSubTree(t);
         // delete nothing
@@ -163,20 +186,27 @@ class Tree: public ObjectRef{
     /*!
     *   \brief erase the subTree with root t;
     */
+   void eraseTree(TreeUnitNode<T>* t){
+        printf("in Tree::eraseTree\n");
+        operator->()->eraseTree(t);
+    }
     void eraseTree(const T& t){
         operator->()->eraseTree(t);
     }
     /*!
     *   \brief apply a function to all nodes in tree; 
     */
-    void apply(std::function<void (T & )> const & f){
-        operator->()->apply(f);
+    void apply(std::function<void (T & )> const & f, std::string mode="RootLast"){
+        operator->()->apply(f, mode);
     }
     /*!
     *   \brief check where child is in the subtree of parent.
     */
-    bool is_parent(const T& parent, const T& child){
-        return operator->()->is_parent(parent, child);
+    bool is_ancestor(TreeUnitNode<T>* parent, TreeUnitNode<T>* child){
+        return operator->()->is_ancestor(parent, child);
+    }
+    bool is_ancestor(const T& parent, const T& child){
+        return operator->()->is_ancestor(parent, child);
     }
     /*!
     *   \brief check whether parent is an immediate parent of child.
@@ -254,7 +284,7 @@ public:
                 if(child->pParent != father){
                     if(is_subTree == 0 || base != father){
                         is_correct = false;         
-                        std::cout << "child value" << child ->Value() << std::endl;
+                        std::cout << "child value " << child ->Value() << std::endl;
                         if(father == base)
                             std::cout << "father is base" << std::endl;
                         else std::cout << "father is " << father ->Value() << std::endl;
@@ -322,21 +352,18 @@ public:
         ICHECK(p_) << "parent not in the tree";
         return p_ == p;
     }
+    int count_child(TreeUnitNode<T>* ptr){
+        return ptr->count_child();
+    }
     int count_child(const T & parent){
         TreeUnitNode<T> * ptr = getUnit(parent);
         ICHECK(ptr) << "parent node not in the tree";
-        TreeUnitNode<T> * child = ptr -> pChild;
-        int ret = 0;
-        while(child){
-            child = child->pSibling;
-            ret += 1;
-        }
-        return ret;
+        return count_child(ptr);
     }
     /*!
     *   \brief check whether child is in the subtree of parent.  
     */
-    bool is_parent(TreeUnitNode<T>*parent, TreeUnitNode<T>*child){
+    bool is_ancestor(TreeUnitNode<T>*parent, TreeUnitNode<T>*child){
         ICHECK(parent) << "parent not in tree.";
         ICHECK(child) << "child not in tree.";
         bool isParent = false;
@@ -348,8 +375,8 @@ public:
         getSubTree(parent).apply(func);
         return isParent;
     }
-    bool is_parent(const T& parent, const T&child){
-        return is_parent(getUnit(parent), getUnit(child));
+    bool is_ancestor(const T& parent, const T&child){
+        return is_ancestor(getUnit(parent), getUnit(child));
     }
     /*!
      * \brief deepCopy the tree. Use f to deep copy value.
@@ -407,10 +434,12 @@ public:
         return insertChild(childvalue, getUnit(pos));
     };
     TreeUnitNode<T>* insertChild(const T&childValue, TreeUnitNode<T>*ptr) {
+        ICHECK(is_subTree == 0) << "cannot insert child at a subtree' s root";
         TreeUnitNode<T>* newUnit = new TreeUnitNode<T> (childValue);
         return insertChild(newUnit, ptr);
     };
     TreeUnitNode<T>* insertChild(TreeUnitNode<T>* child, TreeUnitNode<T>*ptr) {
+        ICHECK(is_subTree == 0) << "cannot insert child at a subtree' s root";
         ptr->insertChild(child);
         return child;
     };
@@ -432,21 +461,29 @@ public:
         ICHECK(ptr) << "node to insert at is not in tree.";
         insertTree(ptr, tree);
     }
+    TreeUnitNode<T>* insert(TreeUnitNode<T>* ptr, TreeUnitNode<T>* child){
+        child->pChild = ptr->pChild;
+        child->pParent = ptr;
+        if(child->pChild){ 
+            child->pChild->pParent = child;
+        }
+        ptr->pChild = child;
+        return child;
+    }
+    TreeUnitNode<T>* insert(TreeUnitNode<T>*child){
+        return insert(base, child);
+    }
     /*!
     *   \brief insert value v at ptr. v is child of ptr. v has children of ptr.
     */
     TreeUnitNode<T>* insert(TreeUnitNode<T>*ptr, const T&v){
+        ICHECK(is_subTree==0)<<"cannot insert in a subtree";
         if (getUnit(v)!=NULL){
             LOG(FATAL) << "cannot insert a inserted object\n";
             return NULL;
         }
         TreeUnitNode<T> * node_ = new TreeUnitNode<T>(v);
-        node_->pChild = ptr->pChild;
-        node_->pParent = ptr;
-        if(node_ -> pChild)
-            node_->pChild->pParent = node_;
-        ptr->pChild = node_;
-        return node_;
+        return insert(ptr, node_);
     }
     TreeUnitNode<T>* insert(const T& pos, const T&v){
         return insert(getUnit(pos), v);
@@ -500,12 +537,9 @@ public:
     TreeUnitNode<T>* erase(const T&v){
         return erase(getUnit(v));
     }
-    void eraseTree(const T& v){
-        // deconstruct the tree.
-        // TreeBaseNode<T> tmp = getSubTree(v);
-        // tmp.is_subTree = 0;
-        TreeUnitNode<T>* ptr = getUnit(v);
-        TreeUnitNode<T>* parent = Parent(ptr);
+    void eraseTree(TreeUnitNode<T>* ptr){
+        ICHECK(ptr) << "erase ptr is null";
+        TreeUnitNode<T>* parent = ptr->pParent;
         if(parent->pChild == ptr){
             parent->pChild = ptr->pSibling;
         }
@@ -517,16 +551,26 @@ public:
                 }
             }
         }
+
         std::queue<TreeUnitNode<T>* > Q;
-        Q.push(ptr->pChild);
+        Q.push(ptr);
         while(!Q.empty()){
             TreeUnitNode<T> * tmp = Q.front();
             Q.pop();
+            if(!tmp) continue;
             if(tmp->pChild) Q.push(tmp->pChild);
-            if(tmp->pSibling) Q.push(tmp->pSibling);
+            if(tmp != ptr && tmp->pSibling) Q.push(tmp->pSibling);
             delete tmp;
         }
-        delete ptr;
+    }
+    void eraseTree(const T& v){
+        // deconstruct the tree.
+        // TreeBaseNode<T> tmp = getSubTree(v);
+        // tmp.is_subTree = 0;
+        std::cout << "in TreeBaseNode::eraseTree(const T & v)\n";
+        TreeUnitNode<T>* ptr = getUnit(v);
+        ICHECK(ptr) << "erase node not in Tree";
+        eraseTree(ptr);
     }
     void replace(const T & old, const T & now){
         TreeUnitNode<T> * self = getUnit(old);
@@ -661,22 +705,27 @@ public:
         std::cout << "decription:   " << attr << std::endl;
         std::cout << "is_subTree: " << is_subTree << std::endl;
         std::cout << "parent correct? " << check_parent(false) << std::endl;
-        std::queue<TreeUnitNode<T> *> q;
-        q.push(base);
-        while(!q.empty()){
-            TreeUnitNode<T>* father = q.front();
-            q.pop();
-            if(father == base)
-                std::cout << "the root is: ";
-            else 
-                std::cout << father->Value() << " has children: ";
-            auto son = father -> pChild;
+        struct format{
+          TreeUnitNode<T>* p;
+          int n_tab;  
+          format(TreeUnitNode<T>* p_, int n_tab_): p(p_), n_tab(n_tab_){}
+        };
+        std::stack<format> s;
+        s.push({base, -1});
+        while(!s.empty()){
+            format father = s.top();
+            s.pop();
+            if(father.p != base){
+                for(int i = 0; i < father.n_tab; i++)
+                    std::cout << "\t";
+                std::cout <<"for " <<  father.p->Value();
+            }
+            std::cout << std::endl;
+            auto son = father.p -> pChild;
             while(son){
-                std::cout << son->Value() << " ";
-                q.push(son);
+                s.push({son, father.n_tab + 1});
                 son = son -> pSibling;
             }
-            std::cout << ";\n";
         }
         std::cout <<"---------------display end---------------\n";
         return;
@@ -742,6 +791,15 @@ public:
         }
         LOG(WARNING) << "delete node not found\n";
         return; 
+    }
+    int count_child(){
+        TreeUnitNode<T> * child = pChild;
+        int ret = 0;
+        while(child){
+            child = child->pSibling;
+            ret += 1;
+        }
+        return ret;
     }
 };
 } //end hybrid 
