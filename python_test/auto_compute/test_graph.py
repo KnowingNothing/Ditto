@@ -38,7 +38,7 @@ def test1():
     layer = ac.layer(y.op, inputs=[x], weights=[w1, w2])
     new_x = ac.layer_tensor((32, 3, 28, 28), name='new_x')
     new_y = layer(new_x)
-    block = ac.block(new_y)
+    graph = ac.graph(new_x, new_y)
 
 def _2mm(M, L, K, N):
     A = tvm.te.placeholder([M, K], name="A", dtype="float32")

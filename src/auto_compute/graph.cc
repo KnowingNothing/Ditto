@@ -15,7 +15,6 @@ namespace auto_compute {
 
 TVM_REGISTER_NODE_TYPE(LayerTensorNode);
 TVM_REGISTER_NODE_TYPE(LayerNode);
-TVM_REGISTER_NODE_TYPE(BlockNode);
 TVM_REGISTER_NODE_TYPE(GraphNode);
 
 bool IsConstInt(const PrimExpr &expr) {
@@ -84,8 +83,7 @@ Array<te::Operation> LayerNode::GetAllOps() const {
 
 Layer::Layer(std::string name, Array<te::Operation> ops,
              Array<te::Tensor> inputs, Array<te::Tensor> weights,
-             Array<PrimExpr> const_scalars, Array<te::Tensor> const_tensors,
-             Array<te::Tensor> gradients) {
+             Array<PrimExpr> const_scalars, Array<te::Tensor> const_tensors) {
   auto node = make_object<LayerNode>();
   node->name = name;
   node->ops = ops;
@@ -93,7 +91,6 @@ Layer::Layer(std::string name, Array<te::Operation> ops,
   node->weights = weights;
   node->const_scalars = const_scalars;
   node->const_tensors = const_tensors;
-  node->gradients = gradients;
   data_ = node;
   CheckValidity();
 }
@@ -191,51 +188,56 @@ Layer::ProduceOutputs(std::vector<LayerTensor> layer_inputs) {
     }
   };
 
-  std::vector<LayerTensor> rets;
+  self->output_layer_tensors_.clear();
   int num_out = 0;
   for (te::Operation op : self->ops) {
     helper(op);
     CHECK(new_ops.count(op)) << "Missing op " << op << ".\n";
-    rets.push_back(
-        LayerTensor(self->name, self, new_ops.at(op).output(0), num_out++));
+    LayerTensor tmp =
+        LayerTensor(self->name, self, new_ops.at(op).output(0), num_out++);
+    self->output_layer_tensors_.push_back(tmp);
   }
 
-  return rets;
+  return self->output_layer_tensors_;
 }
 
-Array<Layer> BlockNode::GetAllLayers() const {
+// Block::Block(std::string name, Array<LayerTensor> out_tensors) {
+//   auto node = make_object<BlockNode>();
+//   node->name = name;
+//   node->out_tensors = out_tensors;
+//   data_ = node;
+// }
+
+Array<Layer> GraphNode::GetAllLayers() const {
   std::unordered_set<Layer> visit;
-  Array<Layer> ret;
+  std::vector<Layer> ret;
 
   std::function<void(Layer layer)> helper;
   helper = [&](Layer layer) {
-    if (visit.count(layer))
+    if (!layer.defined() || visit.count(layer))
       return;
     visit.insert(layer);
     ret.push_back(layer);
-    for (auto inp : layer->InputTensors()) {
+    for (auto inp : layer->input_layer_tensors_) {
       helper(inp->layer);
     }
   };
 
-  for (auto t : out_tensors) {
-    helper(t->layer);
+  for (auto lt : graph_outputs) {
+    helper(lt->layer);
   }
 
-  return ret;
+  // left to right: inputs to outputs
+  std::reverse(ret.begin(), ret.end());
+  return Array<Layer>(ret);
 }
 
-Block::Block(std::string name, Array<LayerTensor> out_tensors) {
-  auto node = make_object<BlockNode>();
-  node->name = name;
-  node->out_tensors = out_tensors;
-  data_ = node;
-}
-
-Graph::Graph(std::string name, Array<Block> block_list) {
+Graph::Graph(std::string name, Array<LayerTensor> graph_inputs,
+             Array<LayerTensor> graph_outputs) {
   auto node = make_object<GraphNode>();
   node->name = name;
-  node->block_list = block_list;
+  node->graph_inputs = graph_inputs;
+  node->graph_outputs = graph_outputs;
   data_ = node;
 }
 
@@ -257,20 +259,21 @@ TVM_REGISTER_GLOBAL("ditto.auto_compute.Layer")
     .set_body_typed([](std::string name, Array<te::Operation> ops,
                        Array<te::Tensor> inputs, Array<te::Tensor> weights,
                        Array<PrimExpr> const_scalars,
-                       Array<te::Tensor> const_tensors,
-                       Array<te::Tensor> gradients) {
-      return Layer(name, ops, inputs, weights, const_scalars, const_tensors,
-                   gradients);
+                       Array<te::Tensor> const_tensors) {
+      return Layer(name, ops, inputs, weights, const_scalars, const_tensors);
+    });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerGetAllOps")
+    .set_body_typed([](Layer layer) {
+      return layer->GetAllOps();
     });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.MakeLayer")
     .set_body_typed([](std::string name, Array<te::Operation> ops,
                        Array<te::Tensor> inputs, Array<te::Tensor> weights,
                        Array<PrimExpr> const_scalars,
-                       Array<te::Tensor> const_tensors,
-                       Array<te::Tensor> gradients) {
-      return Layer(name, ops, inputs, weights, const_scalars, const_tensors,
-                   gradients);
+                       Array<te::Tensor> const_tensors) {
+      return Layer(name, ops, inputs, weights, const_scalars, const_tensors);
     });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerHash")
@@ -278,14 +281,21 @@ TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerHash")
       return static_cast<int64_t>(std::hash<Layer>()(layer));
     });
 
-TVM_REGISTER_GLOBAL("ditto.auto_compute.Block")
-    .set_body_typed([](std::string name, Array<LayerTensor> out_tensors) {
-      return Block(name, out_tensors);
-    });
+// TVM_REGISTER_GLOBAL("ditto.auto_compute.Block")
+//     .set_body_typed([](std::string name, Array<LayerTensor> out_tensors) {
+//       return Block(name, out_tensors);
+//     });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.Graph")
-    .set_body_typed([](std::string name, Array<Block> block_list) {
-      return Graph(name, block_list);
+    .set_body_typed([](std::string name, Array<LayerTensor> graph_inputs,
+                       Array<LayerTensor> graph_outputs) {
+      return Graph(name, graph_inputs, graph_outputs);
+    });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.MakeGraph")
+    .set_body_typed([](std::string name, Array<LayerTensor> graph_inputs,
+                       Array<LayerTensor> graph_outputs) {
+      return Graph(name, graph_inputs, graph_outputs);
     });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.ProduceOutputs")
