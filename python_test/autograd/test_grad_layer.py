@@ -1,6 +1,7 @@
 import tvm
 from tvm import auto_scheduler as ansor
 from ditto import auto_compute as ac
+from ditto import autograd as ag
 from ditto import auto_schedule
 from ditto.auto_compute.nn.functional import conv2d, channel_scale_nchw, ReLU
 
@@ -67,62 +68,14 @@ def user_input():
                    layout="NCHW", out_dtype="float32")
     relu3 = ReLU(conv3)
 
-    return ac.layer(relu3.op, inputs=[A], weights=[B, C, D, alpha1, beta1, alpha2, beta2])
+    return ac.layer(conv1.op, inputs=[A], weights=[B], const_tensors=[])
 
 
 @register_test
 def test1():
     layer = user_input()
-    layer_state = ac.create_layer_state(layer)
-    # print(layer_state.layer.inputs)
-    # print(layer_state.layer.weights)
-    # print(layer_state.layer.ops)
-    #####################################
-    # design a new compute
-    #####################################
-    action = ac.design(layer)
-    return
-    def compute():
-        layer = user_input()
-        layer_state = ac.create_layer_state(layer)        
-        #####################################
-        # get a new compute
-        #####################################
-        layer_state = ac.auto_compute(layer_state, action)
-        
-        inputs = []
-        for inp in layer_state.layer.inputs:
-            tensor = layer_state[inp].op.output(0)
-            inputs.append(ac.layer_tensor(
-                tensor.shape,
-                name=tensor.name,
-                dtype=tensor.dtype
-            ))
-
-        layer = layer_state.make_compute(inputs)
-        outputs = layer.ops
-        output_tensors = [op.output(0) for op in outputs]
-        all_tensors = [
-            *layer.inputs,
-            *layer.weights,
-            *layer.const_scalars,
-            *layer.const_tensors,
-            *output_tensors
-        ]
-        return all_tensors
-    
-    target = "cuda"
-    trials = 100
-    task_name = "test"
-    log_file = "tmp.log"
-    builder = "local"
-    runner = "local"
-    
-    schedule_option = auto_schedule.ScheduleOption(
-        target, trials, task_name, log_file, builder, runner
-    )
-    
-    sch, args = auto_schedule.auto_schedule(compute, schedule_option)
+    grad_layer = ag.grad_layer(layer)
+    print(grad_layer)
 
 
 if __name__ == "__main__":

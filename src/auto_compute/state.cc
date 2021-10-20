@@ -8,7 +8,7 @@ namespace auto_compute {
 TVM_REGISTER_NODE_TYPE(TensorStateNode);
 TVM_REGISTER_NODE_TYPE(OpStateNode);
 TVM_REGISTER_NODE_TYPE(LayerStateNode);
-TVM_REGISTER_NODE_TYPE(BlockStateNode);
+TVM_REGISTER_NODE_TYPE(GraphStateNode);
 
 void TensorStateNode::SplitDim(int ordinal, tir::IterVar outer,
                                tir::IterVar inner) {
@@ -164,18 +164,18 @@ std::pair<te::Operation, te::Operation> OpStateNode::TransformIsolation(
 
     Map<tir::Var, Range> new_var_mapping =
         utils::InferRange(var_mapping, original_ranges);
-    std::unordered_map<const tir::VarNode *, tir::IterVarType> new_types =
-        utils::InferIterVarType(var_mapping, original_types);
+    // std::unordered_map<const tir::VarNode *, tir::IterVarType> new_types =
+    //     utils::InferIterVarType(var_mapping, original_types);
 
     Array<tir::IterVar> new_itervars;
     for (auto var : new_vars) {
       CHECK(new_var_mapping.count(var))
           << "Can't find the var " << var << " after infer range.\n";
-      CHECK(new_types.count(var.get()))
-          << "Can't find the var " << var << " after infer type.\n";
-      CHECK(new_types.at(var.get()) == type)
-          << "Expect type " << type << " but get " << new_types.at(var.get())
-          << ".\n";
+      // CHECK(new_types.count(var.get()))
+      //     << "Can't find the var " << var << " after infer type.\n";
+      // CHECK(new_types.at(var.get()) == type)
+      //     << "Expect type " << type << " but get " << new_types.at(var.get())
+      //     << ".\n";
       tir::IterVar new_iter(new_var_mapping.at(var), var, type, "");
       new_itervars.push_back(new_iter);
     }
@@ -377,25 +377,6 @@ OpState LayerStateNode::GetOpState(te::Operation op) const {
   return op_states.at(op);
 }
 
-LayerState::LayerState(Layer layer) {
-  auto node = make_object<LayerStateNode>();
-  node->layer = layer;
-  CHECK(!layer->gradients.size())
-      << "Please set the gradients after compute transformation.\n";
-  Array<te::Operation> ops = layer->GetAllOps();
-  for (auto op : ops) {
-    node->all_ops.push_back(op);
-    node->op_states[op] = OpState(op);
-    for (auto inp : op->InputTensors()) {
-      if (!node->feed_graph[inp->op].count(op)) {
-        node->feed_graph[inp->op].insert(op);
-      }
-      node->read_graph[op].push_back(inp->op);
-    }
-  }
-  data_ = node;
-}
-
 te::Operation LayerStateNode::Transform(
     te::Operation op, Array<tir::Var> spatial_vars,
     Array<PrimExpr> spatial_forward, Array<PrimExpr> spatial_backward,
@@ -578,33 +559,135 @@ Layer LayerStateNode::MakeCompute(Array<LayerTensor> inputs) {
   }
 
   return Layer(layer->name, new_ops, new_inputs, new_weights,
-               layer->const_scalars, new_const_tensors, layer->gradients);
+               layer->const_scalars, new_const_tensors);
 }
 
 Array<te::Operation> LayerStateNode::GetCurrentOps() {
   return Array<te::Operation>(all_ops);
 }
 
-BlockState::BlockState(Block block) {
-  auto node = make_object<BlockStateNode>();
-  node->block = block;
-  Array<Layer> layers = block->GetAllLayers();
-  for (auto layer : layers) {
-    node->all_layers.push_back(layer);
-    node->layer_states[layer] = LayerState(layer);
-    for (auto inp : layer->InputTensors()) {
-      if (!node->feed_graph[inp->layer].count(layer)) {
-        node->feed_graph[inp->layer].insert(layer);
+LayerState::LayerState(Layer layer) {
+  auto node = make_object<LayerStateNode>();
+  node->layer = layer;
+  Array<te::Operation> ops = layer->GetAllOps();
+  for (auto op : ops) {
+    node->all_ops.push_back(op);
+    node->op_states[op] = OpState(op);
+    for (auto inp : op->InputTensors()) {
+      if (!node->feed_graph[inp->op].count(op)) {
+        node->feed_graph[inp->op].insert(op);
       }
-      node->read_graph[layer].push_back(inp->layer);
+      node->read_graph[op].push_back(inp->op);
     }
   }
   data_ = node;
 }
 
-TVM_REGISTER_GLOBAL("ditto.auto_compute.CreateOpState").set_body_typed([](te::Operation op) {
-  return OpState(op);
-});
+// BlockState::BlockState(Block block) {
+//   auto node = make_object<BlockStateNode>();
+//   node->block = block;
+//   Array<Layer> layers = block->GetAllLayers();
+//   for (auto layer : layers) {
+//     node->all_layers.push_back(layer);
+//     node->layer_states[layer] = LayerState(layer);
+//     for (auto inp : layer->InputTensors()) {
+//       if (!node->feed_graph[inp->layer].count(layer)) {
+//         node->feed_graph[inp->layer].insert(layer);
+//       }
+//       node->read_graph[layer].push_back(inp->layer);
+//     }
+//   }
+//   data_ = node;
+// }
+
+LayerState GraphStateNode::GetLayerState(Layer layer) const {
+  CHECK(layer_states.count(layer))
+      << "Can't find layer " << layer << " in graph state " << graph << ".\n";
+  return layer_states.at(layer);
+}
+
+Graph GraphStateNode::MakeCompute(Array<LayerTensor> inputs) {
+  std::unordered_map<LayerTensor, LayerTensor> updates;
+  int num_inputs = (int)inputs.size();
+  Array<LayerTensor> original_inputs = graph->graph_inputs;
+  CHECK(num_inputs == (int)(original_inputs.size()))
+      << "Input number mismatch.\n";
+  for (int i = 0; i < num_inputs; ++i) {
+    updates[original_inputs[i]] = inputs[i];
+  }
+
+  std::function<void(LayerTensor lt)> helper;
+  helper = [&](LayerTensor lt) {
+    if (updates.count(lt))
+      return;
+
+    std::vector<LayerTensor> new_inputs;
+    if (lt->layer.defined() && consume_graph.count(lt->layer)) {
+      for (auto inp_lt : consume_graph.at(lt->layer)) {
+        helper(inp_lt);
+        CHECK(updates.count(inp_lt));
+        new_inputs.push_back(updates.at(inp_lt));
+      }
+    }
+
+    if (!lt->layer.defined()) {
+      updates[lt] = lt;
+    } else {
+      CHECK(layer_states.count(lt->layer))
+          << "Can't find the layer " << lt->layer << " in states.\n";
+      CHECK(produce_graph.count(lt->layer))
+          << "Can't find the layer " << lt->layer << " in produce graph.\n";
+      LayerState state = layer_states.at(lt->layer);
+      Layer new_layer = state->MakeCompute(Array<LayerTensor>(new_inputs));
+      Array<LayerTensor> new_outputs = new_layer.ProduceOutputs(new_inputs);
+      Array<LayerTensor> old_outputs = produce_graph.at(lt->layer);
+      int num_outputs = (int)new_outputs.size();
+      CHECK(num_outputs == (int)old_outputs.size())
+          << "Output number mismatch.\n";
+      for (int i = 0; i < num_outputs; ++i) {
+        updates[old_outputs[i]] = new_outputs[i];
+      }
+    }
+  };
+
+  Array<LayerTensor> new_outputs;
+  Array<LayerTensor> new_inputs;
+  for (auto lt : graph->graph_outputs) {
+    helper(lt);
+    CHECK(updates.count(lt));
+    new_outputs.push_back(updates.at(lt));
+  }
+  for (auto lt : graph->graph_inputs) {
+    CHECK(updates.count(lt));
+    new_inputs.push_back(updates.at(lt));
+  }
+
+  return Graph(graph->name, new_inputs, new_outputs);
+}
+
+Array<Layer> GraphStateNode::GetCurrentLayers() {
+  return Array<Layer>(all_layers);
+}
+
+GraphState::GraphState(Graph graph) {
+  auto node = make_object<GraphStateNode>();
+  node->graph = graph;
+  Array<Layer> layers = graph->GetAllLayers();
+  for (auto layer : layers) {
+    node->all_layers.push_back(layer);
+    node->layer_states[layer] = LayerState(layer);
+    for (auto inp : layer->input_layer_tensors_) {
+      node->consume_graph[layer].push_back(inp);
+    }
+    for (auto out : layer->output_layer_tensors_) {
+      node->produce_graph[layer].push_back(out);
+    }
+  }
+  data_ = node;
+}
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.CreateOpState")
+    .set_body_typed([](te::Operation op) { return OpState(op); });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.OpStateGetAxis")
     .set_body_typed([](OpState op_state) { return op_state->GetAxis(); });
@@ -632,9 +715,8 @@ TVM_REGISTER_GLOBAL("ditto.auto_compute.OpStateMakeCompute")
       return ret;
     });
 
-TVM_REGISTER_GLOBAL("ditto.auto_compute.CreateLayerState").set_body_typed([](Layer layer) {
-  return LayerState(layer);
-});
+TVM_REGISTER_GLOBAL("ditto.auto_compute.CreateLayerState")
+    .set_body_typed([](Layer layer) { return LayerState(layer); });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerStateGetOpState")
     .set_body_typed([](LayerState layer_state, te::Operation op) {
@@ -662,6 +744,25 @@ TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerStateMakeCompute")
 TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerStateGetCurrentOps")
     .set_body_typed([](LayerState layer_state) {
       return layer_state->GetCurrentOps();
+    });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.CreateGraphState")
+    .set_body_typed([](Graph graph) { return GraphState(graph); });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.GraphStateGetLayerState")
+    .set_body_typed([](GraphState graph_state, Layer layer) {
+      return graph_state->GetLayerState(layer);
+    });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.GraphStateMakeCompute")
+    .set_body_typed([](GraphState graph_state, Array<LayerTensor> inputs) {
+      auto ret = graph_state->MakeCompute(inputs);
+      return ret;
+    });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.GraphStateGetCurrentLayers")
+    .set_body_typed([](GraphState graph_state) {
+      return graph_state->GetCurrentLayers();
     });
 
 } // namespace auto_compute
