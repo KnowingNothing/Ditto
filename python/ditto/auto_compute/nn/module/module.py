@@ -1,9 +1,28 @@
+from ...graph import Layer, LayerTensor, layer_tensor
 import tvm
 
 
 class Parameter(object):
     def __init__(self, shape, name="param", dtype="float32"):
         self.tensor = tvm.te.placeholder(shape, name=name, dtype=dtype)
+        
+    @property
+    def shape(self):
+        return self.tensor.shape
+    
+    @property
+    def name(self):
+        return self.tensor.name
+    
+    @property
+    def dtype(self):
+        return self.tensor.dtype
+    
+    
+class Constant(object):
+    def __init__(self, shape, value, name="param", dtype="float32"):
+        self.tensor = tvm.te.placeholder(shape, name=name, dtype=dtype)
+        self.value = value
         
     @property
     def shape(self):
@@ -60,3 +79,15 @@ class Module(object):
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
+    
+    def preprocess(self, *inputs):
+        ret = []
+        for inp in inputs:
+            assert isinstance(inp, LayerTensor)
+            ret.append(layer_tensor(
+                inp.shape, name=inp.name + "_out", dtype=inp.dtype,
+                layer=inp.layer, idx=inp.value_idx))
+        if len(ret) == 1:
+            return ret[0]
+        return ret
+            

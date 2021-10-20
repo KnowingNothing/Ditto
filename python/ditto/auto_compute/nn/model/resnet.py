@@ -7,9 +7,10 @@ __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152', 'resnext50_32x4d', 'resnext101_32x8d',
            'wide_resnet50_2', 'wide_resnet101_2']
 
-from tvm.tensor_graph.nn.layers import Layer, Conv2d, BatchNorm2d, ReLU, \
-    AvgPool2d, GlobalAvgPool2d, Linear, Sequential
-from tvm.tensor_graph.nn.functional import elementwise_add
+from ..module import (
+    Module, Conv2d, BatchNorm2d, ReLU,
+    AvgPool2d, GlobalAvgPool2d, Linear, Sequential, Add
+)
 
 
 def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1, dtype="float32", out_dtype="float32"):
@@ -23,7 +24,7 @@ def conv1x1(in_planes, out_planes, stride=1, dtype="float32", out_dtype="float32
     return Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False, dtype=dtype, out_dtype=out_dtype)
 
 
-class BasicBlock(Layer):
+class BasicBlock(Module):
     expansion = 1
 
     def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1,
@@ -47,7 +48,7 @@ class BasicBlock(Layer):
         self.downsample = downsample
         self.stride = stride
 
-        self.add = elementwise_add
+        self.add = Add()
 
     def forward(self, x):
         identity = x
@@ -68,7 +69,7 @@ class BasicBlock(Layer):
         return out
 
 
-class Bottleneck(Layer):
+class Bottleneck(Module):
     # Bottleneck in torchvision places the stride for downsampling at 3x3 convolution(self.conv2)
     # while original implementation places the stride at the first 1x1 convolution(self.conv1)
     # according to "Deep residual learning for image recognition"https://arxiv.org/abs/1512.03385.
@@ -97,14 +98,13 @@ class Bottleneck(Layer):
         self.downsample = downsample
         self.stride = stride
 
-        self.add = elementwise_add
+        self.add = Add()
 
         self.dtype = dtype
         self.out_dtype = out_dtype
 
     def forward(self, x):
         identity = x
-
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
@@ -125,7 +125,7 @@ class Bottleneck(Layer):
         return out
 
 
-class ResNet(Layer):
+class ResNet(Module):
 
     def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,
                  groups=1, width_per_group=64, replace_stride_with_dilation=None,

@@ -6,9 +6,10 @@ from ...graph import LayerTensor, layer
 
 class Conv2d(Module):
     def __init__(self, in_channel, out_channel, kernel_size,
-                 stride=1, padding=0, dilation=1, groups=1,
+                 bias=False, stride=1, padding=0, dilation=1, groups=1,
                  dtype="float32", out_dtype="float32", layout="NCHW"):
         super(Conv2d, self).__init__()
+        assert bias is False
         self.in_channel = in_channel
         self.out_channel = out_channel
         kernel_size = (kernel_size, kernel_size) if isinstance(
@@ -41,7 +42,7 @@ class Conv2d(Module):
         #     self.bias = None
 
     def forward(self, inputs):
-        assert isinstance(inputs, LayerTensor)
+        inputs = self.preprocess(inputs)
         if self.groups == 1:
             outputs = conv2d(
                 inputs.tensor,

@@ -66,10 +66,10 @@ Array<te::Operation> LayerNode::GetAllOps() const {
     if (visit.count(op))
       return;
     visit.insert(op);
-    ret.push_back(op);
     for (auto inp : op->InputTensors()) {
       helper(inp->op);
     }
+    ret.push_back(op);
   };
 
   for (auto op : ops) {
@@ -77,7 +77,7 @@ Array<te::Operation> LayerNode::GetAllOps() const {
   }
 
   // left to right: inputs to outputs
-  std::reverse(ret.begin(), ret.end());
+  // std::reverse(ret.begin(), ret.end());
   return Array<te::Operation>(ret);
 }
 
@@ -217,10 +217,10 @@ Array<Layer> GraphNode::GetAllLayers() const {
     if (!layer.defined() || visit.count(layer))
       return;
     visit.insert(layer);
-    ret.push_back(layer);
     for (auto inp : layer->input_layer_tensors_) {
       helper(inp->layer);
     }
+    ret.push_back(layer);
   };
 
   for (auto lt : graph_outputs) {
@@ -228,7 +228,7 @@ Array<Layer> GraphNode::GetAllLayers() const {
   }
 
   // left to right: inputs to outputs
-  std::reverse(ret.begin(), ret.end());
+  // std::reverse(ret.begin(), ret.end());
   return Array<Layer>(ret);
 }
 
@@ -290,6 +290,11 @@ TVM_REGISTER_GLOBAL("ditto.auto_compute.Graph")
     .set_body_typed([](std::string name, Array<LayerTensor> graph_inputs,
                        Array<LayerTensor> graph_outputs) {
       return Graph(name, graph_inputs, graph_outputs);
+    });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.GraphGetAllLayers")
+    .set_body_typed([](Graph graph) {
+      return graph->GetAllLayers();
     });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.MakeGraph")

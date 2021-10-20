@@ -5,9 +5,9 @@ from . import _ffi_api
 from tvm.runtime import Object
 
 
-def layer_tensor(shape, name="layer_tensor", dtype="float32"):
+def layer_tensor(shape, name="layer_tensor", dtype="float32", layer=None, idx=0):
     t = tvm.te.placeholder(shape, name=name, dtype=dtype)
-    return _ffi_api.LayerTensor(name, None, t, 0)
+    return _ffi_api.LayerTensor(name, layer, t, idx)
 
 
 def layer_tensor_from_te_tensor(t):
@@ -29,6 +29,17 @@ class LayerTensor(Object):
     @property
     def shape(self):
         return self.tensor.shape
+    
+    @property
+    def dtype(self):
+        return self.tensor.dtype
+    
+    def __str__(self) -> str:
+        ret = f"LayerTensor({self.name}, {self.shape}, {self.dtype})"
+        return ret
+
+    def __repr__(self) -> str:
+        return str(self)
 
 
 @tvm._ffi.register_object("ditto.auto_compute.Layer")
@@ -52,8 +63,10 @@ class Layer(Object):
         return len(self.inputs)
 
     def __str__(self) -> str:
+        all_ops = _ffi_api.LayerGetAllOps(self)
         ret = ""
         ret += f"====== Layer({self.name}) ======\n"
+        ret += f"{len(all_ops)} ops in this layer.\n"
         ret += "inputs:\n"
         for inp in self.inputs:
             ret += str(inp)
@@ -63,7 +76,6 @@ class Layer(Object):
             ret += str(w)
             ret += "\n"
         ret += "---------------------------------\n"
-        all_ops = _ffi_api.LayerGetAllOps(self)
         for op in all_ops:
             if hasattr(op, "body"):
                 ret += op.name
@@ -139,7 +151,8 @@ def layer(ops, inputs=None, weights=None, const_scalars=None,
         const_scalars = []
     if const_tensors is None:
         const_tensors = []
-    const_tensors = [x.tensor if isinstance(x, LayerTensor) else x for x in const_tensors]
+    const_tensors = [x.tensor if isinstance(
+        x, LayerTensor) else x for x in const_tensors]
     return _ffi_api.MakeLayer(name, ops, inputs, weights,
                               const_scalars, const_tensors)
 
@@ -158,6 +171,31 @@ def layer(ops, inputs=None, weights=None, const_scalars=None,
 @tvm._ffi.register_object("ditto.auto_compute.Graph")
 class Graph(Object):
     """Graph object"""
+    
+    def __str__(self) -> str:
+        all_layers = _ffi_api.GraphGetAllLayers(self)
+        ret = ""
+        ret += "*********************************\n"
+        ret += f"****** Graph({self.name}) ******\n"
+        ret += f"{len(all_layers)} layers in this graph.\n"
+        ret += "inputs:\n"
+        for inp in self.graph_inputs:
+            ret += str(inp)
+            ret += "\n"
+        ret += "*********************************\n"
+        for layer in all_layers:
+            ret += str(layer)
+        ret += "*********************************\n"
+        ret += "outputs:\n"
+        for out in self.graph_outputs:
+            ret += str(out)
+            ret += "\n"
+        ret += "*********************************\n"
+        ret += "*********************************\n"
+        return ret
+
+    def __repr__(self) -> str:
+        return str(self)
 
 
 def graph(graph_inputs, graph_outputs, name="graph"):
