@@ -245,9 +245,13 @@ Array<Tensor> ReplaceOriginalOp(HybridSchedule sch, HybridStage orig_stage, cons
   orig_stage->all_iter_vars = orig_stage->op->root_iter_vars();
   orig_stage->leaf_iter_vars = orig_stage->all_iter_vars;
   orig_stage->relations = Array<IterVarRelation>();
-  // here: to be added
-  // orig_stage->leaf_iter_vars_tree = rebuilt this tree
-  // create hybrid_schedule for new cached hybrid_stage.
+  orig_stage->leaf_iter_vars_tree.eraseTree(orig_stage->leaf_iter_vars_tree.getRoot());
+  if(orig_stage->leaf_iter_vars.size()>0){
+    orig_stage->leaf_iter_vars_tree.insert(orig_stage->leaf_iter_vars[0]);
+    for(size_t i = 1; i < orig_stage->leaf_iter_vars.size(); i++) {
+      orig_stage->leaf_iter_vars_tree.insert(orig_stage->leaf_iter_vars[i-1], orig_stage->leaf_iter_vars[i]);
+    }
+  }
   Array<HybridStage>& stages = sch->stages;
   size_t pos = FindNodeRef(stages.GetArrayNode(), orig_stage);
   HybridStage cache_stage = HybridStage(cache_op);
@@ -437,6 +441,9 @@ Array<Tensor> HybridSchedule::cache_write(const Array<Tensor>& tensor_array, con
 Tensor HybridSchedule::cache_write(const Tensor& tensor, const std::string& scope) {
   // support original compute and tensor compute both
   (*this)->InvalidateCache();
+  for(auto rel : (*this)[tensor->op]->relations){
+    ICHECK(!(rel.as<SliceNode>())) << "cache write only be used before slice";
+  }
   if (tensor->op.as<ComputeOpNode>()) {
     return (CacheWriteWithReLayout(*this, {tensor}, scope))[0];
   } else if (tensor->op.as<TensorComputeOpNode>()) {
@@ -469,7 +476,10 @@ void RebaseNonZeroMinLoop(HybridScheduleNode* sch) {
           s->iter_var_attrs.Set(rebased, s->iter_var_attrs.at(iv));
         }
         leaf_vars->SetItem(idx, rebased);
-        // here: put it into the tree
+        // s->leaf_iter_vars_tree.display();
+        // s->leaf_iter_vars_tree.replace(iv, rebased);
+        // why crash??????
+        // to be added
         rebase_map[iv] = rebased;
       }
     }
@@ -718,6 +728,9 @@ Array<Tensor> HybridSchedule::rfactor(const Tensor& tensor, const IterVar& axis,
   using tir::ReduceNode;
   ICHECK_EQ(axis->iter_type, kCommReduce) << "Can only factor reduction axis";
   HybridStage reduce_stage = operator[](tensor->op);
+  for(auto rel : reduce_stage->relations){
+    ICHECK(!(rel.as<SliceNode>())) << "rfactor only be used before slice";
+  }
   const ComputeOpNode* compute_op = reduce_stage->op.as<ComputeOpNode>();
   ICHECK(compute_op) << "Can only factor ComputeOp";
   ArrayNode* leaf_vars = reduce_stage->leaf_iter_vars.CopyOnWrite();
@@ -929,7 +942,13 @@ Array<Tensor> HybridSchedule::rfactor(const Tensor& tensor, const IterVar& axis,
   reduce_stage->all_iter_vars = repl_tensors[0]->op->root_iter_vars();
   reduce_stage->leaf_iter_vars = reduce_stage->all_iter_vars;
   reduce_stage->relations = Array<IterVarRelation>();
-  // here: to be added: rebuild leaf_iter_vars_tree
+  reduce_stage->leaf_iter_vars_tree.eraseTree(reduce_stage->leaf_iter_vars_tree.getRoot());
+  if(reduce_stage->leaf_iter_vars.size()>0){
+    reduce_stage->leaf_iter_vars_tree.insert(reduce_stage->leaf_iter_vars[0]);
+    for(size_t i = 1; i < reduce_stage->leaf_iter_vars.size(); i++) {
+      reduce_stage->leaf_iter_vars_tree.insert(reduce_stage->leaf_iter_vars[i-1], reduce_stage->leaf_iter_vars[i]);
+    }
+  }
   return factor_tensors;
 }
 }  // namespace hybrid
