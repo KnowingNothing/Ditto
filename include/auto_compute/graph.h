@@ -205,6 +205,10 @@ public:
    * from outputs to inputs
    */
   Array<te::Operation> GetAllOps() const;
+  /*!
+   * \brief Get the string fingerprint of this layer.
+   */
+  std::string GetFingerprint() const;
 
   static constexpr const char *_type_key = "ditto.auto_compute.Layer";
   TVM_DECLARE_FINAL_OBJECT_INFO(LayerNode, Object);

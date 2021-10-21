@@ -112,6 +112,7 @@ def test1():
         return all_tensors
     
     target = "cuda"
+    target_host = "llvm"
     trials = 100
     task_name = "test"
     log_file = "tmp.log"
@@ -119,7 +120,9 @@ def test1():
     runner = "local"
     
     schedule_option = auto_schedule.ScheduleOption(
-        target, trials, task_name, log_file, builder, runner
+        target, target_host=target_host,
+        trials=trials, task_name=task_name,
+        log_file=log_file, builder=builder, runner=runner
     )
     
     sch, args = auto_schedule.auto_schedule(compute, schedule_option)

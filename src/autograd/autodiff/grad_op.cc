@@ -7,6 +7,7 @@
 #include <autograd/autodiff/arg_util.h>
 #include <autograd/autodiff/arith.h>
 #include <autograd/autodiff/autodiff.h>
+#include <utils/fingerprint.h>
 #include <utils/logging.h>
 
 // #define DEBUG_AUTODIFF
@@ -1317,7 +1318,7 @@ protected:
       vars.push_back(var);
       axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
     }
-    std::string tag = generate_tag_from_body(axis, {func(vars)});
+    std::string tag = GetFingerPrint(axis, {func(vars)});
     tensor_list.push_back(te::compute(
         shape_, func, generator_.unique_name(tensor_name_key_), tag, {}));
   }
@@ -1349,7 +1350,7 @@ protected:
       axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
     }
     // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-    std::string tag = generate_tag_from_body(axis, {func(vars)});
+    std::string tag = GetFingerPrint(axis, {func(vars)});
     tensor_list.push_back(te::compute(
         shape_, func, generator_.unique_name(tensor_name_key_), tag, {}));
   }
@@ -1376,7 +1377,7 @@ protected:
       axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
     }
     // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-    std::string tag = generate_tag_from_body(axis, {func(vars)});
+    std::string tag = GetFingerPrint(axis, {func(vars)});
     tensor_list.push_back(te::compute(
         shape_, func, generator_.unique_name(tensor_name_key_), tag, {}));
   }
@@ -1425,7 +1426,7 @@ protected:
         axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
       }
       // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-      std::string tag = generate_tag_from_body(axis, {func(vars)});
+      std::string tag = GetFingerPrint(axis, {func(vars)});
       Tensor new_tensor = te::compute(
           shape_, func, generator_.unique_name(tensor_name_key_), tag, {});
       tensor_list.push_back(new_tensor);
@@ -1465,7 +1466,7 @@ protected:
         axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
       }
       // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-      std::string tag = generate_tag_from_body(axis, {func(vars)});
+      std::string tag = GetFingerPrint(axis, {func(vars)});
       Tensor new_tensor = te::compute(
           shape_, func, generator_.unique_name(tensor_name_key_), tag, {});
       tensor_list.pop_back();
@@ -1508,7 +1509,7 @@ protected:
         axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
       }
       // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-      std::string tag = generate_tag_from_body(axis, {func(vars)});
+      std::string tag = GetFingerPrint(axis, {func(vars)});
       Tensor new_tensor = te::compute(
           shape_, func, generator_.unique_name(tensor_name_key_), tag, {});
       tensor_list.pop_back();
@@ -1551,7 +1552,7 @@ protected:
         axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
       }
       // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-      std::string tag = generate_tag_from_body(axis, {func(vars)});
+      std::string tag = GetFingerPrint(axis, {func(vars)});
       Tensor new_tensor = te::compute(
           shape_, func, generator_.unique_name(tensor_name_key_), tag, {});
       tensor_list.pop_back();
@@ -1613,7 +1614,7 @@ protected:
       axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
     }
     // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-    std::string tag = generate_tag_from_body(axis, {func(vars)});
+    std::string tag = GetFingerPrint(axis, {func(vars)});
     tensor_list.push_back(te::compute(shape_, func, name, tag, {}));
   }
 
@@ -1645,7 +1646,7 @@ protected:
         axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
       }
       // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-      std::string tag = generate_tag_from_body(axis, {func(vars)});
+      std::string tag = GetFingerPrint(axis, {func(vars)});
       Tensor new_tensor = te::compute(
           shape_, func, generator_.unique_name(tensor_name_key_), tag, {});
       tensor_list.push_back(new_tensor);
@@ -1673,7 +1674,7 @@ protected:
         axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
       }
       // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-      std::string tag = generate_tag_from_body(axis, {func(vars)});
+      std::string tag = GetFingerPrint(axis, {func(vars)});
       Tensor new_tensor = te::compute(
           shape_, func, generator_.unique_name(tensor_name_key_), tag, {});
       tensor_list.pop_back();
@@ -1729,7 +1730,7 @@ protected:
         axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
       }
       // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-      std::string tag = generate_tag_from_body(axis, {func(vars)});
+      std::string tag = GetFingerPrint(axis, {func(vars)});
       Tensor new_tensor = te::compute(
           shape_, func, generator_.unique_name(tensor_name_key_), tag, {});
       tensor_list.push_back(new_tensor);
@@ -1770,7 +1771,7 @@ protected:
         axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
       }
       // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-      std::string tag = generate_tag_from_body(axis, {func(vars)});
+      std::string tag = GetFingerPrint(axis, {func(vars)});
       Tensor new_tensor = te::compute(
           shape_, func, generator_.unique_name(tensor_name_key_), tag, {});
       tensor_list.pop_back();
@@ -1814,7 +1815,7 @@ protected:
         axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
       }
       // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-      std::string tag = generate_tag_from_body(axis, {func(vars)});
+      std::string tag = GetFingerPrint(axis, {func(vars)});
       Tensor new_tensor = te::compute(
           shape_, func, generator_.unique_name(tensor_name_key_), tag, {});
       tensor_list.pop_back();
@@ -1857,7 +1858,7 @@ protected:
         axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
       }
       // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-      std::string tag = generate_tag_from_body(axis, {func(vars)});
+      std::string tag = GetFingerPrint(axis, {func(vars)});
       Tensor new_tensor = te::compute(
           shape_, func, generator_.unique_name(tensor_name_key_), tag, {});
       tensor_list.pop_back();
@@ -1883,7 +1884,7 @@ protected:
       axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
     }
     // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-    std::string tag = generate_tag_from_body(axis, {func(vars)});
+    std::string tag = GetFingerPrint(axis, {func(vars)});
     tensor_list.push_back(te::compute(
         shape_, func, generator_.unique_name(tensor_name_key_), tag, {}));
   }
@@ -1902,7 +1903,7 @@ protected:
       axis.push_back(IterVar(Range(0, s), var, IterVarType::kDataPar));
     }
     // std::string tag = tag_ + "_" + std::to_string(count_tag_++);
-    std::string tag = generate_tag_from_body(axis, {func(vars)});
+    std::string tag = GetFingerPrint(axis, {func(vars)});
     tensor_list.push_back(te::compute(
         shape_, func, generator_.unique_name(tensor_name_key_), tag, {}));
   }

@@ -56,6 +56,16 @@ class Layer(Object):
         ret = _ffi_api.ProduceOutputs(self, inputs)
         if len(ret) == 1:
             return ret[0]
+    
+    @property
+    def all_ops(self):
+        """Return all ops in this layer (including placeholder)"""
+        return _ffi_api.LayerGetAllOps(self)
+    
+    @property
+    def fingerprint(self):
+        """Return the fingerprint of this layer"""
+        return _ffi_api.LayerGetFingerprint(self)
 
     @property
     def num_inputs(self):
@@ -171,6 +181,11 @@ def layer(ops, inputs=None, weights=None, const_scalars=None,
 @tvm._ffi.register_object("ditto.auto_compute.Graph")
 class Graph(Object):
     """Graph object"""
+    
+    @property
+    def all_layers(self):
+        """Return all the layers in this graph"""
+        return _ffi_api.GraphGetAllLayers(self)
     
     def __str__(self) -> str:
         all_layers = _ffi_api.GraphGetAllLayers(self)

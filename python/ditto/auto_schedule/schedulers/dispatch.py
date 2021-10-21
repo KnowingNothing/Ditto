@@ -1,14 +1,19 @@
 from .ansor_integrate import auto_schedule as auto_schdule_ansor
+from .ansor_integrate import auto_schedule_model as auto_schdule_model_ansor
+from .ansor_integrate import auto_schedule_build_graph as auto_schdule_build_graph_ansor
+from .ansor_integrate import retrieve_schedule as retrieve_schedule_ansor
 
 
 class ScheduleOption(object):
     """
     Schedule options
-    
+
     Args:
     ---
     target: str
         "cuda", "llvm", etc.
+    target_host: str
+        "llvm", etc.
     trials: int
         number of trials for auto-scheduler
     task_name: str
@@ -24,8 +29,14 @@ class ScheduleOption(object):
     verbose: int
         verbose level 0, 1, 2
     """
-    def __init__(self, target, trials, task_name, log_file, builder, runner, scheduler=None, verbose=2):
+
+    def __init__(
+            self, target, target_host="llvm",
+            trials=100, task_name="", log_file="tmp.log",
+            builder="local", runner="local",
+            scheduler=None, verbose=2):
         self.target = target
+        self.target_host = target_host
         self.trials = trials
         self.task_name = task_name
         self.log_file = log_file
@@ -41,5 +52,35 @@ def auto_schedule_dispatch(schedule_option):
     elif schedule_option.scheduler == "ansor":
         return auto_schdule_ansor
     else:
-        raise ValueError(f"Scheduler not known: {schedule_option.scheduler}.\n")
-        
+        raise ValueError(
+            f"Scheduler not known: {schedule_option.scheduler}.\n")
+
+
+def auto_schedule_model_dispatch(schedule_option):
+    if schedule_option.scheduler is None:
+        return (auto_schdule_model_ansor, auto_schdule_build_graph_ansor)
+    elif schedule_option.scheduler == "ansor":
+        return (auto_schdule_model_ansor, auto_schdule_build_graph_ansor)
+    else:
+        raise ValueError(
+            f"Scheduler not known: {schedule_option.scheduler}.\n")
+
+
+def retrieve_schedule(compute, schedule_option):
+    if schedule_option.scheduler is None:
+        return retrieve_schedule_ansor(compute, schedule_option)
+    elif schedule_option.scheduler == "ansor":
+        return retrieve_schedule_ansor(compute, schedule_option)
+    else:
+        raise ValueError(
+            f"Scheduler not known: {schedule_option.scheduler}.\n")
+
+
+def retrieve_schedule_model(inputs, fget_model, schedule_option):
+    if schedule_option.scheduler is None:
+        return auto_schdule_build_graph_ansor(inputs, fget_model, schedule_option)
+    elif schedule_option.scheduler == "ansor":
+        return auto_schdule_build_graph_ansor(inputs, fget_model, schedule_option)
+    else:
+        raise ValueError(
+            f"Scheduler not known: {schedule_option.scheduler}.\n")

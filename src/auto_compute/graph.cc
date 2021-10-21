@@ -2,9 +2,11 @@
 #include <tvm/arith/analyzer.h>
 #include <tvm/ir/expr.h>
 #include <tvm/tir/op.h>
+#include <utils/fingerprint.h>
 #include <utils/iter_domain.h>
 
 #include <deque>
+#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -79,6 +81,44 @@ Array<te::Operation> LayerNode::GetAllOps() const {
   // left to right: inputs to outputs
   // std::reverse(ret.begin(), ret.end());
   return Array<te::Operation>(ret);
+}
+
+std::string LayerNode::GetFingerprint() const {
+  std::ostringstream oss;
+  oss.str("");
+  oss << "Layer(\n";
+  Array<te::Operation> all_ops = this->GetAllOps();
+  int count_op = 0;
+  std::unordered_map<te::Operation, std::string> op_rename;
+  oss << "ops=\n";
+  for (auto op : all_ops) {
+    std::string op_name = "Op" + std::to_string(count_op++);
+    op_rename[op] = op_name;
+    const te::PlaceholderOpNode *pop = op.as<te::PlaceholderOpNode>();
+    const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+    CHECK(pop || cop) << "Only expect placeholder or compute op.\n";
+    if (pop) {
+      oss << op_name << "(" << op.output(0)->shape << ")\n";
+    } else {
+      // cop
+      oss << op_name << "(\n"
+          << utils::GetFingerPrint(cop->axis, cop->body) << ")\n";
+    }
+    oss << "read_graph=(";
+    bool is_first = true;
+    for (auto inp : op->InputTensors()) {
+      CHECK(op_rename.count(inp->op));
+      if (is_first) {
+        is_first = false;
+      } else {
+        oss << ", ";
+      }
+      oss << op_rename.at(inp->op);
+    }
+    oss << ")\n";
+  }
+  oss << ")\n";
+  return oss.str();
 }
 
 Layer::Layer(std::string name, Array<te::Operation> ops,
@@ -264,9 +304,10 @@ TVM_REGISTER_GLOBAL("ditto.auto_compute.Layer")
     });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerGetAllOps")
-    .set_body_typed([](Layer layer) {
-      return layer->GetAllOps();
-    });
+    .set_body_typed([](Layer layer) { return layer->GetAllOps(); });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerGetFingerprint")
+    .set_body_typed([](Layer layer) { return layer->GetFingerprint(); });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.MakeLayer")
     .set_body_typed([](std::string name, Array<te::Operation> ops,
@@ -293,9 +334,7 @@ TVM_REGISTER_GLOBAL("ditto.auto_compute.Graph")
     });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.GraphGetAllLayers")
-    .set_body_typed([](Graph graph) {
-      return graph->GetAllLayers();
-    });
+    .set_body_typed([](Graph graph) { return graph->GetAllLayers(); });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.MakeGraph")
     .set_body_typed([](std::string name, Array<LayerTensor> graph_inputs,

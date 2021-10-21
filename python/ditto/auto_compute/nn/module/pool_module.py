@@ -37,7 +37,6 @@ class AvgPool2d(Module):
                            requires_grad=self.training,
                            name=f"avgpool2d_{self.layout}_layer")
         ret = pool_layer(inputs)
-        print("#", ret.name)
         return ret
 
 
@@ -48,7 +47,7 @@ class GlobalAvgPool2d(Module):
         self.layout = layout
 
     def forward(self, inputs):
-        assert isinstance(inputs, LayerTensor)
+        inputs = self.preprocess(inputs)
         if self.layout == "NCHW":
             outputs = global_avgpool2d_nchw(
                 inputs.tensor,
