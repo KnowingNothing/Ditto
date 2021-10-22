@@ -118,7 +118,7 @@ class Tree: public ObjectRef{
     /*!
     *    \brief these 2 functions are used for debug 
     */
-    TreeUnitNode<T>* getUnit(const T & t){return operator->()->getUnit(t);}
+    TreeUnitNode<T>* getUnit(const T & t) const {return operator->()->getUnit(t);}
     TreeUnitNode<T>* getBase(){return operator->()->getBase();}
     /*!
     *   \brief change the node
@@ -201,10 +201,10 @@ class Tree: public ObjectRef{
     /*!
     *   \brief check where child is in the subtree of parent.
     */
-    bool is_ancestor(TreeUnitNode<T>* parent, TreeUnitNode<T>* child){
+    bool is_ancestor(TreeUnitNode<T>* parent, TreeUnitNode<T>* child) const {
         return operator->()->is_ancestor(parent, child);
     }
-    bool is_ancestor(const T& parent, const T& child){
+    bool is_ancestor(const T& parent, const T& child) const {
         return operator->()->is_ancestor(parent, child);
     }
     /*!
@@ -222,8 +222,8 @@ class Tree: public ObjectRef{
     T * get_parent_ptr(const T& child){
         return operator->()->get_parent_ptr(child);
     }
-    TreeUnitNode<T> * get_parent_unit(const T & child){
-        return operator->()->Parent(child);
+    TreeUnitNode<T> * get_parent_unit(const T & child) const {
+        return operator->()->Parent(getUnit(child));
     }
     /*!
     * \brief access the internal node container
@@ -303,7 +303,7 @@ public:
     /*!
     *   \brief get the node with value of v. 
     */
-    TreeUnitNode<T>* getUnit(const T & v){
+    TreeUnitNode<T>* getUnit(const T & v) const {
         std::queue <TreeUnitNode<T>* > Q;
         Q.push(base->pChild);
         while(!Q.empty()){
@@ -318,7 +318,7 @@ public:
         return NULL;
     }
 
-    TreeUnitNode<T>* getUnit(TreeUnitNode<T>* v){
+    TreeUnitNode<T>* getUnit(TreeUnitNode<T>* v) const {
         std::queue <TreeUnitNode<T>* > Q;
         Q.push(base->pChild);
         while(!Q.empty()){
@@ -362,7 +362,8 @@ public:
     /*!
     *   \brief check whether child is in the subtree of parent.  
     */
-    bool is_ancestor(TreeUnitNode<T>*parent, TreeUnitNode<T>*child){
+    bool is_ancestor(TreeUnitNode<T>*parent, TreeUnitNode<T>*child) const {
+        std::cout<<parent<<" "<<child<<std::endl;
         ICHECK(parent) << "parent not in tree.";
         ICHECK(child) << "child not in tree.";
         while(child && child != parent){
@@ -370,7 +371,7 @@ public:
         }
         return child == parent;
     }
-    bool is_ancestor(const T& parent, const T&child){
+    bool is_ancestor(const T& parent, const T&child) const {
         return is_ancestor(getUnit(parent), getUnit(child));
     }
     /*!

@@ -175,6 +175,9 @@ class HybridStage(Object):
     """A HybridStage represents schedule for one operation."""
 
     def slice(self, slicept, mid, pinpt = None, mode = "serial"):
+        if mode == "parallel":
+            if pinpt != None:
+                raise ValueError("Can not slice parallel with pinpt")
         if pinpt == None:
             return _ffi_api.HybridStageSliceAtRoot(self, slicept, mid, mode)
         return _ffi_api.HybridStageSliceByMid(self, slicept, pinpt, mid, mode)

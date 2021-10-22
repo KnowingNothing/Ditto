@@ -209,16 +209,16 @@ HybridStage& HybridStage::slice(
     right->push_back(t);
   }, "RootFirst");
 
+  old.push_back(*(pinpt->data_ptr));
+
   // Remove old tree from leaf_vars
-  leaf_vars_tree.getSubTree(pinpt).apply([&all_vars, &leaf_vars, &old](IterVar & t){
+  leaf_vars_tree.getSubTree(pinpt->pChild).apply([&all_vars, &leaf_vars, &old](IterVar & t){
     size_t pos = FindLeafVar(all_vars.GetArrayNode(), leaf_vars.GetArrayNode(), t);
     leaf_vars.erase(leaf_vars.begin() + pos);
     old.push_back(t);
   }, "RootFirst");
 
-  if(mode == "parallel")
-    self->relations.push_back(Slice(old, *left, *right, *slicept->data_ptr, IterVar(), mode, factor));
-  else  self->relations.push_back(Slice(old, *left, *right, *slicept->data_ptr, *pinpt->data_ptr, mode, factor));
+  self->relations.push_back(Slice(old, *left, *right, *slicept->data_ptr, *pinpt->data_ptr, mode, factor));
   
   leaf_vars_tree.eraseTree(pinpt->pChild);
   leaf_vars_tree.insertTree(pinpt, l);
@@ -263,7 +263,7 @@ HybridStage& HybridStage::slice(
   Array<IterVar> *right
 ){
   Tree<IterVar> & tree = (*this)->leaf_iter_vars_tree;
-  return slice(tree.getUnit(slicept), tree.getBase(), factor, mode, left, right);
+  return slice(tree.getUnit(slicept), tree.getUnit(slicept), factor, mode, left, right);
 }
 
 HybridStage& HybridStage::compute_at(HybridStage parent, IterVar scope) {  // NOLINT(*)
