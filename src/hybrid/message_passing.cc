@@ -143,7 +143,7 @@ void PassDownDomain(const HybridStage& stage, std::unordered_map<IterVar, Range>
           ICHECK(allow_missing);
           continue;
         }
-        if(r->old[i].same_as(r->pinpt)){
+        if(r->old[i].same_as(r->slicept)){
           const Range& range_old = state.at(r->old[i]);
           Update(p_state, r->left[i], Range::FromMinExtent(range_old->min, r->factor), actx);
           Update(p_state, r->right[i], Range::FromMinExtent(range_old->min + r->factor, range_old->extent - r->factor), actx);
