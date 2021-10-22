@@ -14,3 +14,18 @@ def grad_layer(layer):
     ditto.auto_compute.Layer
     """
     return _ffi_api.GradLayer(layer)
+
+
+def grad_graph(graph, reserve_forward=False):
+    """
+    get the gradient of a graph
+    
+    Args:
+    ---
+    graph: ditto.auto_compute.Graph
+    
+    Returns:
+    ---
+    ditto.auto_compute.Graph
+    """
+    return _ffi_api.GradGraph(graph, reserve_forward)

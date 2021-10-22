@@ -3,6 +3,7 @@ from tvm import auto_scheduler as ansor
 from ditto import auto_compute as ac
 from ditto import autograd as ag
 from ditto import auto_schedule
+from ditto.auto_compute.nn.model import resnet50, lenet5
 from ditto.auto_compute.nn.functional import conv2d, channel_scale_nchw, ReLU
 
 
@@ -73,9 +74,49 @@ def user_input():
 
 @register_test
 def test1():
+    """
+    Test grad a basic 2gemm layer
+    """
     layer = user_input()
     grad_layer = ag.grad_layer(layer)
     print(grad_layer)
+    
+
+@register_test
+def test2():
+    """
+    Test grad one layer in resnet-50
+    """
+    def get_layer():
+        A = ac.layer_tensor([1, 3, 224, 224], dtype="float32", name="A")
+        model = resnet50()
+        outputs = model(A)
+
+        graph = ac.graph([A], outputs)
+        all_layers = graph.all_layers
+        
+        layer = all_layers[7]
+        print(layer)
+        
+        grad_layer = ag.grad_layer(layer)
+        print(grad_layer)
+        return grad_layer
+    
+    target = "cuda"
+    target_host = "llvm"
+    trials = 100
+    task_name = "test"
+    log_file = "tmp.log"
+    builder = "local"
+    runner = "local"
+    
+    schedule_option = auto_schedule.ScheduleOption(
+        target, target_host=target_host,
+        trials=trials, task_name=task_name,
+        log_file=log_file, builder=builder, runner=runner
+    )
+    
+    sch, args = auto_schedule.auto_schedule_layer(get_layer, schedule_option)
 
 
 if __name__ == "__main__":

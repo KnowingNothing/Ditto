@@ -149,7 +149,7 @@ def auto_schedule_model(inputs, fget_model, schedule_option):
 
     Args:
     ---
-    inputs: List[tvm.te.Tensor]
+    inputs: List[ditto.auto_compute.LayerTensor]
         The inputs for model
     fget_model: callable
         The function to get model
@@ -160,17 +160,40 @@ def auto_schedule_model(inputs, fget_model, schedule_option):
     ---
     None
     """
+    tasks = extract_tasks_from_model(inputs, fget_model)
+    auto_schedule_tasks(tasks, schedule_option)
+
+
+def auto_schedule_build_graph(inputs, fget_model, schedule_option):
+    """
+    Build function for the whole model using Ansor
+
+    Args:
+    ---
+    inputs: List[ditto.auto_compute.LayerTensor]
+        The inputs for model
+    fget_model: callable
+        The function to get model
+    schedule_option: ditto.auto_schedule.schedulers.dispatch.ScheduleOption
+        Schedule options
+
+    Returns:
+    ---
+    Dict{workload_key(str):tvm.te.Schedue}
+    """
+    tasks = extract_tasks_from_model(inputs, fget_model)
+    return auto_schedule_build_tasks(tasks, schedule_option)
+
+
+def auto_schedule_tasks(tasks, schedule_option):
     target = schedule_option.target
     log_file = schedule_option.log_file
-
-    tasks = extract_tasks_from_model(inputs, fget_model)
 
     tune_tasks = []
     task_weights = []
 
     def fget_tasks(wkl_key):
         def _inner():
-            tasks = extract_tasks_from_model(inputs, fget_model)
             assert wkl_key in tasks and len(tasks[wkl_key])
             layer = tasks[wkl_key][0]
             outputs = layer.ops
@@ -207,30 +230,12 @@ def auto_schedule_model(inputs, fget_model, schedule_option):
     tuner.tune(tune_option)
 
 
-def auto_schedule_build_graph(inputs, fget_model, schedule_option):
-    """
-    Build function for the whole model using Ansor
-
-    Args:
-    ---
-    inputs: List[tvm.te.Tensor]
-        The inputs for model
-    fget_model: callable
-        The function to get model
-    schedule_option: ditto.auto_schedule.schedulers.dispatch.ScheduleOption
-        Schedule options
-
-    Returns:
-    ---
-    Dict{workload_key(str):tvm.te.Schedue}
-    """
+def auto_schedule_build_tasks(tasks, schedule_option):
     target = schedule_option.target
     target_host = schedule_option.target_host
     log_file = schedule_option.log_file
     target, target_host = Target.check_and_update_host_consist(
         target, target_host)
-
-    tasks = extract_tasks_from_model(inputs, fget_model)
 
     schedules = {}
     with ApplyHistoryBest(log_file):

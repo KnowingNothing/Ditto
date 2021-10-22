@@ -28,3 +28,14 @@ def extract_tasks_from_model(inputs, fget_model):
         else:
             tasks[layer.fingerprint].append(layer)
     return tasks
+
+
+def extract_tasks_from_graph(graph):
+    all_layers = graph.all_layers
+    tasks = {}
+    for layer in all_layers:
+        if layer.fingerprint not in tasks:
+            tasks[layer.fingerprint] = [layer]
+        else:
+            tasks[layer.fingerprint].append(layer)
+    return tasks
