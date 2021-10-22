@@ -55,7 +55,7 @@ class Tree: public ObjectRef{
     Tree(const Tree<T> & tree, std::function<T (const T &)>const & f = [](const T & t)->T{
         // ObjectPtr<typename T::ContainerType> n = make_object<typename T::ContainerType>(*t.operator->());
         // T tmp(n);
-        return t;
+        return T(t);
     }){
         // the TreeBaseNode object created by deepCopy is directly the node; no TreeBaseNode copy called
         TreeBaseNode<T> node = tree.operator->()->deepCopy(f);
@@ -363,7 +363,6 @@ public:
     *   \brief check whether child is in the subtree of parent.  
     */
     bool is_ancestor(TreeUnitNode<T>*parent, TreeUnitNode<T>*child) const {
-        std::cout<<parent<<" "<<child<<std::endl;
         ICHECK(parent) << "parent not in tree.";
         ICHECK(child) << "child not in tree.";
         while(child && child != parent){
@@ -587,6 +586,11 @@ public:
         newUnit->pChild = self->pChild;
         newUnit->pSibling = self->pSibling;
         newUnit->pParent = self->pParent;
+        TreeUnitNode<T> * tmp = newUnit->pChild;
+        while(tmp != NULL){
+            tmp->pParent = newUnit;
+            tmp = tmp->pSibling;
+        }
         delete self;
     }
     bool isEmpty(){return base->pChild == NULL;}
