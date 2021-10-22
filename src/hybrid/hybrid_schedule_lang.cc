@@ -183,14 +183,10 @@ HybridStage& HybridStage::slice(
   // checking
   ICHECK(leaf_vars_tree.is_ancestor(pinpt, slicept)) << "slice pt not in the subtree of the pin point.";
 
-  Tree<IterVar> subTree = leaf_vars_tree.getSubTree(slicept);
-  TreeUnitNode<IterVar> * base = subTree.getBase();
-  TreeUnitNode<IterVar> * branch = slicept;
+  Tree<IterVar> subTree = leaf_vars_tree.getSubTree(pinpt);
 
-  for(TreeUnitNode<IterVar>* iter = slicept; iter->pParent != pinpt; iter = iter->pParent){
-    base->pChild = iter->pParent;
-    ICHECK(iter->pParent->count_child() == 1) << "cannot slice when exist node on the pinpt-slicept path that has more than 1 children.";
-    branch = iter->pParent;
+  for(TreeUnitNode<IterVar>* iter = subTree.getBase(); iter->pChild != NULL; iter = iter->pChild){
+    ICHECK(iter->count_child() == 1) << "cannot slice when exist node on the pinpt-slicept path that has more than 1 children.";
   }
 
   Tree<IterVar> l(subTree, [](const IterVar & e)->IterVar{
@@ -199,8 +195,6 @@ HybridStage& HybridStage::slice(
   Tree<IterVar> r(subTree, [](const IterVar & e)->IterVar{
       return IterVar(Range(), e->var.copy_with_suffix(".right"), e->iter_type);
   });
-  leaf_vars_tree.insertTree(pinpt, l);
-  leaf_vars_tree.insertTree(pinpt, r);
 
   Array<IterVar> old;
   // add new nodes to all_vars, leaf_vars
@@ -216,19 +210,20 @@ HybridStage& HybridStage::slice(
   }, "RootFirst");
 
   // Remove old tree from leaf_vars
-  Tree<IterVar> subTree_ = subTree.getSubTree(branch);
-  subTree_.apply([&all_vars, &leaf_vars, &old](IterVar & t){
+  leaf_vars_tree.getSubTree(pinpt).apply([&all_vars, &leaf_vars, &old](IterVar & t){
     size_t pos = FindLeafVar(all_vars.GetArrayNode(), leaf_vars.GetArrayNode(), t);
     leaf_vars.erase(leaf_vars.begin() + pos);
     old.push_back(t);
   }, "RootFirst");
-  if(pinpt == leaf_vars_tree.getBase())
+
+  if(mode == "parallel")
     self->relations.push_back(Slice(old, *left, *right, *slicept->data_ptr, IterVar(), mode, factor));
   else  self->relations.push_back(Slice(old, *left, *right, *slicept->data_ptr, *pinpt->data_ptr, mode, factor));
-  std::cout << "branch value: " <<  subTree.getRoot()->Value() << std::endl; 
-  leaf_vars_tree.eraseTree(subTree_.getRoot());
+  
+  leaf_vars_tree.eraseTree(pinpt->pChild);
+  leaf_vars_tree.insertTree(pinpt, l);
+  leaf_vars_tree.insertTree(pinpt, r);
   //   TVM_DLL Slice(Array<IterVar> old, Array<IterVar> left, Array<IterVar> right, IterVar slicept, IterVar pinpt, std::string mode, PrimExpr factor);
-
   return *this;
 }
 

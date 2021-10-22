@@ -187,7 +187,6 @@ class Tree: public ObjectRef{
     *   \brief erase the subTree with root t;
     */
    void eraseTree(TreeUnitNode<T>* t){
-        printf("in Tree::eraseTree\n");
         operator->()->eraseTree(t);
     }
     void eraseTree(const T& t){
@@ -366,14 +365,10 @@ public:
     bool is_ancestor(TreeUnitNode<T>*parent, TreeUnitNode<T>*child){
         ICHECK(parent) << "parent not in tree.";
         ICHECK(child) << "child not in tree.";
-        bool isParent = false;
-        auto func = [&isParent, &child](TreeUnitNode<T>* p){
-            if(p == child){
-                isParent = true; 
-            }
-        };
-        getSubTree(parent).apply(func);
-        return isParent;
+        while(child && child != parent){
+            child = child->pParent;
+        }
+        return child == parent;
     }
     bool is_ancestor(const T& parent, const T&child){
         return is_ancestor(getUnit(parent), getUnit(child));
@@ -538,7 +533,8 @@ public:
         return erase(getUnit(v));
     }
     void eraseTree(TreeUnitNode<T>* ptr){
-        ICHECK(ptr) << "erase ptr is null";
+        if(ptr == NULL)
+            return;
         TreeUnitNode<T>* parent = ptr->pParent;
         if(parent->pChild == ptr){
             parent->pChild = ptr->pSibling;
