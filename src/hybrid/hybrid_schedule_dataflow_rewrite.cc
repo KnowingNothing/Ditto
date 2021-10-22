@@ -470,14 +470,15 @@ void RebaseNonZeroMinLoop(HybridScheduleNode* sch) {
       }
       if (idx < leaf_vars->size()) {
         // insert rebase
-        IterVar rebased = IterVar(Range(), iv->var.copy_with_suffix(""), iv->iter_type);
+        IterVar rebased = IterVar(Range(), iv->var.copy_with_suffix(".rb"), iv->iter_type);
         s->relations.push_back(te::Rebase(iv, rebased));
         if (s->iter_var_attrs.count(iv)) {
           s->iter_var_attrs.Set(rebased, s->iter_var_attrs.at(iv));
         }
         leaf_vars->SetItem(idx, rebased);
         // s->leaf_iter_vars_tree.display();
-        // s->leaf_iter_vars_tree.replace(iv, rebased);
+        // std::cout<<iv<<std::endl;
+        s->leaf_iter_vars_tree.replace(iv, rebased);
         // why crash??????
         // to be added
         rebase_map[iv] = rebased;
