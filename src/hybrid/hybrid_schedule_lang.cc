@@ -38,7 +38,9 @@ void HybridStage::Test(){
   Tree<test> b_subTree = t.getSubTree(b);
   std::cout << "parent correct after subTree ? " << t.check_parent(false) << std::endl;
   b_subTree.display("b_subTree");
-  Tree<test> t_(b_subTree);
+  Tree<test> t_(b_subTree, [](const test & e )->test{
+    return test(0);
+  });
   t_.display("t_");
   t_.apply([](test & tmp)->void{
     tmp.operator->()->data += 1;

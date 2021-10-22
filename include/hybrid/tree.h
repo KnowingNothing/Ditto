@@ -53,9 +53,9 @@ class Tree: public ObjectRef{
     *   \param f the function to copy T object, default shallow copy. 
     */
     Tree(const Tree<T> & tree, std::function<T (const T &)>const & f = [](const T & t)->T{
-        ObjectPtr<typename T::ContainerType> n = make_object<typename T::ContainerType>(*t.operator->());
-        T tmp(n);
-        return tmp;
+        // ObjectPtr<typename T::ContainerType> n = make_object<typename T::ContainerType>(*t.operator->());
+        // T tmp(n);
+        return t;
     }){
         // the TreeBaseNode object created by deepCopy is directly the node; no TreeBaseNode copy called
         TreeBaseNode<T> node = tree.operator->()->deepCopy(f);
