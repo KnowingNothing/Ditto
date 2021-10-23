@@ -231,7 +231,8 @@ void PassUpIndex(const HybridStage& stage, const Map<IterVar, Range>& dom_map,
           ICHECK(allow_missing);
           continue;
         }
-        state[s->old[i]] = state[s->right[i]] + state[s->left[i]];
+        if(i != 0 || s->mode != "parallel")
+          state[s->old[i]] = Select(s->sel == 0, state[s->right[i]], state[s->left[i]]);
         PrimExpr old_min = dom_map.at(s->old[i])->min;
         if(!is_zero(old_min)){
           state[s->old[i]] = state[s->old[i]] + old_min;
@@ -393,7 +394,7 @@ void PassUpDomain(const SliceNode* s, const std::unordered_map<IterVar, Range>& 
   ICHECK(right.defined());
   ICHECK(factor.defined());
   // to be modified
-  *old = arith::EvalSet(s->left[i]->var + (s->right[i]->var + factor) + old_min,
+  *old = arith::EvalSet(s->left[i]->var + s->right[i]->var + old_min,
                            {{s->left[i], left}, {s->right[i], right}});
 }
 // add end

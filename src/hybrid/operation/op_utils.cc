@@ -18,6 +18,55 @@ namespace hybrid {
 using namespace arith;
 using namespace tir;
 
+void PassDownBitMaskOr_WithoutSlice(const HybridStage& stage, std::unordered_map<IterVar, int>* p_state,
+                       bool allow_missing) {
+  auto& state = *p_state;
+  for (IterVarRelation rel : stage->relations) {
+    if (const SplitNode* s = rel.as<SplitNode>()) {
+      if (!state.count(s->parent)) {
+        ICHECK(allow_missing);
+        continue;
+      }
+      if (!state.count(s->outer)) {
+        state[s->outer] = state.at(s->parent);
+      } else {
+        state[s->outer] |= state.at(s->parent);
+      }
+      if (!state.count(s->inner)) {
+        state[s->inner] = state.at(s->parent);
+      } else {
+        state[s->inner] |= state.at(s->parent);
+      }
+    } else if (const FuseNode* s = rel.as<FuseNode>()) {
+      if (!state.count(s->outer) && !state.count(s->inner)) {
+        ICHECK(allow_missing);
+        continue;
+      }
+      int res = 0;
+      if (state.count(s->outer)) res |= state.at(s->outer);
+      if (state.count(s->inner)) res |= state.at(s->inner);
+      if (state.count(s->fused)) res |= state.at(s->fused);
+      state[s->fused] = res;
+    } else if (const RebaseNode* s = rel.as<RebaseNode>()) {
+      if (!state.count(s->parent)) {
+        ICHECK(allow_missing);
+        continue;
+      }
+      if (!state.count(s->rebased)) {
+        state[s->rebased] = state.at(s->parent);
+      } else {
+        state[s->rebased] |= state.at(s->parent);
+      }
+    } else if (const SingletonNode* s = rel.as<SingletonNode>()) {
+      state[s->iter] = 0;
+    } else if (rel.as<SliceNode>()){
+      // do nothing
+    } else {
+      LOG(FATAL) << "unknown relation type";
+    }
+  }
+}
+
 std::vector<std::vector<Stmt> > MakeLoopNest(const HybridStage& stage,
                                              const std::unordered_map<IterVar, Range>& dom_map,
                                              size_t begin_iter_pos, bool new_loop_var,
@@ -30,6 +79,17 @@ std::vector<std::vector<Stmt> > MakeLoopNest(const HybridStage& stage,
   std::vector<std::vector<Stmt> > nest;
   nest.resize(leaf_iter_vars.size() + 1);
   std::unordered_map<IterVar, PrimExpr>& value_map = *p_value_map;
+
+  // handle pinpt for serial
+  std::unordered_map<IterVar, int> serial_pinpt_map;
+  for (IterVarRelation rel : stage->relations) {
+    if (const SliceNode* r = rel.as<SliceNode>()){
+      if(r->mode == "serial"){
+        serial_pinpt_map[r->pinpt] = 1;
+      }
+    }
+  }
+  PassDownBitMaskOr_WithoutSlice(stage, &serial_pinpt_map, true);
 
   for (size_t i = begin_iter_pos; i < leaf_iter_vars.size(); ++i) {
     auto iv = leaf_iter_vars[i];
@@ -91,6 +151,41 @@ std::vector<std::vector<Stmt> > MakeLoopNest(const HybridStage& stage,
               AttrStmt(iv, tir::attr::pragma_scope_prefix + pkey, pvalue, no_op));
         }
       }
+      bool is_under_pinpt = false;
+      const SliceNode* rr = NULL;
+      for (IterVarRelation rel : stage->relations) {
+        if (const SliceNode* r = rel.as<SliceNode>()){
+          if(r->left[0].same_as(iv) || r->right[0].same_as(iv)){
+            is_under_pinpt = true;
+            rr = r;
+          }
+        }
+      }
+      if(is_under_pinpt){
+        value_map[iv] = var;
+        if(rr->left[0].same_as(iv)){
+          nest[i+1].emplace_back(LetStmt(rr->sel, 1, no_op));
+        }
+        else{
+          nest[i+1].emplace_back(LetStmt(rr->sel, 0, no_op));
+        }
+        // handle slice parallel
+        if(rr->mode == "parallel"){
+          nest[i+1].emplace_back(LetStmt(var, rr->pinpt->var, no_op));
+          // don't know whether it is factor or factor+min
+          if(rr->left[0].same_as(iv)){
+            nest[i+1].emplace_back(IfThenElse(var<=rr->factor, no_op));
+          }
+          else{
+            nest[i+1].emplace_back(IfThenElse(var>rr->factor, no_op));
+          }
+          continue;
+        }
+      }
+      if(serial_pinpt_map[iv]){
+        value_map[iv] = var;
+        continue;
+      }
       if (!debug_keep_trivial_loop && is_one(dom->extent)) {
         nest[i + 1].emplace_back(LetStmt(var, cast(var.dtype(), dom->min), no_op));
         value_map[iv] = cast(var.dtype(), dom->min);
@@ -101,7 +196,11 @@ std::vector<std::vector<Stmt> > MakeLoopNest(const HybridStage& stage,
         Var idx(bind_iv->var->name_hint + ".idx", bind_iv->var.dtype());
         nest[i + 1].emplace_back(For(idx, 0, dom->extent, kind, no_op));
         PrimExpr new_value = dom->min + idx;
-        value_map[iv] = new_value;
+        // here: modify original stmt
+        // put the analysis of var=new_value later
+        // inorder to support let i=0 when meeting a branch
+        // value_map[iv] = new_value;
+        value_map[iv] = var;
         nest[i + 1].emplace_back(LetStmt(var, new_value, no_op));
       }
       if (it_attr.defined() && it_attr->prefetch_data.size() != 0) {

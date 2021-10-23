@@ -75,7 +75,7 @@ class Tree: public ObjectRef{
     bool check_parent(bool modify = true) const {
         return operator->()->check_parent(modify);
     }
-    TreeUnitNode<T>* getRoot(){
+    TreeUnitNode<T>* getRoot() const {
         return operator->()->getRoot();
     }
     /*!
@@ -210,7 +210,7 @@ class Tree: public ObjectRef{
     /*!
     *   \brief check whether parent is an immediate parent of child.
     */
-    bool is_immediate_parent(const T& parent, const T& child){
+    bool is_immediate_parent(const T& parent, const T& child) const {
         return operator->()->is_immediate_parent(parent, child);
     }
     /*!
@@ -343,7 +343,7 @@ public:
     TreeBaseNode<T> getSubTree(TreeUnitNode<T> * root_){
         return TreeBaseNode<T>(root_, 1);
     }
-    bool is_immediate_parent(const T & parent, const T & child){
+    bool is_immediate_parent(const T & parent, const T & child) const {
         TreeUnitNode<T> * child_ptr = getUnit(child);
         ICHECK(child_ptr) << "child not in the tree";
         TreeUnitNode<T> * p = Parent(child_ptr);
@@ -414,7 +414,7 @@ public:
             LOG(FATAL) << "no traverse matched";
         }
     }
-    TreeUnitNode<T>* getRoot(){return base->pChild;}
+    TreeUnitNode<T>* getRoot() const {return base->pChild;}
     TreeUnitNode<T>* getBase(){return base;}
     /*!
     * \brief insert child at pos. If pos = NULL, insert at root.
@@ -600,7 +600,7 @@ public:
     /*!
     *   \brief get parent of current node.
     */
-    TreeUnitNode<T>* Parent(TreeUnitNode<T> *current){
+    TreeUnitNode<T>* Parent(TreeUnitNode<T> *current) const {
         ICHECK(current) << "node not in tree.";
         return current->pParent;
         /*

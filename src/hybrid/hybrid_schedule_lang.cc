@@ -220,7 +220,7 @@ HybridStage& HybridStage::slice(
     old.push_back(t);
   }, "RootFirst");
 
-  self->relations.push_back(Slice(old, *left, *right, *slicept->data_ptr, *pinpt->data_ptr, mode, factor));
+  self->relations.push_back(Slice(old, *left, *right, *slicept->data_ptr, *pinpt->data_ptr, mode, factor, old[0]->var.copy_with_suffix(".sel")));
   
   leaf_vars_tree.eraseTree(pinpt->pChild);
   leaf_vars_tree.insertTree(pinpt, l);
@@ -869,7 +869,7 @@ HybridSchedule::HybridSchedule(Array<Operation> ops) {
   }
 }
 
-Slice::Slice(Array<IterVar> old, Array<IterVar> left, Array<IterVar> right, IterVar slicept, IterVar pinpt, std::string mode, PrimExpr factor) {
+Slice::Slice(Array<IterVar> old, Array<IterVar> left, Array<IterVar> right, IterVar slicept, IterVar pinpt, std::string mode, PrimExpr factor, Var sel) {
   auto n = make_object<SliceNode>();
   n->old = old;
   n->left = left;
@@ -878,6 +878,7 @@ Slice::Slice(Array<IterVar> old, Array<IterVar> left, Array<IterVar> right, Iter
   n->pinpt = pinpt;
   n->mode = mode;
   n->factor = factor;
+  n->sel = sel;
   data_ = std::move(n);
 }
 

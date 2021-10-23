@@ -26,6 +26,33 @@ using namespace te;
 namespace ditto{
 namespace hybrid{
 
+// find first occurance location in leaf
+template <typename T>
+size_t FindNodeRef(ArrayNode* array_node, const T& v) {
+  const Object* n = v.get();
+  for (size_t i = 0; i < array_node->size(); ++i) {
+    if (array_node->at(i).get() == n) return i;
+  }
+  return array_node->size();
+}
+
+Stmt MergeNestTreeDfs(const std::vector<std::vector<Stmt>>& nest, Stmt body, const HybridStage& stage, TreeUnitNode<IterVar>* iv){
+  Array<Stmt> sa;
+  if(iv->pChild == NULL) 
+    return MergeNest(nest[FindNodeRef(stage->leaf_iter_vars.GetArrayNode(), *iv->data_ptr) + 1], body);
+  TreeUnitNode<IterVar> * tmp = iv->pChild;
+  while(tmp != NULL){
+    sa.push_back(MergeNestTreeDfs(nest, body, stage, tmp));
+    tmp = tmp->pSibling;
+  }
+  return MergeNest(nest[FindNodeRef(stage->leaf_iter_vars.GetArrayNode(), *iv->data_ptr) + 1], SeqStmt::Flatten(sa));
+}
+
+Stmt MergeNestTree(const std::vector<std::vector<Stmt>>& nest, Stmt body, const HybridStage& stage) {
+  body = MergeNest(nest[nest.size() - 1], body);
+  return MergeNestTreeDfs(nest, body, stage, stage->leaf_iter_vars_tree.getRoot());
+}
+
 Stmt BaseComputeOpNodeBuildRealize(const HybridStage& stage,
                                      const std::unordered_map<IterVar, Range>& realize_map,
                                      const Stmt& body, String storage_scope) {
@@ -144,7 +171,9 @@ Stmt MakeComputeStmt(const ComputeOpNode* self, const HybridStage& stage,
       provides.emplace_back(MakeProvide(self, stage->op.output(i)));
     }
     Stmt provide = SeqStmt::Flatten(provides);
-    provide = MergeNest(n.main_nest, provide);
+    // provide = MergeNest(n.main_nest, provide);
+    // modify it to tree structure
+    provide = MergeNestTree(n.main_nest, provide, stage);
     // run substitution in the on the full nest, because  loop condition
     // could depend on outer loops.
     return Substitute(provide, n.main_vmap);

@@ -578,6 +578,8 @@ class SliceNode : public IterVarRelationNode {
   std::string mode;
   /*! \brief The slice factor */
   PrimExpr factor;
+  /*! \brief var for select node*/
+  Var sel;
 
   void VisitAttrs(AttrVisitor* v) {
     v->Visit("old", &old);
@@ -587,6 +589,7 @@ class SliceNode : public IterVarRelationNode {
     v->Visit("pinpt", &pinpt);
     v->Visit("mode", &mode);
     v->Visit("factor", &factor);
+    v->Visit("sel", &sel);
   }
 
   static constexpr const char* _type_key = "Slice";
@@ -599,7 +602,7 @@ class SliceNode : public IterVarRelationNode {
  */
 class Slice : public IterVarRelation {
  public:
-  TVM_DLL Slice(Array<IterVar> old, Array<IterVar> left, Array<IterVar> right, IterVar slicept, IterVar pinpt, std::string mode, PrimExpr factor);
+  TVM_DLL Slice(Array<IterVar> old, Array<IterVar> left, Array<IterVar> right, IterVar slicept, IterVar pinpt, std::string mode, PrimExpr factor, Var sel);
 
   TVM_DEFINE_OBJECT_REF_METHODS(Slice, IterVarRelation, SliceNode);
 };
