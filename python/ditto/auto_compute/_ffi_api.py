@@ -1,4 +1,4 @@
-""" Register FFI APIs from C++ for the namespace tvm.nast. """
+""" Register FFI APIs from C++ for the namespace ditto.auto_compute. """
 import tvm._ffi
 
 

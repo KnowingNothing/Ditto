@@ -252,6 +252,7 @@ file(GLOB_RECURSE COMPILER_SRCS
     src/*.cc
     src/auto_compute/*.cc
     src/autograd/*.cc
+    src/runtime/*.cc
     src/utils/*.cc
     )
 

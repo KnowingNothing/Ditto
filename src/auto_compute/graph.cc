@@ -131,6 +131,9 @@ Layer::Layer(std::string name, Array<te::Operation> ops,
   node->weights = weights;
   node->const_scalars = const_scalars;
   node->const_tensors = const_tensors;
+  // TODO: remove these constraints
+  CHECK(const_scalars.size() == 0U) << "Currently please do not use const scalars.\n";
+  CHECK(const_tensors.size() == 0U) << "Currently please do not use const tensors.\n";
   data_ = node;
   CheckValidity();
 }
