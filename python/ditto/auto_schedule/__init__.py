@@ -2,6 +2,7 @@ from .schedulers import (
     ScheduleOption,
     retrieve_schedule_model,
     retrieve_schedule,
+    retrieve_schedule_tasks,
     extract_tasks_from_graph,
     extract_tasks_from_model
 )

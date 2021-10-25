@@ -5,5 +5,6 @@ from .dispatch import (
     auto_schedule_tasks_dispatch,
     ScheduleOption,
     retrieve_schedule,
-    retrieve_schedule_model
+    retrieve_schedule_model,
+    retrieve_schedule_tasks
 )

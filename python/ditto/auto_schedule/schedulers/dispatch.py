@@ -96,3 +96,13 @@ def retrieve_schedule_model(inputs, fget_model, schedule_option):
     else:
         raise ValueError(
             f"Scheduler not known: {schedule_option.scheduler}.\n")
+        
+        
+def retrieve_schedule_tasks(tasks, schedule_option):
+    if schedule_option.scheduler is None:
+        return auto_schedule_build_tasks_ansor(tasks, schedule_option)
+    elif schedule_option.scheduler == "ansor":
+        return auto_schedule_build_tasks_ansor(tasks, schedule_option)
+    else:
+        raise ValueError(
+            f"Scheduler not known: {schedule_option.scheduler}.\n")
