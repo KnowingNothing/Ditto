@@ -100,7 +100,7 @@ public:
 
   void call_func_any(Function f, std::vector<T> v) {
     const auto *call_unpack =
-        tvm::runtime::Registry::Get("tg.runtime.call_unpack");
+        tvm::runtime::Registry::Get("runtime.call_unpack");
     ASSERT(call_unpack != nullptr) << "Should prepare call_unpack function.";
     (*call_unpack)(f, Array<T>(v));
   }
@@ -175,6 +175,7 @@ public:
       call_func_21(f, v);
       break;
     default:
+      std::cout << "need " << num_args << "arguments.\n"; 
       call_func_any(f, v);
     }
   }

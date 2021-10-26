@@ -155,11 +155,11 @@ public:
       std::cout << "\n";
 
       // check if is identity
-      if (!check_identity(trans, dims)) {
-        LOG(FATAL) << "Don't know how to handle non-identity matrix, waiting "
-                      "for more discussion...\n";
-        throw;
-      }
+      // if (!check_identity(trans, dims)) {
+      //   LOG(FATAL) << "Don't know how to handle non-identity matrix, waiting "
+      //                 "for more discussion...\n";
+      //   throw;
+      // }
 #endif
       // explain the results:
       Array<PrimExpr> Ub = relax_matrix_array_product(U, compute_args_);
@@ -190,7 +190,7 @@ public:
 #ifdef DEBUG_AUTODIFF
       std::cout << "check VUb:\n";
       for (auto val : VUb) {
-        std::cout << Simplify(val) << " ";
+        std::cout << val << " ";
       }
       std::cout << "\n\n";
 #endif

@@ -54,10 +54,10 @@ private:
   Map<String, Module> built_mods_;
   std::vector<std::string> exe_seq_;
   std::unordered_map<std::string, Layer> workloads_;
-  std::unordered_map<std::string, std::vector<NDArray>> input_buffer_;
-  std::unordered_map<std::string, std::vector<NDArray>> weight_buffer_;
-  std::unordered_map<std::string, std::vector<NDArray>> output_buffer_;
-  std::unordered_map<std::string, std::function<void()>> built_funcs_;
+  std::unordered_map<Layer, std::vector<NDArray>> input_buffer_;
+  std::unordered_map<Layer, std::vector<NDArray>> weight_buffer_;
+  std::unordered_map<Layer, std::vector<NDArray>> output_buffer_;
+  std::unordered_map<std::string, PackedFunc> built_funcs_;
   std::vector<std::function<void()>> to_exe_;
 
   std::unordered_map<te::Tensor, std::vector<std::pair<Layer, int>>>

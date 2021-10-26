@@ -8,7 +8,7 @@ namespace autograd {
 std::unordered_map<std::string, int> NameGenerator::name_map_;
 
 int SubstituteContext::find_bound(PrimExpr &expr) {
-  CheckExprEqual cee;
+  CheckExprEqual cee(true);
   int i = 0;
   for (auto kv : expr2var) {
     if (cee.check_equal(expr, kv.first)) {

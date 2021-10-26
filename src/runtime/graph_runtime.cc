@@ -73,18 +73,17 @@ void GraphEngine::Init(Graph graph, Map<String, Module> built_mods,
     for (auto inp : layer->input_layer_tensors_) {
       feed_layers_[inp->tensor].push_back(std::make_pair(layer, count_inp));
       if (inp->layer.defined()) {
-        std::string inp_fin = inp->layer->GetFingerprint();
-        CHECK(output_buffer_.count(inp_fin))
+        CHECK(output_buffer_.count(inp->layer))
             << "Can't find layer " << inp->layer << " in input_buffer_.\n";
-        CHECK((int)output_buffer_.at(inp_fin).size() > inp->value_idx);
-        input_buffer_[wkl_key].push_back(
-            output_buffer_[inp_fin][inp->value_idx]);
+        CHECK((int)output_buffer_.at(inp->layer).size() > inp->value_idx);
+        input_buffer_[layer].push_back(
+            output_buffer_[inp->layer][inp->value_idx]);
       } else {
         std::ostringstream oss;
         oss << inp->tensor->dtype;
         NDArray ary = (*get_random)(inp->tensor->shape, make_float(-10.0f),
                                     make_float(10.0f), oss.str(), dev_);
-        input_buffer_[wkl_key].push_back(ary);
+        input_buffer_[layer].push_back(ary);
       }
       count_inp += 1;
     }
@@ -93,7 +92,7 @@ void GraphEngine::Init(Graph graph, Map<String, Module> built_mods,
       oss << w->dtype;
       NDArray ary = (*get_random)(w->shape, make_float(-10.0f),
                                   make_float(10.0f), oss.str(), dev_);
-      weight_buffer_[wkl_key].push_back(ary);
+      weight_buffer_[layer].push_back(ary);
     }
     for (auto op : layer->ops) {
       te::Tensor output = op.output(0);
@@ -101,7 +100,7 @@ void GraphEngine::Init(Graph graph, Map<String, Module> built_mods,
       oss << output->dtype;
       NDArray ary = (*get_random)(output->shape, make_float(-10.0f),
                                   make_float(10.0f), oss.str(), dev_);
-      output_buffer_[wkl_key].push_back(ary);
+      output_buffer_[layer].push_back(ary);
     }
   }
 }
@@ -113,11 +112,10 @@ void GraphEngine::SetInputs(Array<NDArray> inputs) {
     CHECK(feed_layers_.count(inp->tensor));
     for (auto kv : feed_layers_.at(inp->tensor)) {
       Layer layer = kv.first;
-      std::string wkl_key = layer->GetFingerprint();
       int id = kv.second;
-      CHECK(input_buffer_.count(wkl_key));
-      CHECK(id < (int)input_buffer_[wkl_key].size());
-      input_buffer_[wkl_key][id] = inputs[count_inp];
+      CHECK(input_buffer_.count(layer));
+      CHECK(id < (int)input_buffer_[layer].size());
+      input_buffer_[layer][id] = inputs[count_inp];
     }
 
     count_inp += 1;
@@ -133,27 +131,36 @@ void GraphEngine::SetWeight(Layer layer, te::Tensor t, NDArray data) {
     }
   }
   CHECK(id >= 0 && id < (int)layer->weights.size());
-  std::string wkl_key = layer->GetFingerprint();
-  CHECK(weight_buffer_.count(wkl_key));
-  weight_buffer_[wkl_key][id] = data;
+  CHECK(weight_buffer_.count(layer));
+  weight_buffer_[layer][id] = data;
 }
 
 void GraphEngine::Compile() {
   built_funcs_.clear();
   to_exe_.clear();
-  for (auto kv : built_mods_) {
-    PackedFunc func = kv.second->GetFunction("default_function");
+
+  for (auto layer: graph_->GetAllLayers()) {
+    std::string wkl_key = layer->GetFingerprint();
+    PackedFunc func;
+    if (built_funcs_.count(wkl_key)) {
+      func = built_funcs_.at(wkl_key);
+    } else {
+      CHECK(built_mods_.count(wkl_key));
+      auto mod = built_mods_.at(wkl_key);
+      func = mod->GetFunction("default_function");
+      built_funcs_[wkl_key] = func;
+    }
     CHECK(func != nullptr) << "Can't find default_function in module.\n";
     std::shared_ptr<GraphEngine::Arguments> arg_ptr =
         std::make_shared<GraphEngine::Arguments>();
     // std::vector<TVMValue> args;
     // std::vector<NDArray> arg_values;
     // std::vector<int> arg_tcodes;
-    std::string wkl_key = std::string(kv.first);
-    CHECK(workloads_.count(wkl_key))
-        << "Can't find workload " << wkl_key << ".\n";
-    if (input_buffer_.count(wkl_key)) {
-      for (auto inp : input_buffer_.at(wkl_key)) {
+    // std::string wkl_key = std::string(kv.first);
+    // CHECK(workloads_.count(wkl_key))
+    //     << "Can't find workload " << wkl_key << ".\n";
+    if (input_buffer_.count(layer)) {
+      for (auto inp : input_buffer_.at(layer)) {
         TVMValue v;
         // DLTensor t(*inp.operator->());
         v.v_handle = &inp;
@@ -163,8 +170,8 @@ void GraphEngine::Compile() {
         arg_ptr->arg_tcodes.push_back(kTVMNDArrayHandle);
       }
     }
-    if (weight_buffer_.count(wkl_key)) {
-      for (auto w : weight_buffer_.at(wkl_key)) {
+    if (weight_buffer_.count(layer)) {
+      for (auto w : weight_buffer_.at(layer)) {
         TVMValue v;
         // DLTensor t(*w.operator->());
         v.v_handle = &w;
@@ -173,8 +180,8 @@ void GraphEngine::Compile() {
         arg_ptr->arg_tcodes.push_back(kTVMNDArrayHandle);
       }
     }
-    if (output_buffer_.count(wkl_key)) {
-      for (auto out : output_buffer_.at(wkl_key)) {
+    if (output_buffer_.count(layer)) {
+      for (auto out : output_buffer_.at(layer)) {
         TVMValue v;
         // DLTensor t(*out.operator->());
         v.v_handle = &out;
@@ -183,7 +190,8 @@ void GraphEngine::Compile() {
         arg_ptr->arg_tcodes.push_back(kTVMNDArrayHandle);
       }
     }
-    auto fexe = [func, arg_ptr, wkl_key]() {
+
+    auto fexe = [func, arg_ptr]() {
       //   TVMRetValue rv;
       //   TVMArgs targs(arg_ptr->arg_values.data(), arg_ptr->arg_tcodes.data(),
       //   (int)(arg_ptr->arg_values.size()));
@@ -192,12 +200,8 @@ void GraphEngine::Compile() {
       // func.CallPacked(targs, &rv);
       (*call_unpack)(func, arg_ptr->args);
     };
-    built_funcs_[wkl_key] = fexe;
-  }
 
-  for (auto key : exe_seq_) {
-    CHECK(built_funcs_.count(key));
-    to_exe_.push_back(built_funcs_.at(key));
+    to_exe_.push_back(fexe);
   }
 }
 
@@ -228,11 +232,10 @@ Array<NDArray> GraphEngine::GetOutputs() {
   for (auto out : graph_->graph_outputs) {
     if (out->layer.defined()) {
       Layer layer = out->layer;
-      std::string wkl_key = layer->GetFingerprint();
       int id = out->value_idx;
-      CHECK(output_buffer_.count(wkl_key));
-      CHECK(id < (int)output_buffer_[wkl_key].size());
-      ret.push_back(output_buffer_[wkl_key][id]);
+      CHECK(output_buffer_.count(layer));
+      CHECK(id < (int)output_buffer_[layer].size());
+      ret.push_back(output_buffer_[layer][id]);
     }
   }
   return ret;
