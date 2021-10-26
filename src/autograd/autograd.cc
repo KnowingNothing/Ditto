@@ -181,9 +181,11 @@ Graph grad_graph(const Graph &graph, bool reserve_forward) {
           // List[grad_to_weights]] kv.second is the input ordinal number for
           // kv.first
           LayerTensor lt = tmp_grad->output_layer_tensors_[kv.second];
-          grad_to_this_output.push_back(lt);
-          grad_tensors_to_this_output.push_back(lt->tensor);
-          grad_to_this_output_to_combine.push_back({lt->tensor});
+          te::Tensor t = te::placeholder(lt->tensor->shape, lt->tensor->dtype, lt->tensor->op->name + "_out");
+          LayerTensor new_lt = LayerTensor(lt->name, lt->layer, t, lt->value_idx);
+          grad_to_this_output.push_back(new_lt);
+          grad_tensors_to_this_output.push_back(new_lt->tensor);
+          grad_to_this_output_to_combine.push_back({new_lt->tensor});
         }
         grads_to_outputs.push_back(grad_to_this_output);
         grads_tensors_to_outputs.push_back(grad_tensors_to_this_output);
@@ -208,6 +210,14 @@ Graph grad_graph(const Graph &graph, bool reserve_forward) {
           // no need to make new layer
           new_inputs.push_back(grads_to_outputs[i][0]);
         } else {
+          // Array<te::Tensor> new_te_inputs;
+          // std::vector<LayerTensor> new_tensors_inputs;
+          // for (auto inp : grads_to_outputs[i]) {
+          //   te::Tensor t = te::placeholder(inp->tensor->shape, inp->tensor->dtype, inp->tensor->op->name + "_out");
+          //   LayerTensor lt = LayerTensor(inp->name, inp->layer, t, inp->value_idx);
+          //   new_te_inputs.push_back(t);
+          //   new_tensors_inputs.push_back(lt);
+          // }
           // need a new layer
           Layer combine_layer = Layer("combine", {combined_grads[i]->op},
                                       grads_tensors_to_outputs[i], {}, {}, {});
