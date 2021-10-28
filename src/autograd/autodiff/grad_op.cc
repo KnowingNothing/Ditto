@@ -915,6 +915,24 @@ public:
   PrimExpr VisitExpr_(const StringImmNode *op) NOT_IMPLEMENTED
 };
 
+
+class CheckExist : public ExprVisitor {
+ public:
+  using ExprVisitor::VisitExpr;
+  Var var_;
+  bool exist;
+  CheckExist(Var var)
+      : var_(var), exist(false) {}
+
+ protected:
+  // list of functions to override.
+  void VisitExpr_(const VarNode* op) override {
+    if (op == var_.get()) {
+      exist = true;
+    }
+  }
+};
+
 class LiftReduce : public ExprMutator {
 private:
 public:
@@ -1279,6 +1297,45 @@ protected:
   // PrimExpr VisitExpr_(const IntImmNode* op) override;
   // PrimExpr VisitExpr_(const FloatImmNode* op) override;
   // PrimExpr VisitExpr_(const StringImmNode* op) override;
+};
+
+
+class RemoveReduce : public ExprMutator {
+private:
+public:
+  PrimExpr remove(const PrimExpr &expr) { return VisitExpr(expr); }
+
+protected:
+  
+  PrimExpr VisitExpr_(const ReduceNode* op) override {
+    Array<IterVar> rivs = op->axis;
+    bool can_eliminate = true;
+    for (auto riv : rivs) {
+      PrimExpr ext = riv->dom->extent;
+      const IntImmNode* as_int = ext.as<IntImmNode>();
+      if (as_int == nullptr || as_int->value != 1) {
+        can_eliminate = false;
+        break;
+      }
+      for (auto b : op->source) {
+        CheckExist checker(riv->var);
+        checker(b);
+        if (checker.exist) {
+          can_eliminate = false;
+          break;
+        }
+      }
+      if (!can_eliminate)
+        break;
+    }
+
+    if (can_eliminate) {
+      CHECK(op->source.size() == 1U);
+      return VisitExpr(op->source[0]);
+    } else {
+      return ExprMutator::VisitExpr_(op);
+    }
+  }
 };
 
 class FormCompute : public ExprVisitor {
@@ -2058,6 +2115,8 @@ Tensor grad_op(const Tensor &input, const Tensor &output,
   // std::cout << "\nLift ReduceNode:\n";
   LiftReduce lifter;
   grad_body = ana.Simplify(lifter.lift(grad_body));
+  RemoveReduce remover;
+  grad_body = ana.Simplify(remover.remove(grad_body));
   // std::cout << "\nResult:\n" << grad_body << "\n";
 
   // std::vector<Tensor> tensor_list;

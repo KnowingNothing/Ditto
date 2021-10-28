@@ -25,6 +25,12 @@ class LayerTensor(Object):
         if not isinstance(other, LayerTensor):
             return False
         return _ffi_api.LayerTensorEqual(self, other)
+    
+    def __call__(self, *args):
+        return self.tensor(*args)
+    
+    def __getitem__(self, indices):
+        return self.tensor.__getitem__(indices)
 
     @property
     def shape(self):

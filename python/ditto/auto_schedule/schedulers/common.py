@@ -1,4 +1,5 @@
 from ditto import auto_compute as ac
+from collections import OrderedDict
 
 
 def extract_tasks_from_model(inputs, fget_model):
@@ -21,7 +22,7 @@ def extract_tasks_from_model(inputs, fget_model):
 
     graph = ac.graph(inputs, outputs)
     all_layers = graph.all_layers
-    tasks = {}
+    tasks = OrderedDict()
     for layer in all_layers:
         if layer.fingerprint not in tasks:
             tasks[layer.fingerprint] = [layer]
@@ -32,7 +33,7 @@ def extract_tasks_from_model(inputs, fget_model):
 
 def extract_tasks_from_graph(graph):
     all_layers = graph.all_layers
-    tasks = {}
+    tasks = OrderedDict()
     for layer in all_layers:
         if layer.fingerprint not in tasks:
             tasks[layer.fingerprint] = [layer]
