@@ -18,55 +18,6 @@ namespace hybrid {
 using namespace arith;
 using namespace tir;
 
-void PassDownBitMaskOr_WithoutSlice(const HybridStage& stage, std::unordered_map<IterVar, int>* p_state,
-                       bool allow_missing) {
-  auto& state = *p_state;
-  for (IterVarRelation rel : stage->relations) {
-    if (const SplitNode* s = rel.as<SplitNode>()) {
-      if (!state.count(s->parent)) {
-        ICHECK(allow_missing);
-        continue;
-      }
-      if (!state.count(s->outer)) {
-        state[s->outer] = state.at(s->parent);
-      } else {
-        state[s->outer] |= state.at(s->parent);
-      }
-      if (!state.count(s->inner)) {
-        state[s->inner] = state.at(s->parent);
-      } else {
-        state[s->inner] |= state.at(s->parent);
-      }
-    } else if (const FuseNode* s = rel.as<FuseNode>()) {
-      if (!state.count(s->outer) && !state.count(s->inner)) {
-        ICHECK(allow_missing);
-        continue;
-      }
-      int res = 0;
-      if (state.count(s->outer)) res |= state.at(s->outer);
-      if (state.count(s->inner)) res |= state.at(s->inner);
-      if (state.count(s->fused)) res |= state.at(s->fused);
-      state[s->fused] = res;
-    } else if (const RebaseNode* s = rel.as<RebaseNode>()) {
-      if (!state.count(s->parent)) {
-        ICHECK(allow_missing);
-        continue;
-      }
-      if (!state.count(s->rebased)) {
-        state[s->rebased] = state.at(s->parent);
-      } else {
-        state[s->rebased] |= state.at(s->parent);
-      }
-    } else if (const SingletonNode* s = rel.as<SingletonNode>()) {
-      state[s->iter] = 0;
-    } else if (rel.as<SliceNode>()){
-      // do nothing
-    } else {
-      LOG(FATAL) << "unknown relation type";
-    }
-  }
-}
-
 std::vector<std::vector<Stmt> > MakeLoopNest(const HybridStage& stage,
                                              const std::unordered_map<IterVar, Range>& dom_map,
                                              size_t begin_iter_pos, bool new_loop_var,

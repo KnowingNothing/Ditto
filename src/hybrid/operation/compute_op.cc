@@ -36,21 +36,41 @@ size_t FindNodeRef(ArrayNode* array_node, const T& v) {
   return array_node->size();
 }
 
-Stmt MergeNestTreeDfs(const std::vector<std::vector<Stmt>>& nest, Stmt body, const HybridStage& stage, TreeUnitNode<IterVar>* iv){
+Stmt MergeNestTreeDfs(const std::vector<std::vector<Stmt>>& nest, Stmt body, const HybridStage& stage, TreeUnitNode<IterVar>* iv, std::unordered_map<IterVar, int>& has_iter, const std::vector<IterVar>& pred_iters){
+  has_iter[*iv->data_ptr] = 1;
   Array<Stmt> sa;
-  if(iv->pChild == NULL) 
+  if(iv->pChild == NULL) {
+    // because "if predicates" can only be set at one side of slice
+    // we need to specially handle it
+    std::unordered_map<IterVar, int> has_iter_cp = has_iter;
+    PassUpBitMaskOr(stage, &has_iter_cp, true);
+    std::vector<Stmt> tmp;
+    for(size_t i = 0; i < nest[nest.size() - 1].size(); i++){
+      if(has_iter_cp[pred_iters[i]]) tmp.push_back(nest[nest.size() - 1][i]);
+    }
+    body = MergeNest(tmp, body);
+    has_iter[*iv->data_ptr] = 0;
     return MergeNest(nest[FindNodeRef(stage->leaf_iter_vars.GetArrayNode(), *iv->data_ptr) + 1], body);
+  }
   TreeUnitNode<IterVar> * tmp = iv->pChild;
   while(tmp != NULL){
-    sa.push_back(MergeNestTreeDfs(nest, body, stage, tmp));
+    sa.push_back(MergeNestTreeDfs(nest, body, stage, tmp, has_iter, pred_iters));
     tmp = tmp->pSibling;
   }
+  has_iter[*iv->data_ptr] = 0;
   return MergeNest(nest[FindNodeRef(stage->leaf_iter_vars.GetArrayNode(), *iv->data_ptr) + 1], SeqStmt::Flatten(sa));
 }
 
-Stmt MergeNestTree(const std::vector<std::vector<Stmt>>& nest, Stmt body, const HybridStage& stage) {
-  body = MergeNest(nest[nest.size() - 1], body);
-  return MergeNestTreeDfs(nest, body, stage, stage->leaf_iter_vars_tree.getRoot());
+Stmt MergeNestTree(const std::vector<std::vector<Stmt>>& nest, Stmt body, const HybridStage& stage, const std::vector<IterVar>& pred_iters) {
+  std::vector<std::vector<Stmt>> nest_cp = nest;
+  while(nest_cp[nest_cp.size() - 1].size() != pred_iters.size()){
+    std::vector<Stmt> tmp;
+    tmp.push_back(nest_cp[nest_cp.size()-1][nest_cp[nest_cp.size()-1].size()-1]);
+    body = MergeNest(tmp, body);
+    nest_cp[nest_cp.size()-1].pop_back();
+  }
+  std::unordered_map<IterVar, int> has_iter;
+  return MergeNestTreeDfs(nest_cp, body, stage, stage->leaf_iter_vars_tree.getRoot(), has_iter, pred_iters);
 }
 
 Stmt BaseComputeOpNodeBuildRealize(const HybridStage& stage,
@@ -173,7 +193,7 @@ Stmt MakeComputeStmt(const ComputeOpNode* self, const HybridStage& stage,
     Stmt provide = SeqStmt::Flatten(provides);
     // provide = MergeNest(n.main_nest, provide);
     // modify it to tree structure
-    provide = MergeNestTree(n.main_nest, provide, stage);
+    provide = MergeNestTree(n.main_nest, provide, stage, n.main_predicates_iters);
     // run substitution in the on the full nest, because  loop condition
     // could depend on outer loops.
     return Substitute(provide, n.main_vmap);
@@ -242,7 +262,7 @@ ComputeLoopNest ComputeLoopNest::Create(const BaseComputeOpNode* self, const Hyb
   ret.main_nest = MakeLoopNest(stage, dom_map, 0, false, std::unordered_set<IterVar>(),
                                &ret.main_vmap, debug_keep_trivial_loop);
   ret.main_predicates =
-      MakeBoundCheck(stage, dom_map, ret.main_vmap, false, std::unordered_set<IterVar>());
+      MakeBoundCheck_WithIter(stage, dom_map, ret.main_vmap, false, std::unordered_set<IterVar>(), ret.main_predicates_iters);
   for (auto& e : ret.main_predicates) {
     e = likely(e);
   }

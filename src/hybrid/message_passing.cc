@@ -560,6 +560,56 @@ void PassDownBitMaskOr(const HybridStage& stage, std::unordered_map<IterVar, int
   }
 }
 
+
+void PassDownBitMaskOr_WithoutSlice(const HybridStage& stage, std::unordered_map<IterVar, int>* p_state,
+                       bool allow_missing) {
+  auto& state = *p_state;
+  for (IterVarRelation rel : stage->relations) {
+    if (const SplitNode* s = rel.as<SplitNode>()) {
+      if (!state.count(s->parent)) {
+        ICHECK(allow_missing);
+        continue;
+      }
+      if (!state.count(s->outer)) {
+        state[s->outer] = state.at(s->parent);
+      } else {
+        state[s->outer] |= state.at(s->parent);
+      }
+      if (!state.count(s->inner)) {
+        state[s->inner] = state.at(s->parent);
+      } else {
+        state[s->inner] |= state.at(s->parent);
+      }
+    } else if (const FuseNode* s = rel.as<FuseNode>()) {
+      if (!state.count(s->outer) && !state.count(s->inner)) {
+        ICHECK(allow_missing);
+        continue;
+      }
+      int res = 0;
+      if (state.count(s->outer)) res |= state.at(s->outer);
+      if (state.count(s->inner)) res |= state.at(s->inner);
+      if (state.count(s->fused)) res |= state.at(s->fused);
+      state[s->fused] = res;
+    } else if (const RebaseNode* s = rel.as<RebaseNode>()) {
+      if (!state.count(s->parent)) {
+        ICHECK(allow_missing);
+        continue;
+      }
+      if (!state.count(s->rebased)) {
+        state[s->rebased] = state.at(s->parent);
+      } else {
+        state[s->rebased] |= state.at(s->parent);
+      }
+    } else if (const SingletonNode* s = rel.as<SingletonNode>()) {
+      state[s->iter] = 0;
+    } else if (rel.as<SliceNode>()){
+      // do nothing
+    } else {
+      LOG(FATAL) << "unknown relation type";
+    }
+  }
+}
+
 /*!
  * \brief message passing to find if boundary checking on IterVar is needed.
  * \param s The hybrid_stage to be used.
@@ -599,24 +649,7 @@ void PassUpBoundCheck(const HybridStage& s, const Map<IterVar, Range>& dom_map,
     // add begin
     } else if (const SliceNode* s = rel.as<SliceNode>()) {
       for(size_t i = 0; i < s->old.size(); i++) {
-        bool left = state.at(s->left[i]);
-        bool right = state.at(s->right[i]);
-
-        if (dom_map.count(s->left[i]) && dom_map.count(s->right[i])) {
-          PrimExpr factor1 = dom_map.at(s->left[i])->extent;
-          PrimExpr factor2 = dom_map.at(s->right[i])->extent;
-          if (left || right) {
-            state[s->old[i]] = true;
-          } else {
-            if (analyzer->CanProve(dom_map.at(s->old[i])->extent == factor1 * factor2)) {
-              state[s->old[i]] = false;
-            } else {
-              state[s->old[i]] = true;
-            }
-          }
-        } else {
-          state[s->old[i]] = true;
-        }
+        state[s->old[i]] = false;
       }
     // add end
     } else if (rel.as<SingletonNode>()) {
@@ -690,5 +723,66 @@ std::vector<PrimExpr> MakeBoundCheck(const HybridStage& stage, const Map<IterVar
   }
   return preds;
 }
+
+std::vector<PrimExpr> MakeBoundCheck_WithIter(const HybridStage& stage, const Map<IterVar, Range>& dom_map,
+                                     const std::unordered_map<IterVar, PrimExpr>& value_map,
+                                     bool skip_ivar_domain,
+                                     const std::unordered_set<IterVar>& skip_iter,
+                                     std::vector<IterVar>& iters) {
+  arith::Analyzer analyzer;
+
+  std::unordered_map<IterVar, bool> bound_state;
+  for (IterVar iv : stage->leaf_iter_vars) {
+    bound_state[iv] = false;
+  }
+  PassUpBoundCheck(stage, dom_map, &bound_state, &analyzer);
+
+  std::vector<PrimExpr> preds;
+  Map<Var, IntSet> iset_dmap;
+
+  // setup domain map for set analysis
+  for (const auto& kv : dom_map) {
+    iset_dmap.Set(kv.first->var, IntSet::FromRange(kv.second));
+  }
+
+  for (auto entry : dom_map) {
+    analyzer.Bind(entry.first->var, entry.second);
+  }
+
+  for (const IterVar& iv : stage->all_iter_vars) {
+    if (skip_iter.count(iv) || iv->iter_type == kOpaque) continue;
+    if (bound_state.at(iv)) {
+      Range dom = dom_map.at(iv);
+      PrimExpr value = value_map.at(iv) - dom->min;
+      PrimExpr vmax = analyzer.int_set(value, iset_dmap).max();
+      if (vmax.dtype() != value.dtype() || !analyzer.CanProve(vmax < dom->extent)) {
+        preds.emplace_back(value < dom->extent);
+        iters.push_back(iv);
+      }
+    }
+  }
+  for (const IterVar& iv : stage->op->root_iter_vars()) {
+    if (skip_iter.count(iv) || iv->iter_type == kOpaque) continue;
+    Range dom = dom_map.at(iv);
+    ICHECK(iv->dom.defined());
+    if (!skip_ivar_domain && !IsRangeSame(iv->dom, dom)) {
+      PrimExpr value = value_map.at(iv) - iv->dom->min;
+      IntSet s = analyzer.int_set(value, iset_dmap);
+      PrimExpr vmin = s.min();
+      PrimExpr vmax = s.max();
+      // The range of `value` resides in [vmin, vmax]
+      if (vmin.dtype() != value.dtype() || !analyzer.CanProve(vmin >= 0)) {
+        preds.emplace_back(value >= 0);
+        iters.push_back(iv);
+      }
+      if (vmax.dtype() != value.dtype() || !analyzer.CanProve(vmax < iv->dom->extent)) {
+        preds.emplace_back(value < iv->dom->extent);
+        iters.push_back(iv);
+      }
+    }
+  }
+  return preds;
+}
+
 }  // namespace hybrid
 }  // namespace ditto

@@ -78,6 +78,9 @@ void PassUpBitMaskOr(const HybridStage& stage, std::unordered_map<IterVar, int>*
 void PassDownBitMaskOr(const HybridStage& stage, std::unordered_map<IterVar, int>* p_state,
                        bool allow_missing = false);
 
+void PassDownBitMaskOr_WithoutSlice(const HybridStage& stage, std::unordered_map<IterVar, int>* p_state,
+                       bool allow_missing = false);
+
 /*!
  * \brief Create boundary check predicates given remapped value of root
  * \param stage The hybrid_stage we operate on
@@ -91,6 +94,12 @@ std::vector<PrimExpr> MakeBoundCheck(const HybridStage& stage, const Map<IterVar
                                      const std::unordered_map<IterVar, PrimExpr>& value_map,
                                      bool skip_ivar_domain,
                                      const std::unordered_set<IterVar>& skip_iter);
+
+std::vector<PrimExpr> MakeBoundCheck_WithIter(const HybridStage& stage, const Map<IterVar, Range>& dom_map,
+                                     const std::unordered_map<IterVar, PrimExpr>& value_map,
+                                     bool skip_ivar_domain,
+                                     const std::unordered_set<IterVar>& skip_iter,
+                                     std::vector<IterVar>& iters);
 
 }  // namespace hybrid
 }  // namespace ditto

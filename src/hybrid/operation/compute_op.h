@@ -26,6 +26,8 @@ struct ComputeLoopNest {
   std::unordered_map<IterVar, PrimExpr> init_vmap;
   // Predicates for the main update loop
   std::vector<PrimExpr> main_predicates;
+  // Itervars where predicates are on
+  std::vector<IterVar> main_predicates_iters;
   // The general loop nest
   std::vector<std::vector<Stmt> > main_nest;
   // Value map for the IterVar.
