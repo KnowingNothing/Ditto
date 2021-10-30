@@ -237,8 +237,8 @@ def graph(graph_inputs, graph_outputs, name="graph"):
     tensors: ditto.auto_compute.Graph
         The result graph
     """
-    if not isinstance(graph_inputs, (list)):
+    if not isinstance(graph_inputs, (list, tuple)):
         graph_inputs = [graph_inputs]
-    if not isinstance(graph_outputs, (list)):
+    if not isinstance(graph_outputs, (list, tuple)):
         graph_outputs = [graph_outputs]
     return _ffi_api.MakeGraph(name, graph_inputs, graph_outputs)
