@@ -1,4 +1,4 @@
-from .activation import ReLU
+from .activation import ReLU, GELU
 from .convolution import conv2d, conv2d_with_bias_nchw, conv2d_with_group_nchw, conv2d_capsule_nchw
 from .elementwise import add
 from .linear import linear

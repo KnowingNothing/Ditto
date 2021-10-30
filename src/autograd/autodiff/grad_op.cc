@@ -1324,6 +1324,11 @@ protected:
           can_eliminate = false;
           break;
         }
+        const ProducerLoadNode* as_load = b.as<ProducerLoadNode>();
+        if (as_load == nullptr) {
+          can_eliminate = false;
+          break;
+        }
       }
       if (!can_eliminate)
         break;
