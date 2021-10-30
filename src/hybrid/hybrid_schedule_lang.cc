@@ -18,51 +18,55 @@ namespace hybrid{
 
 // for test for tree
 void HybridStage::Test(){
-  test a(1), b(2), c(3), d(4), e(5), f(6), g(7);
+  PrimExpr a = 1;
+  PrimExpr b = PrimExpr(a);
+  b.~PrimExpr();
+  std::cout << a;
+  // test a(1), b(2), c(3), d(4), e(5), f(6), g(7);
 
-  Tree<test> t;
-  t.insertChild(a);
-  t.insertChild(a, b);
-  t.insertChild(a, c);
-  t.insertChild(b, d);
-  t.insertChild(b, e);
-  t.insertChild(e, f);
+  // Tree<test> t;
+  // t.insertChild(a);
+  // t.insertChild(a, b);
+  // t.insertChild(a, c);
+  // t.insertChild(b, d);
+  // t.insertChild(b, e);
+  // t.insertChild(e, f);
 
-  // std::cout << "a is b' s imm parent? " <<   t.is_immediate_parent(a, b) << std::endl; 
-  // std::cout << "c is a' s imm parent? " <<   t.is_immediate_parent(c, a) << std::endl; 
-  // std::cout << "num of a' s child" << t.count_children(a) << std::endl;
-  // std::cout << "test a node not in tree" << t.count_children(g) << std::endl;
-  t.display("before replace");
-  t.replace(f, g);
-  t.display("after replace");
-  Tree<test> b_subTree = t.getSubTree(b);
-  std::cout << "parent correct after subTree ? " << t.check_parent(false) << std::endl;
-  b_subTree.display("b_subTree");
-  Tree<test> t_(b_subTree, [](const test & e )->test{
-    return test(0);
-  });
-  t_.display("t_");
-  t_.apply([](test & tmp)->void{
-    tmp.operator->()->data += 1;
-  });
-  t_.display("t_ after + 1");
-  t.display("before insert");
-  t.insertTree(t_);
-  t.display("after insert");
-  t.eraseTree(b);
-  t.display("after erase Tree");
-  // std::cout << "a is b's parent" << t.is_parent(a, b) << std::endl;
-  // std::cout << "c is a's parent" << t.is_parent(c, a) << std::endl;
-  // t.display("t");
-  // t.erase(a);
-  // t.display("t after erase");
-  // Tree<test> t_ = Tree<test>(t);
-  // t_.display("t_ copied");
-  // t_.insert(a);
-  // t_.display("t_ after insert");
-  // t.setValue(f, g);
-  // t.display("t");
+  // // std::cout << "a is b' s imm parent? " <<   t.is_immediate_parent(a, b) << std::endl; 
+  // // std::cout << "c is a' s imm parent? " <<   t.is_immediate_parent(c, a) << std::endl; 
+  // // std::cout << "num of a' s child" << t.count_children(a) << std::endl;
+  // // std::cout << "test a node not in tree" << t.count_children(g) << std::endl;
+  // t.display("before replace");
+  // t.replace(f, g);
+  // t.display("after replace");
+  // Tree<test> b_subTree = t.getSubTree(b);
+  // std::cout << "parent correct after subTree ? " << t.check_parent(false) << std::endl;
+  // b_subTree.display("b_subTree");
+  // Tree<test> t_(b_subTree, [](const test & e )->test{
+  //   return test(0);
+  // });
   // t_.display("t_");
+  // t_.apply([](test & tmp)->void{
+  //   tmp.operator->()->data += 1;
+  // });
+  // t_.display("t_ after + 1");
+  // t.display("before insert");
+  // t.insertTree(t_);
+  // t.display("after insert");
+  // t.eraseTree(b);
+  // t.display("after erase Tree");
+  // // std::cout << "a is b's parent" << t.is_parent(a, b) << std::endl;
+  // // std::cout << "c is a's parent" << t.is_parent(c, a) << std::endl;
+  // // t.display("t");
+  // // t.erase(a);
+  // // t.display("t after erase");
+  // // Tree<test> t_ = Tree<test>(t);
+  // // t_.display("t_ copied");
+  // // t_.insert(a);
+  // // t_.display("t_ after insert");
+  // // t.setValue(f, g);
+  // // t.display("t");
+  // // t_.display("t_");
 }
 void HybridStage::display(std::string s){
   (*this)->leaf_iter_vars_tree.display((*this)->op->name, s);
@@ -186,10 +190,6 @@ HybridStage& HybridStage::slice(
   ICHECK(leaf_vars_tree.is_ancestor(pinpt, slicept)) << "slice pt not in the subtree of the pin point.";
 
   Tree<IterVar> subTree = leaf_vars_tree.getSubTree(pinpt);
-  if (pinpt->data_ptr){
-    std::cout << "pinpt: " << *pinpt->data_ptr << std::endl;
-  }
-  subTree.display("subTree");
   for(TreeUnitNode<IterVar>* iter = subTree.getBase(); iter->pChild != NULL; iter = iter->pChild){
     ICHECK(iter->count_child() == 1) << "cannot slice when exist node on the pinpt-slicept path that has more than 1 children.";
   }
@@ -200,7 +200,6 @@ HybridStage& HybridStage::slice(
   Tree<IterVar> r(subTree, [](const IterVar & e)->IterVar{
       return IterVar(Range(), e->var.copy_with_suffix(".right"), e->iter_type);
   });
-
   Array<IterVar> old;
   // add new nodes to all_vars, leaf_vars
   l.apply([&all_vars, &leaf_vars, left](IterVar & t)->void{
@@ -217,14 +216,14 @@ HybridStage& HybridStage::slice(
   old.push_back(*(pinpt->data_ptr));
 
   // Remove old tree from leaf_vars
-  leaf_vars_tree.getSubTree(pinpt->pChild).apply([&all_vars, &leaf_vars, &old](IterVar & t){
-    size_t pos = FindLeafVar(all_vars.GetArrayNode(), leaf_vars.GetArrayNode(), t);
-    leaf_vars.erase(leaf_vars.begin() + pos);
-    old.push_back(t);
-  }, "RootFirst");
-
+  if(pinpt->pChild != NULL){
+    leaf_vars_tree.getSubTree(pinpt->pChild).apply([&all_vars, &leaf_vars, &old](IterVar & t){
+      size_t pos = FindLeafVar(all_vars.GetArrayNode(), leaf_vars.GetArrayNode(), t);
+      leaf_vars.erase(leaf_vars.begin() + pos);
+      old.push_back(t);
+    }, "RootFirst");
+  }
   self->relations.push_back(Slice(old, *left, *right, *slicept->data_ptr, *pinpt->data_ptr, mode, factor, old[0]->var.copy_with_suffix(".sel")));
-  
   leaf_vars_tree.eraseTree(pinpt->pChild);
   leaf_vars_tree.insertTree(pinpt, r);
   leaf_vars_tree.insertTree(pinpt, l);

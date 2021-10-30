@@ -163,24 +163,25 @@ class Tree: public ObjectRef{
     *   \brief get the SubTree, note that this use the old tree, not a new one. 
     *   \param t, the root node on the tree
     */
-    Tree<T> getSubTree(TreeUnitNode<T>* t){
+    Tree<T> 
+    getSubTree(TreeUnitNode<T>* t){
         TreeBaseNode<T> node = operator->()->getSubTree(t);
         // delete nothing
-        auto node_ = make_object<TreeNode<T> >(node, 1);
+        auto node_ = make_object<TreeNode<T> >(node, 0);
         // delete root
         Tree<T>ret = Tree<T>(node_);
-
-        // node_->is_subTree = 2;
+        node.is_subTree = 1;
         return ret;
     }
-    Tree<T> getSubTree(const T& t){
+    Tree<T> getSubTree(const T& t){ // this subTree is actually a shallow copy
         TreeBaseNode<T> node = operator->()->getSubTree(t);
         // delete nothing
-        auto node_ = make_object<TreeNode<T> >(node, 1);
-        // delete root
+        auto node_ = make_object<TreeNode<T> >(node, 0);
+        // delete nothing
         Tree<T>ret = Tree<T>(node_);
+        // delete root
+        node.is_subTree = 1;
         // node_->is_subTree = 2;
-
         return ret;
     }
     /*!
@@ -333,15 +334,27 @@ public:
         return NULL;
     }
     /*!
-    *   \brief get inplace subtree with root_ as root; 
+    *   \brief get shallow copy subtree with root_ as root; 
     */
     TreeBaseNode<T> getSubTree(const T&root_){
         TreeUnitNode<T> * ptr = getUnit(root_);
         ICHECK(ptr) << "root node not in tree";
-        return TreeBaseNode<T>(ptr, 1);
+        return getSubTree(ptr);
     }
     TreeBaseNode<T> getSubTree(TreeUnitNode<T> * root_){
-        return TreeBaseNode<T>(root_, 1);
+        ICHECK(root_ != NULL) << "getSubTree root cannot be NULL";
+        TreeUnitNode<T> * ptr = getUnit(root_);
+        ICHECK(ptr) << "root node not in tree";
+        TreeBaseNode<T> subTree = TreeBaseNode<T>();
+        TreeUnitNode<T> * root = new TreeUnitNode<T>(*root_->data_ptr);
+        subTree.base->insertChild(root);
+        if(ptr->pChild != NULL){
+            TreeUnitNode<T>* children = ptr->pChild->deepCopy([](const T& t)->T{
+                return t;
+            });
+            root->insertChild(children);
+        }
+        return subTree;
     }
     bool is_immediate_parent(const T & parent, const T & child) const {
         TreeUnitNode<T> * child_ptr = getUnit(child);
@@ -563,7 +576,6 @@ public:
         // deconstruct the tree.
         // TreeBaseNode<T> tmp = getSubTree(v);
         // tmp.is_subTree = 0;
-        std::cout << "in TreeBaseNode::eraseTree(const T & v)\n";
         TreeUnitNode<T>* ptr = getUnit(v);
         ICHECK(ptr) << "erase node not in Tree";
         eraseTree(ptr);
@@ -757,7 +769,7 @@ public:
         data_ptr = new T(data);
     }
     ~TreeUnitNode(){
-        if(data_ptr != NULL){ 
+        if(data_ptr != NULL){
             data_ptr->T::~T();
         }
     }

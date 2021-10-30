@@ -70,7 +70,8 @@ Stmt MergeNestTreeDfs(
   std::unordered_map<IterVar, int>& has_iter, 
   const std::vector<IterVar>& pred_iters, 
   const std::unordered_map<IterVar, int> & up_state,
-  bool reduced
+  bool reduced,
+  const std::unordered_map<IterVar, PrimExpr> & init_vmap
 ){
   std::cout << *iv->data_ptr << "   " <<
     up_state.at(*(iv->data_ptr)) << std:: endl;
@@ -99,12 +100,12 @@ Stmt MergeNestTreeDfs(
     Stmt temp = MergeNestTreeDfs(init_nest, init_body, stage, iv, has_iter, pred_iters);
     std::cout << "init seg: "<< temp << std::endl;
     return SeqStmt::Flatten(
-      temp
+      Substitute(temp, init_vmap)
     ,MergeNest(nest[FindNodeRef(stage->leaf_iter_vars.GetArrayNode(), *iv->data_ptr) + 1], body));
   }
   TreeUnitNode<IterVar> * tmp = iv->pChild;
   std::cout << "the left node:\n" << *tmp->data_ptr << std::endl;
-  sa.push_back(MergeNestTreeDfs(nest, init_nest, body, init_body, stage, tmp, has_iter, pred_iters, up_state, reduced));
+  sa.push_back(MergeNestTreeDfs(nest, init_nest, body, init_body, stage, tmp, has_iter, pred_iters, up_state, reduced, init_vmap));
   tmp = tmp -> pSibling; // the node cannot have more than 2 child though 
   while(tmp != NULL){
     // the program is here that is_pinpt must be true
@@ -112,7 +113,7 @@ Stmt MergeNestTreeDfs(
     if(is_slicept_reudced_axis) // if the slice_pt is not 
       sa.push_back(MergeNestTreeDfs(nest, body, stage, tmp, has_iter, pred_iters));
     else
-      sa.push_back(MergeNestTreeDfs(nest, init_nest, body, init_body, stage, tmp, has_iter, pred_iters, up_state, reduced));
+      sa.push_back(MergeNestTreeDfs(nest, init_nest, body, init_body, stage, tmp, has_iter, pred_iters, up_state, reduced, init_vmap));
     tmp = tmp->pSibling;
   }
   has_iter[*iv->data_ptr] = 0;
@@ -121,7 +122,7 @@ Stmt MergeNestTreeDfs(
   Stmt temp = MergeNestTreeDfs(init_nest, init_body, stage, iv, has_iter, pred_iters);
   std::cout << "init seg: " << temp;
   return SeqStmt::Flatten(
-    temp
+    Substitute(temp, init_vmap)
     ,MergeNest(nest[FindNodeRef(stage->leaf_iter_vars.GetArrayNode(), *iv->data_ptr) + 1], SeqStmt::Flatten(sa))
   );
 }
@@ -151,7 +152,8 @@ Stmt body,
 Stmt init_body, 
 const HybridStage& stage, 
 const std::vector<IterVar>& pred_iters, 
-const std::unordered_map<IterVar, int>& up_state
+const std::unordered_map<IterVar, int>& up_state,
+const std::unordered_map<IterVar, PrimExpr> & init_vmap
 ) {
   std::vector<std::vector<Stmt> > nest_cp = nest;
   while(nest_cp[nest_cp.size() - 1].size() != pred_iters.size()){
@@ -162,7 +164,7 @@ const std::unordered_map<IterVar, int>& up_state
   }
   std::cout << "MergeNestTree:\n" << body;
   std::unordered_map<IterVar, int> has_iter;
-  return MergeNestTreeDfs(nest_cp, init_nest, body, init_body, stage, stage->leaf_iter_vars_tree.getRoot(), has_iter, pred_iters, up_state, false);
+  return MergeNestTreeDfs(nest_cp, init_nest, body, init_body, stage, stage->leaf_iter_vars_tree.getRoot(), has_iter, pred_iters, up_state, false, init_vmap);
 }
 
 Stmt BaseComputeOpNodeBuildRealize(const HybridStage& stage,
@@ -338,7 +340,7 @@ Stmt MakeComputeStmt(const ComputeOpNode* self, const HybridStage& stage,
         update_state[s->rebased] |= update_state[s->parent];
       }
     }
-    provide = MergeNestTree(n.main_nest, n.init_nest, provide, init, stage, n.main_predicates_iters, update_state);
+    provide = MergeNestTree(n.main_nest, n.init_nest, provide, init, stage, n.main_predicates_iters, update_state, n.init_vmap);
     // not robust.. should substitute init and provide separately.
     std::cout << "provide:\n" << provide << std::endl;  
     Stmt temp = Substitute(provide, n.main_vmap);
