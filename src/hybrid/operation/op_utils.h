@@ -36,7 +36,8 @@ std::vector<std::vector<Stmt> > MakeLoopNest(const HybridStage& stage,
                                              size_t begin_iter_pos, bool new_loop_var,
                                              const std::unordered_set<IterVar>& skip_iter,
                                              std::unordered_map<IterVar, PrimExpr>* p_value_map,
-                                             bool debug_keep_trivial_loop);
+                                             bool debug_keep_trivial_loop,
+                                             std::unordered_map<IterVar, int> update_state = std::unordered_map<IterVar, int>());
 
 }  // namespace hybrid
 }  // namespace ditto

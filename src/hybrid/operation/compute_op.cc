@@ -61,16 +61,108 @@ Stmt MergeNestTreeDfs(const std::vector<std::vector<Stmt>>& nest, Stmt body, con
   return MergeNest(nest[FindNodeRef(stage->leaf_iter_vars.GetArrayNode(), *iv->data_ptr) + 1], SeqStmt::Flatten(sa));
 }
 
-Stmt MergeNestTree(const std::vector<std::vector<Stmt>>& nest, Stmt body, const HybridStage& stage, const std::vector<IterVar>& pred_iters) {
-  std::vector<std::vector<Stmt>> nest_cp = nest;
+Stmt MergeNestTreeDfs(
+  const std::vector<std::vector<Stmt>>& nest, 
+  const std::vector<std::vector<Stmt> >&init_nest,
+  Stmt body, Stmt init_body, 
+  const HybridStage& stage, 
+  TreeUnitNode<IterVar>* iv, 
+  std::unordered_map<IterVar, int>& has_iter, 
+  const std::vector<IterVar>& pred_iters, 
+  const std::unordered_map<IterVar, int> & up_state,
+  bool reduced
+){
+  std::cout << *iv->data_ptr << "   " <<
+    up_state.at(*(iv->data_ptr)) << std:: endl;
+  has_iter[*iv->data_ptr] = 1;
+  Array<Stmt> sa;
+  bool is_first_reduce_axis = false; // whether iv is the first reduce axis in a dfs path
+  bool is_pinpt = up_state.at(*(iv->data_ptr)) & 4; // need to know whether the slice_pt is reduce_axis
+  bool is_slicept_reudced_axis = up_state.at(*(iv->data_ptr)) & 8; 
+  if(!reduced && ((up_state.at(*(iv->data_ptr)) & 6) == 2)){
+    reduced = true;
+    is_first_reduce_axis = true;
+  }
+  if(iv->pChild == NULL) {
+    // because "if predicates" can only be set at one side of slice
+    // we need to specially handle it
+    std::unordered_map<IterVar, int> has_iter_cp = has_iter;
+    PassUpBitMaskOr(stage, &has_iter_cp, true);
+    std::vector<Stmt> tmp;
+    for(size_t i = 0; i < nest[nest.size() - 1].size(); i++){
+      if(has_iter_cp[pred_iters[i]]) tmp.push_back(nest[nest.size() - 1][i]);
+    }
+    body = MergeNest(tmp, body);
+    has_iter[*iv->data_ptr] = 0;
+    if (!is_first_reduce_axis)
+      return MergeNest(nest[FindNodeRef(stage->leaf_iter_vars.GetArrayNode(), *iv->data_ptr) + 1], body);
+    Stmt temp = MergeNestTreeDfs(init_nest, init_body, stage, iv, has_iter, pred_iters);
+    std::cout << "init seg: "<< temp << std::endl;
+    return SeqStmt::Flatten(
+      temp
+    ,MergeNest(nest[FindNodeRef(stage->leaf_iter_vars.GetArrayNode(), *iv->data_ptr) + 1], body));
+  }
+  TreeUnitNode<IterVar> * tmp = iv->pChild;
+  std::cout << "the left node:\n" << *tmp->data_ptr << std::endl;
+  sa.push_back(MergeNestTreeDfs(nest, init_nest, body, init_body, stage, tmp, has_iter, pred_iters, up_state, reduced));
+  tmp = tmp -> pSibling; // the node cannot have more than 2 child though 
+  while(tmp != NULL){
+    // the program is here that is_pinpt must be true
+    ICHECK(is_pinpt) << "is_pinpt must be true when iv has > 1 child";
+    if(is_slicept_reudced_axis) // if the slice_pt is not 
+      sa.push_back(MergeNestTreeDfs(nest, body, stage, tmp, has_iter, pred_iters));
+    else
+      sa.push_back(MergeNestTreeDfs(nest, init_nest, body, init_body, stage, tmp, has_iter, pred_iters, up_state, reduced));
+    tmp = tmp->pSibling;
+  }
+  has_iter[*iv->data_ptr] = 0;
+  if (!is_first_reduce_axis)
+    return MergeNest(nest[FindNodeRef(stage->leaf_iter_vars.GetArrayNode(), *iv->data_ptr) + 1], SeqStmt::Flatten(sa));
+  Stmt temp = MergeNestTreeDfs(init_nest, init_body, stage, iv, has_iter, pred_iters);
+  std::cout << "init seg: " << temp;
+  return SeqStmt::Flatten(
+    temp
+    ,MergeNest(nest[FindNodeRef(stage->leaf_iter_vars.GetArrayNode(), *iv->data_ptr) + 1], SeqStmt::Flatten(sa))
+  );
+}
+
+Stmt MergeNestTree(
+  const std::vector<std::vector<Stmt>>& nest, 
+  Stmt body, 
+  const HybridStage& stage, 
+  const std::vector<IterVar>& pred_iters
+) {
+  std::vector<std::vector<Stmt> > nest_cp = nest;
   while(nest_cp[nest_cp.size() - 1].size() != pred_iters.size()){
     std::vector<Stmt> tmp;
     tmp.push_back(nest_cp[nest_cp.size()-1][nest_cp[nest_cp.size()-1].size()-1]);
     body = MergeNest(tmp, body);
     nest_cp[nest_cp.size()-1].pop_back();
   }
+  std::cout << "MergeNestTree:\n" << body;
   std::unordered_map<IterVar, int> has_iter;
   return MergeNestTreeDfs(nest_cp, body, stage, stage->leaf_iter_vars_tree.getRoot(), has_iter, pred_iters);
+}
+
+Stmt MergeNestTree(
+const std::vector<std::vector<Stmt>>& nest, 
+const std::vector<std::vector<Stmt> >&init_nest,
+Stmt body,
+Stmt init_body, 
+const HybridStage& stage, 
+const std::vector<IterVar>& pred_iters, 
+const std::unordered_map<IterVar, int>& up_state
+) {
+  std::vector<std::vector<Stmt> > nest_cp = nest;
+  while(nest_cp[nest_cp.size() - 1].size() != pred_iters.size()){
+    std::vector<Stmt> tmp;
+    tmp.push_back(nest_cp[nest_cp.size()-1][nest_cp[nest_cp.size()-1].size()-1]);
+    body = MergeNest(tmp, body);
+    nest_cp[nest_cp.size()-1].pop_back();
+  }
+  std::cout << "MergeNestTree:\n" << body;
+  std::unordered_map<IterVar, int> has_iter;
+  return MergeNestTreeDfs(nest_cp, init_nest, body, init_body, stage, stage->leaf_iter_vars_tree.getRoot(), has_iter, pred_iters, up_state, false);
 }
 
 Stmt BaseComputeOpNodeBuildRealize(const HybridStage& stage,
@@ -161,6 +253,7 @@ Stmt MakeComputeStmt(const ComputeOpNode* self, const HybridStage& stage,
   // Normal loop structure
   n.init_nest.emplace_back(MakeIfNest(n.init_predicates));
   n.main_nest.emplace_back(MakeIfNest(n.main_predicates));
+  /*
   if (self->reduce_axis.size() != 0) {
     // make reduction.
     Stmt init, provide;
@@ -169,22 +262,88 @@ Stmt MakeComputeStmt(const ComputeOpNode* self, const HybridStage& stage,
       source.push_back(stage->op.output(i));
     }
     MakeReduction(self, source, &init, &provide);
+    std::cout << "init:\n" << init << std::endl;  
+    std::cout << "provide:\n" << provide << std::endl;  
+    
     init = MergeNest(n.init_nest, init);
     init = Substitute(init, n.init_vmap);
     // common nest
     std::vector<std::vector<Stmt> > common(n.main_nest.begin(),
                                            n.main_nest.begin() + n.num_common_loop + 1);
+                  
     std::vector<std::vector<Stmt> > reduce(n.main_nest.begin() + n.num_common_loop + 1,
                                            n.main_nest.end());
+
     provide = MergeNest(reduce, provide);
     if (debug_keep_trivial_loop) {
       provide = MergeNest(common, provide);
     } else {
       provide = MergeNest(common, SeqStmt::Flatten(init, provide));
     }
+    std::cout << "provide_1:\n" << provide << std::endl;  
     // run substitution in the on the full nest, because  loop condition
     // could depend on outer loops.
     return Substitute(provide, n.main_vmap);
+  }
+  else*/
+  for(IterVarRelation rel : stage -> relations){
+    if (const SplitNode* s = rel.as<SplitNode>()) {
+      std::cout << "SplitNode\t";
+    } else if (const FuseNode* s = rel.as<FuseNode>()) {
+      std::cout << "FuseNode\t";
+
+    } else if (const RebaseNode* s = rel.as<RebaseNode>()) {
+      std::cout << "RebaseNode\t";
+
+    // add begin
+    } else if (const SliceNode* s = rel.as<SliceNode>()) {
+      std::cout << "SliceNode\t";
+    // add end
+    } else if (const SingletonNode* s = rel.as<SingletonNode>()) {
+      std::cout << "SigletonNode\t";
+    } else {
+      LOG(FATAL) << "unknown relation type";
+    }
+  }
+  std::cout << std::endl;
+  if (self->reduce_axis.size() != 0) {
+    // make reduction.
+    Stmt init, provide;
+    Array<Tensor> source;
+    for (size_t i = 0; i < self->body.size(); ++i) {
+      source.push_back(stage->op.output(i));
+    }
+    MakeReduction(self, source, &init, &provide);
+
+    std::unordered_map<IterVar, int> update_state;
+    for (IterVar iv : self->reduce_axis) {
+      update_state[iv] = 2;
+    }
+    for (size_t i = 0; i < self->num_schedulable_dims(); ++i) {
+      update_state[self->axis[i]] = 1;
+    }
+    // find which iter var is related to reduction and which is related to axis.
+    hybrid::PassDownBitMaskOr(stage, &update_state);
+    for (IterVarRelation rel : stage->relations){
+      if(const SliceNode* s = rel.as<SliceNode>()){
+        update_state[s->pinpt] |= 4; // mark the pinpt
+        if(update_state.at(s->slicept) & 2){
+          update_state[s->pinpt] |= 8; // mark the pinpt whose slicept is reduce_axis
+        }
+      }
+    }
+    // pass added pinpt info only to rebasednode
+    for (IterVarRelation rel : stage->relations){
+      if(const RebaseNode* s = rel.as<RebaseNode>()){
+        update_state[s->rebased] |= update_state[s->parent];
+      }
+    }
+    provide = MergeNestTree(n.main_nest, n.init_nest, provide, init, stage, n.main_predicates_iters, update_state);
+    // not robust.. should substitute init and provide separately.
+    std::cout << "provide:\n" << provide << std::endl;  
+    Stmt temp = Substitute(provide, n.main_vmap);
+    std::cout << "after provide \n " << temp << std::endl;
+    return temp;
   } else {
     std::vector<Stmt> provides;
     for (size_t i = 0; i < self->body.size(); ++i) {
@@ -260,7 +419,7 @@ ComputeLoopNest ComputeLoopNest::Create(const BaseComputeOpNode* self, const Hyb
   ComputeLoopNest ret;
   // make main loop nest
   ret.main_nest = MakeLoopNest(stage, dom_map, 0, false, std::unordered_set<IterVar>(),
-                               &ret.main_vmap, debug_keep_trivial_loop);
+                               &ret.main_vmap, debug_keep_trivial_loop, std::unordered_map<IterVar, int>());
   ret.main_predicates =
       MakeBoundCheck_WithIter(stage, dom_map, ret.main_vmap, false, std::unordered_set<IterVar>(), ret.main_predicates_iters);
   for (auto& e : ret.main_predicates) {
@@ -300,8 +459,8 @@ ComputeLoopNest ComputeLoopNest::Create(const BaseComputeOpNode* self, const Hyb
       int flag = kv.second;
       if (flag == 2) skip_iter.insert(kv.first);
     }
-    ret.init_nest = MakeLoopNest(stage, dom_map, begin_loop, true, skip_iter, &(ret.init_vmap),
-                                 debug_keep_trivial_loop);
+    ret.init_nest = MakeLoopNest(stage, dom_map, 0, true, skip_iter, &(ret.init_vmap),
+                                 debug_keep_trivial_loop, update_state);
     ret.init_predicates = MakeBoundCheck(stage, dom_map, ret.init_vmap, true, skip_iter);
     for (auto& e : ret.init_predicates) {
       e = likely(e);

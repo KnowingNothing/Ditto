@@ -186,7 +186,10 @@ HybridStage& HybridStage::slice(
   ICHECK(leaf_vars_tree.is_ancestor(pinpt, slicept)) << "slice pt not in the subtree of the pin point.";
 
   Tree<IterVar> subTree = leaf_vars_tree.getSubTree(pinpt);
-
+  if (pinpt->data_ptr){
+    std::cout << "pinpt: " << *pinpt->data_ptr << std::endl;
+  }
+  subTree.display("subTree");
   for(TreeUnitNode<IterVar>* iter = subTree.getBase(); iter->pChild != NULL; iter = iter->pChild){
     ICHECK(iter->count_child() == 1) << "cannot slice when exist node on the pinpt-slicept path that has more than 1 children.";
   }
@@ -223,8 +226,8 @@ HybridStage& HybridStage::slice(
   self->relations.push_back(Slice(old, *left, *right, *slicept->data_ptr, *pinpt->data_ptr, mode, factor, old[0]->var.copy_with_suffix(".sel")));
   
   leaf_vars_tree.eraseTree(pinpt->pChild);
-  leaf_vars_tree.insertTree(pinpt, l);
   leaf_vars_tree.insertTree(pinpt, r);
+  leaf_vars_tree.insertTree(pinpt, l);
   //   TVM_DLL Slice(Array<IterVar> old, Array<IterVar> left, Array<IterVar> right, IterVar slicept, IterVar pinpt, std::string mode, PrimExpr factor);
   return *this;
 }
@@ -503,7 +506,6 @@ HybridStage& HybridStage::reorder(const Array<IterVar>& order) {  // NOLINT(*)
   for (size_t i = 0; i < order.size(); i++) {
     unit_ptr[i]->data_ptr = iter_ptr[order.size()-children_count[i]-1];
   }
-  
   return *this;
 }
 

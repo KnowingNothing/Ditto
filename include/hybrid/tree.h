@@ -119,7 +119,7 @@ class Tree: public ObjectRef{
     *    \brief these 2 functions are used for debug 
     */
     TreeUnitNode<T>* getUnit(const T & t) const {return operator->()->getUnit(t);}
-    TreeUnitNode<T>* getBase(){return operator->()->getBase();}
+    TreeUnitNode<T>* getBase() const{return operator->()->getBase();}
     /*!
     *   \brief change the node
     *   \param pos the original value
@@ -723,9 +723,14 @@ public:
             }
             std::cout << std::endl;
             auto son = father.p -> pChild;
+            std::stack<format> tmp;
             while(son){
-                s.push({son, father.n_tab + 1});
+                tmp.push({son, father.n_tab + 1});
                 son = son -> pSibling;
+            }
+            while(!tmp.empty()){
+                s.push(tmp.top());
+                tmp.pop();
             }
         }
         std::cout <<"---------------display end---------------\n";

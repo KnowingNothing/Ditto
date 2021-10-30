@@ -18,13 +18,24 @@ namespace hybrid {
 using namespace arith;
 using namespace tir;
 
+template <typename T>
+size_t FindNodeRef(ArrayNode* array_node, const T& v) {
+  const Object* n = v.get();
+  for (size_t i = 0; i < array_node->size(); ++i) {
+    if (array_node->at(i).get() == n) return i;
+  }
+  return array_node->size();
+}
+
 std::vector<std::vector<Stmt> > MakeLoopNest(const HybridStage& stage,
                                              const std::unordered_map<IterVar, Range>& dom_map,
                                              size_t begin_iter_pos, bool new_loop_var,
                                              const std::unordered_set<IterVar>& skip_iter,
                                              std::unordered_map<IterVar, PrimExpr>* p_value_map,
-                                             bool debug_keep_trivial_loop) {
+                                             bool debug_keep_trivial_loop, 
+                                            std::unordered_map<IterVar, int> update_state) {
   auto leaf_iter_vars = stage->leaf_iter_vars;
+  const Tree<IterVar> & leaf_iter_vars_tree = stage->leaf_iter_vars_tree;
   Stmt no_op = Evaluate(0);
   // create the loop nest
   std::vector<std::vector<Stmt> > nest;
@@ -114,6 +125,7 @@ std::vector<std::vector<Stmt> > MakeLoopNest(const HybridStage& stage,
       }
       if(is_under_pinpt){
         value_map[iv] = var;
+        // not insert here, because of reorder
         if(rr->left[0].same_as(iv)){
           nest[i+1].emplace_back(LetStmt(rr->sel, 1, no_op));
         }
@@ -137,7 +149,10 @@ std::vector<std::vector<Stmt> > MakeLoopNest(const HybridStage& stage,
         value_map[iv] = var;
         continue;
       }
-      if (!debug_keep_trivial_loop && is_one(dom->extent)) {
+      if(new_loop_var&& (update_state.at(iv) & 2)){
+        // do nothing
+      }
+      else if (!debug_keep_trivial_loop && is_one(dom->extent)) {
         nest[i + 1].emplace_back(LetStmt(var, cast(var.dtype(), dom->min), no_op));
         value_map[iv] = cast(var.dtype(), dom->min);
       } else if (is_zero(dom->min)) {
@@ -215,6 +230,51 @@ std::vector<std::vector<Stmt> > MakeLoopNest(const HybridStage& stage,
       nest[i + 1].emplace_back(AttrStmt(iv, tir::attr::loop_scope, iv->var, no_op));
     }
   }
+  /*
+  bool flag = false;
+  std::unordered_map<IterVar, const SliceNode *> rmap; // reverse map from pinpt itervar to slicenode
+  for (const IterVarRelation rel : stage->relations){
+    if(const SliceNode * s = rel.as<SliceNode>()){
+      update_state[s->pinpt] |= 4; // mark the pinpt
+      rmap[s->pinpt] = s;
+      ICHECK(!flag) << "should be no slice after rebase";
+    }
+    else if (const RebaseNode *s = rel.as<RebaseNode>()){
+      update_state[s->rebased] |= update_state[s->parent]; // pass to rebase node;
+      if (update_state[s->rebased] & 4){
+        if (rmap.count(s->parent))
+          rmap[s->rebased] = rmap.at(s->parent);
+        else 
+          std::cout << s->parent << " has no rmap" << std::endl;
+      } 
+      flag = true;
+    }
+  }
+  std::stack<TreeUnitNode<IterVar> *> S;
+  S.push(leaf_iter_vars_tree.getBase());
+  while(!S.empty()){
+    TreeUnitNode<IterVar> * tmp = S.top();
+    S.pop();
+    if(!tmp) continue;
+    if(tmp->data_ptr){
+      if (update_state.at(*(tmp->data_ptr)) & 4){ // is pinpt
+        TreeUnitNode<IterVar> * child = tmp->pChild;
+        int sel = 1;
+        while(child){
+          size_t pos = FindNodeRef(stage->leaf_iter_vars.GetArrayNode(), *child->data_ptr) + 1;
+          ICHECK(rmap.count(*(tmp->data_ptr))) << *(tmp -> data_ptr) << "failed";
+          nest[pos].insert(nest[pos].begin(), LetStmt(rmap.at(*(tmp->data_ptr))->sel, sel --, no_op));
+          child = child->pSibling;
+        }
+        ICHECK(sel == -1) << "pinpt should not have more than 2 child";
+      }
+    }
+    TreeUnitNode<IterVar> * child = tmp->pChild;
+    while(child){
+      S.push(child);
+      child = child->pSibling;
+    }
+  }*/
   // message passing to get offset of root iter vars.
   hybrid::PassUpIndex(stage, dom_map, &value_map);
   return nest;
