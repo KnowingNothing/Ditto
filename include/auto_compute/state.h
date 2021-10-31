@@ -315,10 +315,13 @@ class GraphStateNode : public Object {
 public:
   /*! \brief The graph */
   Graph graph;
+  std::vector<LayerTensor> inputs;
+  std::vector<LayerTensor> outputs;
   std::unordered_map<Layer, LayerState> layer_states;
   std::vector<Layer> all_layers;
   std::unordered_map<Layer, std::vector<LayerTensor>> consume_graph;
   std::unordered_map<Layer, std::vector<LayerTensor>> produce_graph;
+  std::unordered_map<LayerTensor, std::vector<std::pair<Layer, int>>> feed_graph;
 
   void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("graph", &graph); }
 
@@ -337,6 +340,10 @@ public:
    * \brief Get the current ops in this layer state.
    */
   Array<Layer> GetCurrentLayers();
+  /*!
+   * \brief Partition a layer to fine-grained sub-layers.
+   */
+  Array<Layer> NormalizePartition(Layer layer);
 
   static constexpr const char *_type_key = "ditto.auto_compute.GraphState";
   TVM_DECLARE_BASE_OBJECT_INFO(GraphStateNode, Object);

@@ -634,9 +634,10 @@ Graph GraphStateNode::MakeCompute(Array<LayerTensor> inputs) {
       updates[lt] = lt;
     } else {
       CHECK(layer_states.count(lt->layer))
-          << "Can't find the layer " << lt->layer << " in states.\n";
+          << "Can't find the layer " << lt->layer->name << " in states.\n";
       CHECK(produce_graph.count(lt->layer))
-          << "Can't find the layer " << lt->layer << " in produce graph.\n";
+          << "Can't find the layer " << lt->layer->name
+          << " in produce graph.\n";
       LayerState state = layer_states.at(lt->layer);
       Layer new_layer = state->MakeCompute(Array<LayerTensor>(new_inputs));
       Array<LayerTensor> new_outputs = new_layer.ProduceOutputs(new_inputs);
@@ -652,12 +653,12 @@ Graph GraphStateNode::MakeCompute(Array<LayerTensor> inputs) {
 
   Array<LayerTensor> new_outputs;
   Array<LayerTensor> new_inputs;
-  for (auto lt : graph->graph_outputs) {
+  for (auto lt : this->outputs) {
     helper(lt);
     CHECK(updates.count(lt));
     new_outputs.push_back(updates.at(lt));
   }
-  for (auto lt : graph->graph_inputs) {
+  for (auto lt : this->inputs) {
     CHECK(updates.count(lt));
     new_inputs.push_back(updates.at(lt));
   }
@@ -669,15 +670,239 @@ Array<Layer> GraphStateNode::GetCurrentLayers() {
   return Array<Layer>(all_layers);
 }
 
+Array<Layer> GraphStateNode::NormalizePartition(Layer layer) {
+  LayerState state = this->GetLayerState(layer);
+  Layer new_layer =
+      state->MakeCompute(Array<LayerTensor>(layer->input_layer_tensors_));
+  LayerState new_state(new_layer);
+  int layer_pos = 0;
+  for (auto l : this->all_layers) {
+    if (l == layer) {
+      break;
+    }
+    layer_pos += 1;
+  }
+  CHECK(layer_pos < (int)this->all_layers.size());
+
+  // check the scalar is empty
+  CHECK(new_layer->const_scalars.size() == 0U)
+      << "Const scalar feature is not enabled now, please do not use this "
+         "attribute.\n";
+
+  std::unordered_map<te::Operation, Layer> op2layer;
+  std::unordered_map<te::Operation, int> op2outputs;
+  std::unordered_map<te::Operation, int> op2inputs;
+  std::unordered_map<te::Operation, int> op2weights;
+  std::unordered_map<te::Operation, int> op2const_tensors;
+
+  int num_outputs = (int)new_layer->ops.size();
+  for (int i = 0; i < num_outputs; ++i) {
+    op2outputs[new_layer->ops[i]] = i;
+  }
+  int num_inputs = (int)new_layer->inputs.size();
+  for (int i = 0; i < num_inputs; ++i) {
+    op2inputs[new_layer->inputs[i]->op] = i;
+  }
+  int num_weights = (int)new_layer->weights.size();
+  for (int i = 0; i < num_weights; ++i) {
+    op2weights[new_layer->weights[i]->op] = i;
+  }
+  int num_const_tensors = (int)new_layer->const_tensors.size();
+  for (int i = 0; i < num_const_tensors; ++i) {
+    op2const_tensors[new_layer->const_tensors[i]->op] = i;
+  }
+
+  std::unordered_map<te::Operation, std::vector<LayerTensor>>
+      update_consume_graph;
+  std::unordered_map<te::Operation, std::vector<LayerTensor>>
+      update_produce_graph;
+  std::unordered_map<LayerTensor, LayerTensor> update_layer_outputs;
+  std::unordered_map<int, std::vector<std::pair<te::Operation, int>>>
+      update_feed_graph;
+
+  int count_sub_layer = 0;
+  Array<Layer> ret;
+  for (auto op : new_state->all_ops) {
+    CHECK(new_state->op_states.count(op));
+    CHECK(!op2layer.count(op));
+    // op is up-to-date
+    Array<te::Operation> ops;
+    ops.push_back(op);
+    Array<te::Tensor> inputs;
+    Array<te::Tensor> weights;
+    Array<PrimExpr> const_scalars;
+    Array<te::Tensor> const_tensors;
+
+    const te::PlaceholderOpNode *pop = op.as<te::PlaceholderOpNode>();
+    const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+    CHECK(pop || cop);
+    if (pop != nullptr) {
+      continue;
+    } else {
+      // cop
+      if (new_state->read_graph.count(op)) {
+        for (auto iop : new_state->read_graph.at(op)) {
+          if (op2layer.count(iop)) {
+            // read from another new layer's output
+            Layer this_layer = op2layer.at(iop);
+            CHECK(this_layer->ops.size() > 0U);
+            te::Tensor out = this_layer->ops[0].output(0);
+            te::Tensor tmp =
+                te::placeholder(out->shape, out->dtype, out->op->name);
+            LayerTensor lt(out->op->name, this_layer, tmp, out->value_index);
+            inputs.push_back(tmp);
+            update_consume_graph[op].push_back(lt);
+          } else if (op2inputs.count(iop)) {
+            // read from the layer's inputs
+            CHECK(this->consume_graph.count(layer));
+            Array<LayerTensor> input_lts = this->consume_graph.at(layer);
+            int idx = op2inputs.at(iop);
+
+            LayerTensor lt = input_lts[idx];
+
+            // CHECK(lt->tensor->op == iop);
+            inputs.push_back(iop.output(0));
+            update_consume_graph[op].push_back(lt);
+            update_feed_graph[idx].push_back(
+                std::make_pair(op, (int)inputs.size() - 1));
+          } else if (op2weights.count(iop)) {
+            // read from the layer's weights
+            weights.push_back(iop.output(0));
+          } else if (op2const_tensors.count(iop)) {
+            // read from the layer's const tensors
+            const_tensors.push_back(iop.output(0));
+          } else {
+            CHECK(false) << "Unknown source for input " << iop << ".\n";
+          }
+        }
+      }
+
+      Layer cop_layer =
+          Layer(new_layer->name + "_" + std::to_string(count_sub_layer++), ops,
+                inputs, weights, const_scalars, const_tensors);
+
+      std::vector<LayerTensor> cop_inputs;
+      if (update_consume_graph.count(op)) {
+        for (auto cop_inp : update_consume_graph.at(op)) {
+          cop_inputs.push_back(cop_inp);
+        }
+      }
+      std::vector<LayerTensor> cop_outputs =
+          cop_layer.ProduceOutputs(cop_inputs);
+      update_produce_graph[op] = cop_outputs;
+
+      if (op2outputs.count(op)) {
+        int idx = op2outputs.at(op);
+        CHECK(this->produce_graph.count(layer));
+        CHECK((int)this->produce_graph.at(layer).size() > idx);
+        CHECK(cop_outputs.size() == 1U);
+        update_layer_outputs[this->produce_graph.at(layer)[idx]] =
+            cop_outputs[0];
+      }
+
+      op2layer[op] = cop_layer;
+      ret.push_back(cop_layer);
+    }
+  }
+
+  // update the graph state
+  // update all_layers
+  this->all_layers.erase(this->all_layers.begin() + layer_pos);
+  for (int i = count_sub_layer - 1; i >= 0; --i) {
+    this->all_layers.insert(this->all_layers.begin() + layer_pos, ret[i]);
+    this->layer_states[ret[i]] = LayerState(ret[i]);
+  }
+  // update consume_graph, produce_graph, feed_graph
+  for (auto op : new_state->all_ops) {
+    if (op2layer.count(op)) {
+      Layer l = op2layer.at(op);
+      this->consume_graph[l] = update_consume_graph[op];
+      this->produce_graph[l] = update_produce_graph[op];
+    }
+  }
+
+  if (this->produce_graph.count(layer)) {
+    for (auto plt : produce_graph.at(layer)) {
+      if (this->feed_graph.count(plt)) {
+        for (auto kv : this->feed_graph.at(plt)) {
+          CHECK(this->consume_graph.count(kv.first));
+          CHECK((int)this->consume_graph.at(kv.first).size() > kv.second);
+          CHECK(update_layer_outputs.count(plt));
+          CHECK(update_layer_outputs.at(plt) != plt);
+          this->consume_graph[kv.first][kv.second] =
+              update_layer_outputs.at(plt);
+          this->feed_graph[update_layer_outputs.at(plt)].push_back(kv);
+        }
+      }
+    }
+  }
+
+  // update feed_graph
+  if (this->consume_graph.count(layer)) {
+    for (auto inp : this->consume_graph.at(layer)) {
+      CHECK(this->feed_graph.count(inp));
+      std::vector<std::pair<Layer, int>> update;
+      for (auto kv : this->feed_graph.at(inp)) {
+        if (kv.first != layer) {
+          update.push_back(kv);
+        } else {
+          CHECK(update_feed_graph.count(kv.second));
+          for (auto kkvv : update_feed_graph.at(kv.second)) {
+            CHECK(op2layer.count(kkvv.first));
+            Layer l = op2layer.at(kkvv.first);
+            update.push_back(std::make_pair(l, kkvv.second));
+          }
+        }
+      }
+      this->feed_graph[inp] = update;
+    }
+  }
+
+  // erase old info
+  if (this->consume_graph.count(layer)) {
+    this->consume_graph.erase(layer);
+  }
+  if (this->produce_graph.count(layer)) {
+    this->produce_graph.erase(layer);
+  }
+  for (auto kv : update_layer_outputs) {
+    if (this->feed_graph.count(kv.first)) {
+      this->feed_graph.erase(kv.first);
+    }
+  }
+
+  // update outputs
+  std::vector<LayerTensor> new_outputs;
+  for (auto l : this->outputs) {
+    if (update_layer_outputs.count(l)) {
+      new_outputs.push_back(update_layer_outputs.at(l));
+    } else {
+      new_outputs.push_back(l);
+    }
+  }
+  this->outputs = new_outputs;
+
+  return ret;
+}
+
 GraphState::GraphState(Graph graph) {
   auto node = make_object<GraphStateNode>();
   node->graph = graph;
+  for (auto l : graph->graph_inputs) {
+    node->inputs.push_back(l);
+  }
+  for (auto l : graph->graph_outputs) {
+    node->outputs.push_back(l);
+  }
   Array<Layer> layers = graph->GetAllLayers();
   for (auto layer : layers) {
     node->all_layers.push_back(layer);
     node->layer_states[layer] = LayerState(layer);
+    int count_inp = 0;
     for (auto inp : layer->input_layer_tensors_) {
       node->consume_graph[layer].push_back(inp);
+      node->feed_graph[inp].push_back(std::make_pair(layer, count_inp));
+      count_inp += 1;
     }
     for (auto out : layer->output_layer_tensors_) {
       node->produce_graph[layer].push_back(out);
@@ -763,6 +988,11 @@ TVM_REGISTER_GLOBAL("ditto.auto_compute.GraphStateMakeCompute")
 TVM_REGISTER_GLOBAL("ditto.auto_compute.GraphStateGetCurrentLayers")
     .set_body_typed([](GraphState graph_state) {
       return graph_state->GetCurrentLayers();
+    });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.GraphStateNormalizePartitionLayer")
+    .set_body_typed([](GraphState graph_state, Layer layer) {
+      return graph_state->NormalizePartition(layer);
     });
 
 } // namespace auto_compute
