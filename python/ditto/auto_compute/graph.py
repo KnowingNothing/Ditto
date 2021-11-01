@@ -25,21 +25,21 @@ class LayerTensor(Object):
         if not isinstance(other, LayerTensor):
             return False
         return _ffi_api.LayerTensorEqual(self, other)
-    
+
     def __call__(self, *args):
         return self.tensor(*args)
-    
+
     def __getitem__(self, indices):
         return self.tensor.__getitem__(indices)
 
     @property
     def shape(self):
         return self.tensor.shape
-    
+
     @property
     def dtype(self):
         return self.tensor.dtype
-    
+
     def __str__(self) -> str:
         ret = f"LayerTensor({self.name}, {self.shape}, {self.dtype})"
         return ret
@@ -62,12 +62,12 @@ class Layer(Object):
         ret = _ffi_api.ProduceOutputs(self, inputs)
         if len(ret) == 1:
             return ret[0]
-    
+
     @property
     def all_ops(self):
         """Return all ops in this layer (including placeholder)"""
         return _ffi_api.LayerGetAllOps(self)
-    
+
     @property
     def fingerprint(self):
         """Return the fingerprint of this layer"""
@@ -77,6 +77,16 @@ class Layer(Object):
     def num_inputs(self):
         """Number of inputs required by this layer."""
         return len(self.inputs)
+
+    @property
+    def data_transfer_amount(self):
+        """Data transfer amount in this layer."""
+        return _ffi_api.LayerGetDataTransferAmount(self).value
+
+    @property
+    def gflops(self):
+        """GFLOPS in this layer."""
+        return _ffi_api.LayerGetGFLOPS(self).value
 
     def __str__(self) -> str:
         all_ops = _ffi_api.LayerGetAllOps(self)
@@ -187,12 +197,12 @@ def layer(ops, inputs=None, weights=None, const_scalars=None,
 @tvm._ffi.register_object("ditto.auto_compute.Graph")
 class Graph(Object):
     """Graph object"""
-    
+
     @property
     def all_layers(self):
         """Return all the layers in this graph"""
         return _ffi_api.GraphGetAllLayers(self)
-    
+
     def __str__(self) -> str:
         all_layers = _ffi_api.GraphGetAllLayers(self)
         ret = ""

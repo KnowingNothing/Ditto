@@ -7,5 +7,6 @@ from .graph import (
 from .state import (
     create_op_state,
     create_layer_state,
-    create_graph_state
+    create_graph_state,
+    find_convex_layers
 )

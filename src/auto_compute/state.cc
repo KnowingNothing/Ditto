@@ -851,8 +851,14 @@ Array<Layer> GraphStateNode::NormalizePartition(Layer layer, bool modify) {
           CHECK((int)this->consume_graph.at(kv.first).size() > kv.second);
           CHECK(update_layer_outputs.count(plt));
           CHECK(update_layer_outputs.at(plt) != plt);
-          this->consume_graph[kv.first][kv.second] =
-              update_layer_outputs.at(plt);
+          LayerTensor output_to_add = update_layer_outputs.at(plt);
+          te::Tensor tmp = te::placeholder(output_to_add->tensor->shape,
+                                           output_to_add->tensor->dtype,
+                                           output_to_add->tensor->op->name);
+          LayerTensor new_output =
+              LayerTensor(output_to_add->name, output_to_add->layer, tmp,
+                          output_to_add->value_idx);
+          this->consume_graph[kv.first][kv.second] = new_output;
           this->feed_graph[update_layer_outputs.at(plt)].push_back(kv);
         }
       }
@@ -877,6 +883,32 @@ Array<Layer> GraphStateNode::NormalizePartition(Layer layer, bool modify) {
         }
       }
       this->feed_graph[inp] = update;
+    }
+  }
+
+  for (auto op : new_state->all_ops) {
+    if (op2layer.count(op)) {
+      if (new_state->feed_graph.count(op)) {
+        for (auto fop : new_state->feed_graph.at(op)) {
+          std::vector<int> pos;
+          int count = 0;
+          for (auto inp : fop->InputTensors()) {
+            if (inp->op == op) {
+              pos.push_back(count);
+            }
+            count += 1;
+          }
+
+          CHECK(op2layer.count(fop));
+          CHECK(update_produce_graph.count(op));
+          std::vector<LayerTensor> o = update_produce_graph.at(op);
+          CHECK(o.size() == 1U);
+          for (auto p : pos) {
+            this->feed_graph[o[0]].push_back(
+                std::make_pair(op2layer.at(fop), p));
+          }
+        }
+      }
     }
   }
 
@@ -1308,6 +1340,15 @@ TVM_REGISTER_GLOBAL("ditto.auto_compute.GraphStateFuseLayer")
     .set_body_typed([](GraphState graph_state, Layer front, Layer back,
                        bool modify) {
       return graph_state->Fuse(front, back, modify);
+    });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.FindConvexSet")
+    .set_body_typed([](Layer front, Layer back) {
+      Array<Layer> source;
+      Array<Layer> sink;
+      source.push_back(front);
+      sink.push_back(back);
+      return FindConvexSet(source, sink);
     });
 
 } // namespace auto_compute

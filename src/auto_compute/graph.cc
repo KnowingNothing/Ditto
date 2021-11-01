@@ -121,6 +121,51 @@ std::string LayerNode::GetFingerprint() const {
   return oss.str();
 }
 
+FloatImm LayerNode::GetDataTransferAmount() const {
+  float ret = 0;
+  for (auto op : this->GetAllOps()) {
+    for (auto inp : op->InputTensors()) {
+      int ele = 1;
+      for (auto s : inp->shape) {
+        const IntImmNode *as_int = s.as<IntImmNode>();
+        CHECK(as_int) << "Please use static shape, rather than " << s << ".\n";
+        ele = ele * as_int->value;
+      }
+      ret += ele;
+    }
+  }
+  for (auto op : this->ops) {
+    int ele = 1;
+    for (auto s : op.output(0)->shape) {
+      const IntImmNode *as_int = s.as<IntImmNode>();
+      CHECK(as_int) << "Please use static shape, rather than " << s << ".\n";
+      ele = ele * as_int->value;
+    }
+    ret += ele;
+  }
+  return FloatImm(tvm::runtime::DataType::Float(32), ret);
+}
+
+FloatImm LayerNode::GetGFLOPS() const {
+  float ret = 0;
+  for (auto op : this->GetAllOps()) {
+    const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+    if (!cop)
+      continue;
+    float fop = 0;
+    for (auto b : cop->body) {
+      fop += utils::GetFloatOps(b);
+    }
+    for (auto s : op.output(0)->shape) {
+      const IntImmNode *as_int = s.as<IntImmNode>();
+      CHECK(as_int) << "Please use static shape, rather than " << s << ".\n";
+      fop = fop * as_int->value;
+    }
+    ret = ret + fop;
+  }
+  return FloatImm(tvm::runtime::DataType::Float(32), ret / 1e9);
+}
+
 Layer::Layer(std::string name, Array<te::Operation> ops,
              Array<te::Tensor> inputs, Array<te::Tensor> weights,
              Array<PrimExpr> const_scalars, Array<te::Tensor> const_tensors) {
@@ -351,6 +396,12 @@ TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerGetAllOps")
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerGetFingerprint")
     .set_body_typed([](Layer layer) { return layer->GetFingerprint(); });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerGetDataTransferAmount")
+    .set_body_typed([](Layer layer) { return layer->GetDataTransferAmount(); });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.LayerGetGFLOPS")
+    .set_body_typed([](Layer layer) { return layer->GetGFLOPS(); });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.MakeLayer")
     .set_body_typed([](std::string name, Array<te::Operation> ops,

@@ -209,6 +209,14 @@ public:
    * \brief Get the string fingerprint of this layer.
    */
   std::string GetFingerprint() const;
+  /*!
+   * \brief Get the total data read/write for this layer.
+   */
+  FloatImm GetDataTransferAmount() const;
+  /*!
+   * \brief Get the total GFLOPS for this layer.
+   */
+  FloatImm GetGFLOPS() const;
 
   static constexpr const char *_type_key = "ditto.auto_compute.Layer";
   TVM_DECLARE_FINAL_OBJECT_INFO(LayerNode, Object);

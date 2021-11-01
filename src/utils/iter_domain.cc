@@ -75,6 +75,143 @@ Map<tir::Var, Range> InferRange(const Map<tir::Var, PrimExpr> &vars_to_infer,
   return new_ranges;
 }
 
+class FloatOpGetter : public tir::ExprVisitor {
+public:
+  using tir::ExprVisitor::VisitExpr;
+
+  FloatOpGetter() : count_(0) {}
+
+  int Get(const PrimExpr &expr) {
+    count_ = 0;
+    VisitExpr(expr);
+    return count_;
+  }
+
+protected:
+  using tir::ExprVisitor::VisitExpr_;
+  void VisitExpr_(const tir::AddNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::SubNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::MulNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::DivNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::ModNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::FloorDivNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::FloorModNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::MinNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::MaxNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::EQNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::NENode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::LTNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::LENode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::GTNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::GENode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::AndNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::OrNode *op) override {
+    if (op->a->dtype.is_float() || op->b->dtype.is_float()) {
+      count_ += 1;
+    }
+    tir::ExprVisitor::VisitExpr_(op);
+  }
+  void VisitExpr_(const tir::ReduceNode *op) override {
+    tir::ExprVisitor::VisitExpr_(op);
+    int mul = 1;
+    for (auto iv : op->axis) {
+      const IntImmNode *as_int = iv->dom->extent.as<IntImmNode>();
+      CHECK(as_int) << "Please provide constant bound, instead of "
+                    << iv->dom->extent << ".\n";
+      mul = mul * as_int->value;
+    }
+    count_ = count_ * mul;
+  }
+
+private:
+  int count_;
+};
+
+float GetFloatOps(PrimExpr body) {
+  FloatOpGetter getter;
+  return (float)getter.Get(body);
+}
+
 } // namespace utils
 
 } // namespace ditto

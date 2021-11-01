@@ -388,3 +388,7 @@ def create_layer_state(layer):
 def create_graph_state(graph):
     """Make the Graph State"""
     return _ffi_api.CreateGraphState(graph)
+
+
+def find_convex_layers(front, back):
+    return _ffi_api.FindConvexSet(front, back)
