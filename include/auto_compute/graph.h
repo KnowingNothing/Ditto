@@ -180,7 +180,7 @@ public:
   /*! \brief The weights of this layer, can by [] */
   Array<te::Tensor> weights;
   /*! \brief The const scalar values of this layer, can by [] */
-  Array<PrimExpr> const_scalars;  // this is for future usage, not used now
+  Array<PrimExpr> const_scalars; // this is for future usage, not used now
   /*! \brief The const tensors of this layer, can by [] */
   Array<te::Tensor> const_tensors;
   /*! \brief The input layer tensors */
@@ -287,6 +287,13 @@ public:
   static constexpr const char *_type_key = "ditto.auto_compute.Graph";
   TVM_DECLARE_BASE_OBJECT_INFO(GraphNode, Object);
 };
+
+
+/*!
+  * \brief Get all the layers within the source and sink.
+  */
+Array<Layer> FindConvexSet(Array<Layer> source, Array<Layer> sink);
+
 
 class Graph : public ObjectRef {
 public:

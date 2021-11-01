@@ -368,8 +368,11 @@ class GraphState(Object):
     def get_current_layers(self):
         return _ffi_api.GraphStateGetCurrentLayers(self)
     
-    def normalize_partition_layer(self, layer):
-        return _ffi_api.GraphStateNormalizePartitionLayer(self, layer)
+    def normalize_partition_layer(self, layer, modify=True):
+        return _ffi_api.GraphStateNormalizePartitionLayer(self, layer, modify)
+    
+    def fuse_layer(self, front, back, modify=True):
+        return _ffi_api.GraphStateFuseLayer(self, front, back, modify)
 
 
 def create_op_state(op):

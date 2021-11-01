@@ -646,7 +646,11 @@ Graph GraphStateNode::MakeCompute(Array<LayerTensor> inputs) {
       CHECK(num_outputs == (int)old_outputs.size())
           << "Output number mismatch.\n";
       for (int i = 0; i < num_outputs; ++i) {
-        updates[old_outputs[i]] = new_outputs[i];
+        LayerTensor tmp = new_outputs[i];
+        te::Tensor p = te::placeholder(tmp->tensor->shape, tmp->tensor->dtype,
+                                       tmp->tensor->op->name);
+        updates[old_outputs[i]] =
+            LayerTensor(tmp->name, tmp->layer, p, tmp->value_idx);
       }
     }
   };
@@ -670,10 +674,11 @@ Array<Layer> GraphStateNode::GetCurrentLayers() {
   return Array<Layer>(all_layers);
 }
 
-Array<Layer> GraphStateNode::NormalizePartition(Layer layer) {
+Array<Layer> GraphStateNode::NormalizePartition(Layer layer, bool modify) {
   LayerState state = this->GetLayerState(layer);
+  CHECK(this->consume_graph.count(layer));
   Layer new_layer =
-      state->MakeCompute(Array<LayerTensor>(layer->input_layer_tensors_));
+      state->MakeCompute(Array<LayerTensor>(this->consume_graph.at(layer)));
   LayerState new_state(new_layer);
   int layer_pos = 0;
   for (auto l : this->all_layers) {
@@ -727,7 +732,6 @@ Array<Layer> GraphStateNode::NormalizePartition(Layer layer) {
     CHECK(!op2layer.count(op));
     // op is up-to-date
     Array<te::Operation> ops;
-    ops.push_back(op);
     Array<te::Tensor> inputs;
     Array<te::Tensor> weights;
     Array<PrimExpr> const_scalars;
@@ -740,6 +744,8 @@ Array<Layer> GraphStateNode::NormalizePartition(Layer layer) {
       continue;
     } else {
       // cop
+      std::unordered_map<te::Operation, te::Operation> tmp_map;
+
       if (new_state->read_graph.count(op)) {
         for (auto iop : new_state->read_graph.at(op)) {
           if (op2layer.count(iop)) {
@@ -752,6 +758,7 @@ Array<Layer> GraphStateNode::NormalizePartition(Layer layer) {
             LayerTensor lt(out->op->name, this_layer, tmp, out->value_index);
             inputs.push_back(tmp);
             update_consume_graph[op].push_back(lt);
+            tmp_map[iop] = tmp->op;
           } else if (op2inputs.count(iop)) {
             // read from the layer's inputs
             CHECK(this->consume_graph.count(layer));
@@ -765,18 +772,30 @@ Array<Layer> GraphStateNode::NormalizePartition(Layer layer) {
             update_consume_graph[op].push_back(lt);
             update_feed_graph[idx].push_back(
                 std::make_pair(op, (int)inputs.size() - 1));
+
+            tmp_map[iop] = iop;
           } else if (op2weights.count(iop)) {
             // read from the layer's weights
             weights.push_back(iop.output(0));
+            tmp_map[iop] = iop;
           } else if (op2const_tensors.count(iop)) {
             // read from the layer's const tensors
             const_tensors.push_back(iop.output(0));
+            tmp_map[iop] = iop;
           } else {
             CHECK(false) << "Unknown source for input " << iop << ".\n";
           }
         }
       }
 
+      OpState tmp_state(op);
+      Array<te::Tensor> op_inputs;
+      for (auto inp : op->InputTensors()) {
+        CHECK(tmp_map.count(inp->op));
+        op_inputs.push_back(tmp_map.at(inp->op).output(0));
+      }
+      te::Operation new_op = tmp_state->MakeCompute(op_inputs);
+      ops.push_back(new_op);
       Layer cop_layer =
           Layer(new_layer->name + "_" + std::to_string(count_sub_layer++), ops,
                 inputs, weights, const_scalars, const_tensors);
@@ -805,6 +824,9 @@ Array<Layer> GraphStateNode::NormalizePartition(Layer layer) {
     }
   }
 
+  if (!modify) {
+    return ret;
+  }
   // update the graph state
   // update all_layers
   this->all_layers.erase(this->all_layers.begin() + layer_pos);
@@ -883,6 +905,293 @@ Array<Layer> GraphStateNode::NormalizePartition(Layer layer) {
   this->outputs = new_outputs;
 
   return ret;
+}
+
+Layer GraphStateNode::Fuse(Layer front, Layer back, bool modify) {
+  Array<Layer> source;
+  Array<Layer> sink;
+  source.push_back(front);
+  sink.push_back(back);
+  Array<Layer> convex_set = FindConvexSet(source, sink);
+  CHECK(convex_set.size() > 0U) << "The fusion set is empty.\n";
+  std::unordered_set<Layer> layer_convex_set;
+  for (auto layer : convex_set) {
+    layer_convex_set.insert(layer);
+  }
+
+  std::unordered_set<LayerTensor> graph_output_set;
+  for (auto out : this->outputs) {
+    graph_output_set.insert(out);
+  }
+
+  // ctx for layers
+  // use old layer as tag
+  std::unordered_map<Layer, std::unordered_map<te::Tensor, int>> inputs_map;
+  std::unordered_map<Layer, std::unordered_map<te::Tensor, int>> weights_map;
+  std::unordered_map<Layer, std::unordered_map<te::Tensor, int>>
+      const_tensors_map;
+
+  // info to build final layer
+  Array<te::Operation> ops;
+  Array<te::Tensor> inputs;
+  Array<te::Tensor> weights;
+  Array<PrimExpr> const_scalars;
+  Array<te::Tensor> const_tensors;
+  std::vector<LayerTensor> fused_layer_inputs;
+
+  std::unordered_map<LayerTensor, std::vector<int>> fuse_feed_graph;
+  std::unordered_set<LayerTensor> eliminated_layer_tensor;
+  std::unordered_map<LayerTensor, int> update_layer_tensor;
+
+  std::unordered_map<Layer, Layer> update_layer;
+  std::unordered_set<te::Operation> visit_op;
+  std::unordered_map<te::Operation, te::Operation> update_op;
+  std::function<void(Layer)> fuse_from_layer;
+  std::function<void(Layer, te::Operation)> fuse_from_op;
+  fuse_from_op = [&](Layer env, te::Operation op) {
+    if (!op.defined() || visit_op.count(op)) {
+      return;
+    }
+    visit_op.insert(op);
+    const te::PlaceholderOpNode *pop = op.as<te::PlaceholderOpNode>();
+    const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+    CHECK(pop || cop);
+    if (pop) {
+      if (inputs_map.count(env) && inputs_map[env].count(op.output(0))) {
+        int idx = inputs_map[env][op.output(0)];
+        CHECK(update_layer.count(env));
+        Layer new_env = update_layer.at(env);
+        CHECK(this->consume_graph.count(env));
+        CHECK((int)this->consume_graph.at(env).size() > idx);
+        LayerTensor lt = this->consume_graph.at(env)[idx];
+        CHECK(lt->tensor == new_env->inputs[idx]);
+        if (!lt->layer.defined()) {
+          // update inputs for fused layer
+          inputs.push_back(lt->tensor);
+          fused_layer_inputs.push_back(lt);
+          fuse_feed_graph[lt].push_back((int)inputs.size() - 1);
+          update_op[op] = op;
+        } else if (!layer_convex_set.count(lt->layer)) {
+          // update inputs for fused layer
+          inputs.push_back(lt->tensor);
+          fused_layer_inputs.push_back(lt);
+          fuse_feed_graph[lt].push_back((int)inputs.size() - 1);
+          update_op[op] = op;
+        } else {
+          fuse_from_layer(lt->layer);
+          CHECK(update_layer.count(lt->layer));
+          Layer new_lt_layer = update_layer.at(lt->layer);
+          CHECK((int)new_lt_layer->ops.size() > lt->value_idx);
+          te::Operation old_op = new_lt_layer->ops[lt->value_idx];
+          CHECK(update_op.count(old_op));
+          te::Operation new_op = update_op.at(old_op);
+          update_op[op] = new_op;
+        }
+      } else if (weights_map.count(env) &&
+                 weights_map[env].count(op.output(0))) {
+        int idx = weights_map[env][op.output(0)];
+        CHECK(update_layer.count(env));
+        Layer new_env = update_layer.at(env);
+        CHECK((int)new_env->weights.size() > idx);
+        // update weights for fused layer
+        weights.push_back(op.output(0));
+        update_op[op] = op;
+      } else if (const_tensors_map.count(env) &&
+                 const_tensors_map[env].count(op.output(0))) {
+        int idx = const_tensors_map[env][op.output(0)];
+        CHECK(update_layer.count(env));
+        Layer new_env = update_layer.at(env);
+        CHECK((int)new_env->const_tensors.size() > idx);
+        // update const_tensors for fused layer
+        const_tensors.push_back(op.output(0));
+        update_op[op] = op;
+      } else {
+        CHECK(false) << "Unknown source for op " << op << " form layer "
+                     << env->name << ".\n";
+      }
+    } else {
+      // cop
+      Array<te::Tensor> new_inputs;
+      for (auto inp : cop->InputTensors()) {
+        fuse_from_op(env, inp->op);
+        CHECK(update_op.count(inp->op));
+        te::Operation new_inp_op = update_op.at(inp->op);
+        new_inputs.push_back(new_inp_op.output(0));
+      }
+      OpState tmp_state(op);
+      te::Operation new_op = tmp_state->MakeCompute(new_inputs);
+      update_op[op] = new_op;
+    }
+  };
+
+  fuse_from_layer = [&](Layer layer) {
+    if (!layer.defined() || update_layer.count(layer)) {
+      return;
+    }
+    LayerState state = this->GetLayerState(layer);
+    CHECK(this->consume_graph.count(layer));
+    std::vector<LayerTensor> tmp_inputs = this->consume_graph.at(layer);
+    Layer new_layer = state->MakeCompute(Array<LayerTensor>(tmp_inputs));
+    new_layer.ProduceOutputs(tmp_inputs);
+    update_layer[layer] = new_layer;
+    // fill ctx for layer
+    int num_inputs = (int)new_layer->inputs.size();
+    for (int i = 0; i < num_inputs; ++i) {
+      inputs_map[layer][new_layer->inputs[i]] = i;
+    }
+    int num_weights = (int)new_layer->weights.size();
+    for (int i = 0; i < num_weights; ++i) {
+      weights_map[layer][new_layer->weights[i]] = i;
+    }
+    int num_const_tensors = (int)new_layer->const_tensors.size();
+    for (int i = 0; i < num_const_tensors; ++i) {
+      const_tensors_map[layer][new_layer->const_tensors[i]] = i;
+    }
+    CHECK(new_layer->const_scalars.size() == 0U)
+        << "Const scalar feature is not enabled now, please do not use this "
+        << "attribute.\n";
+    int count_output = 0;
+    CHECK(this->produce_graph.count(layer));
+    std::vector<LayerTensor> tmp_outputs = this->produce_graph.at(layer);
+    for (auto op : new_layer->ops) {
+      fuse_from_op(layer, op);
+      CHECK(update_op.count(op));
+      te::Operation new_op = update_op.at(op);
+      LayerTensor old_lt = tmp_outputs[count_output];
+      bool eliminate = true;
+      // check whether to add to ops
+      if (this->feed_graph.count(old_lt)) {
+        // has consumers
+        for (auto kv : this->feed_graph.at(old_lt)) {
+          if (!layer_convex_set.count(kv.first)) {
+            // consumed by layers outside the convex set
+            eliminate = false;
+            break;
+          }
+        }
+      } else if (graph_output_set.count(old_lt)) {
+        // graph output
+        eliminate = false;
+      }
+      if (eliminate) {
+        eliminated_layer_tensor.insert(old_lt);
+      } else {
+        // update ops for fused layer
+        ops.push_back(new_op);
+        // store the position of output
+        update_layer_tensor[old_lt] = (int)ops.size() - 1;
+      }
+      count_output += 1;
+    }
+  };
+
+  // execute the fuse process
+  fuse_from_layer(back);
+
+  std::string name = "fused";
+  for (auto l : convex_set) {
+    name = name + "." + l->name;
+  }
+  Layer fused(name, ops, inputs, weights, const_scalars, const_tensors);
+  if (!modify) {
+    return fused;
+  }
+
+  // update context
+  // update produce, consume graph, feed graph
+  std::vector<LayerTensor> fused_layer_outputs =
+      fused.ProduceOutputs(fused_layer_inputs);
+  this->produce_graph[fused] = fused_layer_outputs;
+  this->consume_graph[fused] = fused_layer_inputs;
+  int num_outputs = (int)fused_layer_outputs.size();
+  for (auto kv : update_layer_tensor) {
+    CHECK(kv.second < num_outputs);
+    if (this->feed_graph.count(kv.first)) {
+      for (auto kkvv : this->feed_graph.at(kv.first)) {
+        if (!layer_convex_set.count(kkvv.first)) {
+          CHECK(this->consume_graph.count(kkvv.first));
+          CHECK((int)this->consume_graph.at(kkvv.first).size() > kkvv.second);
+          LayerTensor output_to_add = fused_layer_outputs[kv.second];
+          te::Tensor tmp = te::placeholder(output_to_add->tensor->shape,
+                                           output_to_add->tensor->dtype,
+                                           output_to_add->tensor->op->name);
+          LayerTensor new_output =
+              LayerTensor(output_to_add->name, output_to_add->layer, tmp,
+                          output_to_add->value_idx);
+          this->consume_graph.at(kkvv.first)[kkvv.second] = new_output;
+          this->feed_graph[fused_layer_outputs[kv.second]].push_back(kkvv);
+        }
+      }
+    }
+  }
+
+  for (auto kv : fuse_feed_graph) {
+    for (auto v : kv.second) {
+      this->feed_graph[kv.first].push_back(std::make_pair(fused, v));
+    }
+  }
+
+  // update graph outputs
+  std::vector<LayerTensor> new_outputs;
+  for (auto lt : this->outputs) {
+    if (update_layer_tensor.count(lt)) {
+      int idx = update_layer_tensor.at(lt);
+      new_outputs.push_back(fused_layer_outputs[idx]);
+    } else {
+      new_outputs.push_back(lt);
+    }
+  }
+  this->outputs = new_outputs;
+
+  // delete out-of-data feed graph
+  for (auto kv : update_layer_tensor) {
+    if (this->feed_graph.count(kv.first)) {
+      this->feed_graph.erase(kv.first);
+    }
+  }
+  for (auto lt : eliminated_layer_tensor) {
+    if (this->feed_graph.count(lt)) {
+      this->feed_graph.erase(lt);
+    }
+  }
+
+  std::vector<Layer> new_layers;
+  for (auto l : this->all_layers) {
+    if (layer_convex_set.count(l)) {
+      if (l == front) {
+        new_layers.push_back(fused);
+      }
+      this->layer_states.erase(l);
+      if (this->consume_graph.count(l)) {
+        for (auto inp : this->consume_graph.at(l)) {
+          if (this->feed_graph.count(inp)) {
+            std::vector<std::pair<Layer, int>> update;
+            for (auto kv : this->feed_graph.at(inp)) {
+              if (kv.first != l) {
+                update.push_back(kv);
+              }
+            }
+            if (update.size() > 0U) {
+              this->feed_graph[inp] = update;
+            } else {
+              this->feed_graph.erase(inp);
+            }
+          }
+        }
+        this->consume_graph.erase(l);
+      }
+      if (this->produce_graph.count(l)) {
+        this->produce_graph.erase(l);
+      }
+    } else {
+      new_layers.push_back(l);
+    }
+  }
+  this->all_layers = new_layers;
+  LayerState fused_state(fused);
+  this->layer_states[fused] = fused_state;
+
+  return fused;
 }
 
 GraphState::GraphState(Graph graph) {
@@ -991,8 +1300,14 @@ TVM_REGISTER_GLOBAL("ditto.auto_compute.GraphStateGetCurrentLayers")
     });
 
 TVM_REGISTER_GLOBAL("ditto.auto_compute.GraphStateNormalizePartitionLayer")
-    .set_body_typed([](GraphState graph_state, Layer layer) {
-      return graph_state->NormalizePartition(layer);
+    .set_body_typed([](GraphState graph_state, Layer layer, bool modify) {
+      return graph_state->NormalizePartition(layer, modify);
+    });
+
+TVM_REGISTER_GLOBAL("ditto.auto_compute.GraphStateFuseLayer")
+    .set_body_typed([](GraphState graph_state, Layer front, Layer back,
+                       bool modify) {
+      return graph_state->Fuse(front, back, modify);
     });
 
 } // namespace auto_compute

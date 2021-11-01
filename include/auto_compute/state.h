@@ -343,7 +343,11 @@ public:
   /*!
    * \brief Partition a layer to fine-grained sub-layers.
    */
-  Array<Layer> NormalizePartition(Layer layer);
+  Array<Layer> NormalizePartition(Layer layer, bool modify=true);
+  /*!
+   * \brief Fuse the convex set between front and back.
+   */
+  Layer Fuse(Layer front, Layer back, bool modify=true);
 
   static constexpr const char *_type_key = "ditto.auto_compute.GraphState";
   TVM_DECLARE_BASE_OBJECT_INFO(GraphStateNode, Object);

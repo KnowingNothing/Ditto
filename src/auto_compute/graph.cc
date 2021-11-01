@@ -132,8 +132,10 @@ Layer::Layer(std::string name, Array<te::Operation> ops,
   node->const_scalars = const_scalars;
   node->const_tensors = const_tensors;
   // TODO: remove these constraints
-  CHECK(const_scalars.size() == 0U) << "Currently please do not use const scalars.\n";
-  CHECK(const_tensors.size() == 0U) << "Currently please do not use const tensors.\n";
+  CHECK(const_scalars.size() == 0U)
+      << "Currently please do not use const scalars.\n";
+  CHECK(const_tensors.size() == 0U)
+      << "Currently please do not use const tensors.\n";
   data_ = node;
   CheckValidity();
 }
@@ -268,6 +270,44 @@ Array<Layer> GraphNode::GetAllLayers() const {
 
   for (auto lt : graph_outputs) {
     helper(lt->layer);
+  }
+
+  // left to right: inputs to outputs
+  // std::reverse(ret.begin(), ret.end());
+  return Array<Layer>(ret);
+}
+
+Array<Layer> FindConvexSet(Array<Layer> source, Array<Layer> sink) {
+  std::unordered_set<Layer> visit;
+  std::vector<Layer> ret;
+  std::unordered_set<Layer> source_set;
+  for (auto l : source) {
+    source_set.insert(l);
+  }
+
+  std::function<bool(Layer layer)> helper;
+  helper = [&](Layer layer) {
+    if (!layer.defined() || visit.count(layer))
+      return false;
+    visit.insert(layer);
+    bool reachable = false;
+    if (!source_set.count(layer)) {
+      for (auto inp : layer->input_layer_tensors_) {
+        bool reach = helper(inp->layer);
+        reachable = reachable || reach;
+      }
+    } else {
+      reachable = true;
+    }
+
+    if (reachable) {
+      ret.push_back(layer);
+    }
+    return reachable;
+  };
+
+  for (auto l : sink) {
+    helper(l);
   }
 
   // left to right: inputs to outputs

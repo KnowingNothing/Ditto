@@ -24,9 +24,8 @@ def register_test(func):
     except ValueError as e:
         print(e)
         print("Can't convert to number", name[len(prefix):])
-        
-        
-        
+
+
 def _2mm(M, L, K, N):
     A = tvm.te.placeholder([M, K], name="A", dtype="float32")
     B = tvm.te.placeholder([K, L], name="B", dtype="float32")
@@ -63,19 +62,21 @@ def test1():
     F = outs[0]
     A, B, C, D = ins
     layer = ac.layer(F.op, inputs=[A, B], weights=[C, D], name="2mm")
-    
+
     lA = ac.layer_tensor([512, 512], name="lA")
     lB = ac.layer_tensor([512, 512], name="lB")
     lF = layer(lA, lB)
     graph = ac.graph([lA, lB], [lF])
     print(graph)
-    
+
     state = ac.create_graph_state(graph)
     layers = state.normalize_partition_layer(layer)
+    for l in layers:
+        print(l)
     graph = state.make_compute([lA, lB])
     print(graph)
-    
-    
+
+
 @register_test
 def test2():
     A = ac.layer_tensor([1, 1, 32, 32], dtype="float32", name="A")
@@ -87,6 +88,50 @@ def test2():
     state = ac.create_graph_state(graph)
     for layer in graph.all_layers:
         layers = state.normalize_partition_layer(layer)
+    graph = state.make_compute([A])
+    print(graph)
+
+
+@register_test
+def test3():
+    outs, ins = _2mm(512, 512, 512, 512)
+    F = outs[0]
+    A, B, C, D = ins
+    layer = ac.layer(F.op, inputs=[A, B], weights=[C, D], name="2mm")
+
+    lA = ac.layer_tensor([512, 512], name="lA")
+    lB = ac.layer_tensor([512, 512], name="lB")
+    lF = layer(lA, lB)
+    graph = ac.graph([lA, lB], [lF])
+    print(graph)
+
+    state = ac.create_graph_state(graph)
+    l1, l2, l3 = state.normalize_partition_layer(layer)
+    l = state.fuse_layer(l1, l3)
+    graph = state.make_compute([lA, lB])
+    print(graph)
+
+
+@register_test
+def test4():
+    A = ac.layer_tensor([1, 1, 32, 32], dtype="float32", name="A")
+    model = resnet50()
+    outputs = model(A)
+
+    graph = ac.graph([A], outputs)
+    print(graph)
+    state = ac.create_graph_state(graph)
+    for i, layer in enumerate(graph.all_layers):
+        # if i == 1:
+        layers = state.normalize_partition_layer(layer)
+        print()
+        print("################################3", flush=True)
+        for l in layers:
+            print(l, flush=True)
+        print("################################3", flush=True)
+        l = state.fuse_layer(layers[0], layers[-1])
+        print(l)
+        print("################################3", flush=True)
     graph = state.make_compute([A])
     print(graph)
 
