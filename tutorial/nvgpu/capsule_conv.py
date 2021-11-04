@@ -6,33 +6,22 @@ from ditto import auto_compute as ac
 from ditto import autograd as ag
 from ditto import auto_schedule
 from ditto import runtime
-from ditto.auto_compute.nn.model import get_dnn_model, get_dnn_input_shape
+from ditto.auto_compute.nn.module import CapsuleConv2d
 
 
-def train_fp32(model, batch=1, trials=10000, timeout=15,
+def main(batch=1, trials=10000, timeout=15,
                use_rpc=False, key=None, host=None, port=None,
-               test=False, graph_type="train", cuda_graph=False):
-    inputs = []
-    task_name = f"{model}_batch{batch}_{graph_type}_fp32"
-    log_file = f"{model}_batch{batch}_{graph_type}_fp32.log"
-    for i, shape in enumerate(get_dnn_input_shape(model)):
-        inputs.append(
-            ac.layer_tensor([batch, *shape[1:]], dtype="float32", name="input" + str(i))
-        )
-    print(inputs)
-    model = get_dnn_model(model)()
+               test=False):
+    inputs = [ac.layer_tensor([batch, 64, 56, 56], dtype="float32", name="input")]
+    task_name = "capsule_conv_fp32"
+    log_file = "capsule_conv_fp32.log"
+    model = CapsuleConv2d(
+        64, 256, 3, padding=1, num_caps=8
+    )
     outputs = model(*inputs)
     
 
     graph = ac.graph(inputs, outputs)
-    if graph_type == "train":
-        graph = ag.grad_graph(graph, reserve_forward=True)
-    elif graph_type == "backward":
-        graph = ag.grad_graph(graph, reserve_forward=False)
-    elif graph_type == "infer":
-        pass
-    else:
-        raise ValueError(f"Unkonwn graph type {graph_type}.\n")
     print(graph)
 
     tasks = auto_schedule.extract_tasks_from_graph(graph)
@@ -72,15 +61,13 @@ def train_fp32(model, batch=1, trials=10000, timeout=15,
             remote.upload(path_lib)
             mod = remote.load_module(file_name)
             built_mods[key] = mod
+        ge = runtime.create_graph_engine(graph, built_mods, dev)
     else:
         dev = tvm.nd.device(target)
         built_mods = {}
         for (key, (sch, args)) in schedules.items():
             mod = tvm.build(sch, args, target, target_host)
             built_mods[key] = mod
-    if cuda_graph:
-        ge = runtime.create_cuda_graph_engine(graph, built_mods, dev)
-    else:
         ge = runtime.create_graph_engine(graph, built_mods, dev)
 
     fcompile = ge.get_function("compile")
@@ -102,15 +89,12 @@ def train_fp32(model, batch=1, trials=10000, timeout=15,
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dnn", help="which dnn to optimize", choices=["bert", "capsule", "lenet", "lltm", "MI", "res50", "sc", "shuffle", "sub"])
     parser.add_argument("--mode", help="tune or test", choices=["tune", "test"])
     parser.add_argument("--dtype", help="precision", choices=["fp32"])
     parser.add_argument("--batch", help="batch size for network", default=1, type=int)
     parser.add_argument("--use_rpc", help="use rpc for evaluation, give the rpc information: <key>:<host>:<port>", default="", type=str)
     parser.add_argument("--timeout", help="evaluation timeout (s)", default=15, type=int)
     parser.add_argument("--trials", help="trials for the whole model", default=10000, type=int)
-    parser.add_argument("--type", help="whether to train or infer or backward only", choices=["train", "infer", "backward"])
-    parser.add_argument("--cuda_graph", help="use cuda graph", action="store_true")
     args = parser.parse_args()
     
     batch = args.batch
@@ -125,8 +109,7 @@ if __name__ == "__main__":
     timeout = args.timeout
     trials = args.trials
     if args.dtype == "fp32":
-        train_fp32(
-            args.dnn,
+        main(
             batch=batch,
             trials=trials,
             timeout=timeout,
@@ -134,9 +117,7 @@ if __name__ == "__main__":
             key=key,
             host=host,
             port=port,
-            test=(args.mode == "test"),
-            graph_type=args.type,
-            cuda_graph=args.cuda_graph)
+            test=(args.mode == "test"))
     else:
         raise ValueError(f"Unknown dtype {args.dtype}.\n")
     

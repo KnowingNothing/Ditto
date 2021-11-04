@@ -15,7 +15,7 @@ PackedFunc GraphEngine::GetFunction(const std::string &name,
                                     const ObjectPtr<Object> &sptr_to_self) {
   if (name == "init") {
     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue *rv) {
-      this->Init(args[0], args[1], args[2]);
+      this->Init();
     });
   } else if (name == "set_inputs") {
     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue *rv) {
@@ -49,11 +49,7 @@ FloatImm make_float(float value) {
   return FloatImm(tvm::runtime::DataType::Float(32), value);
 }
 
-void GraphEngine::Init(Graph graph, Map<String, Module> built_mods,
-                       Device dev) {
-  graph_ = graph;
-  built_mods_ = built_mods;
-  dev_ = dev;
+void GraphEngine::Init() {
   exe_seq_.clear();
   workloads_.clear();
   input_buffer_.clear();
@@ -65,7 +61,7 @@ void GraphEngine::Init(Graph graph, Map<String, Module> built_mods,
       tvm::runtime::Registry::Get("runtime.ndarray.random");
   CHECK(get_random != nullptr) << "runtime.ndarray.random.\n";
 
-  for (auto layer : graph->GetAllLayers()) {
+  for (auto layer : graph_->GetAllLayers()) {
     std::string wkl_key = layer->GetFingerprint();
     exe_seq_.push_back(wkl_key);
     workloads_[wkl_key] = layer;
@@ -139,7 +135,11 @@ void GraphEngine::Compile() {
   built_funcs_.clear();
   to_exe_.clear();
 
-  for (auto layer: graph_->GetAllLayers()) {
+  if (!this->init_) {
+    this->Init();
+  }
+
+  for (auto layer : graph_->GetAllLayers()) {
     std::string wkl_key = layer->GetFingerprint();
     PackedFunc func;
     if (built_funcs_.count(wkl_key)) {
@@ -153,52 +153,52 @@ void GraphEngine::Compile() {
     CHECK(func != nullptr) << "Can't find default_function in module.\n";
     std::shared_ptr<GraphEngine::Arguments> arg_ptr =
         std::make_shared<GraphEngine::Arguments>();
-    // std::vector<TVMValue> args;
-    // std::vector<NDArray> arg_values;
-    // std::vector<int> arg_tcodes;
-    // std::string wkl_key = std::string(kv.first);
-    // CHECK(workloads_.count(wkl_key))
-    //     << "Can't find workload " << wkl_key << ".\n";
+
+    int counter = 0;
     if (input_buffer_.count(layer)) {
-      for (auto inp : input_buffer_.at(layer)) {
-        TVMValue v;
-        // DLTensor t(*inp.operator->());
-        v.v_handle = &inp;
-        arg_ptr->args.push_back(inp);
-        CHECK(static_cast<NDArray *>(v.v_handle) != nullptr);
-        arg_ptr->arg_values.push_back(v);
-        arg_ptr->arg_tcodes.push_back(kTVMNDArrayHandle);
+      for (auto &inp : input_buffer_[layer]) {
+        // TVMValue v;
+        DLTensor t(*inp.operator->());
+        arg_ptr->args.push_back(t);
+        counter += 1;
       }
     }
     if (weight_buffer_.count(layer)) {
-      for (auto w : weight_buffer_.at(layer)) {
-        TVMValue v;
-        // DLTensor t(*w.operator->());
-        v.v_handle = &w;
-        arg_ptr->args.push_back(w);
-        arg_ptr->arg_values.push_back(v);
-        arg_ptr->arg_tcodes.push_back(kTVMNDArrayHandle);
+      for (auto &w : weight_buffer_[layer]) {
+        // TVMValue v;
+        DLTensor t(*w.operator->());
+        arg_ptr->args.push_back(t);
+        counter += 1;
       }
     }
     if (output_buffer_.count(layer)) {
-      for (auto out : output_buffer_.at(layer)) {
-        TVMValue v;
-        // DLTensor t(*out.operator->());
-        v.v_handle = &out;
-        arg_ptr->args.push_back(out);
-        arg_ptr->arg_values.push_back(v);
-        arg_ptr->arg_tcodes.push_back(kTVMNDArrayHandle);
+      for (auto &out : output_buffer_[layer]) {
+        // TVMValue v;
+        DLTensor t(*out.operator->());
+        arg_ptr->args.push_back(t);
+        counter += 1;
       }
+    }
+    std::cout << arg_ptr->args.size() << "\n" << std::flush;
+    for (int i = 0; i < counter; ++i) {
+      TVMValue v;
+      v.v_handle = &arg_ptr->args[i];
+      arg_ptr->arg_values.push_back(v);
+      arg_ptr->arg_tcodes.push_back(kTVMDLTensorHandle);
     }
 
     auto fexe = [func, arg_ptr]() {
-      //   TVMRetValue rv;
-      //   TVMArgs targs(arg_ptr->arg_values.data(), arg_ptr->arg_tcodes.data(),
-      //   (int)(arg_ptr->arg_values.size()));
-      auto *call_unpack = new utils::CallFunc<tvm::runtime::PackedFunc,
-                                              tvm::runtime::NDArray>();
-      // func.CallPacked(targs, &rv);
-      (*call_unpack)(func, arg_ptr->args);
+      TVMRetValue rv;
+      TVMArgs targs(arg_ptr->arg_values.data(), arg_ptr->arg_tcodes.data(),
+                    (int)(arg_ptr->arg_values.size()));
+      // auto *call_unpack = new utils::CallFunc<tvm::runtime::PackedFunc,
+      //                                         tvm::runtime::NDArray>();
+      // for (auto v : arg_ptr->arg_values) {
+      //   DLTensor* pt = static_cast<DLTensor*>(v.v_handle);
+      //   std::cout << "check x = " << pt->ndim << "\n";
+      // }
+      func.CallPacked(targs, &rv);
+      // (*call_unpack)(func, arg_ptr->args);
     };
 
     to_exe_.push_back(fexe);
@@ -243,8 +243,7 @@ Array<NDArray> GraphEngine::GetOutputs() {
 
 TVM_REGISTER_GLOBAL("ditto.runtime.create_graph_engine")
     .set_body([](TVMArgs args, TVMRetValue *rv) {
-      auto exec = make_object<GraphEngine>();
-      exec->Init(args[0], args[1], args[2]);
+      auto exec = make_object<GraphEngine>(args[0], args[1], args[2]);
       *rv = Module(exec);
     });
 

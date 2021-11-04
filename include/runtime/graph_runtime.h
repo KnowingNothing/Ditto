@@ -1,17 +1,17 @@
 #pragma once
 
+#include <tvm/runtime/device_api.h>
 #include <tvm/runtime/ndarray.h>
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/registry.h>
-#include <tvm/runtime/device_api.h>
 #include <tvm/target/target.h>
 
 #include <auto_compute/graph.h>
 
 #include <functional>
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
-#include <memory>
 
 namespace ditto {
 using namespace tvm;
@@ -21,12 +21,15 @@ namespace runtime {
 
 class TVM_DLL GraphEngine : public ModuleNode {
 public:
+  GraphEngine(Graph graph, Map<String, Module> built_mods, Device dev)
+      : graph_(graph), built_mods_(built_mods), dev_(dev), init_{false} {}
+
   virtual PackedFunc GetFunction(const std::string &name,
                                  const ObjectPtr<Object> &sptr_to_self);
 
   const char *type_key() const final { return "ditto.runtime.GraphEngine"; }
 
-  void Init(Graph graph, Map<String, Module> built_mods, Device dev);
+  void Init();
 
   void SetInputs(Array<NDArray> inputs);
 
@@ -41,17 +44,18 @@ public:
   Array<NDArray> GetOutputs();
 
   class Arguments {
-    public:
-     std::vector<TVMValue> arg_values;
-     std::vector<int> arg_tcodes;
-     std::vector<NDArray> args;
-     std::vector<int64_t> shape_data;
+  public:
+    std::vector<TVMValue> arg_values;
+    std::vector<int> arg_tcodes;
+    std::vector<DLTensor> args;
+    std::vector<int64_t> shape_data;
   };
 
-private:
+protected:
   Graph graph_;
-  Device dev_;
   Map<String, Module> built_mods_;
+  Device dev_;  
+  bool init_;
   std::vector<std::string> exe_seq_;
   std::unordered_map<std::string, Layer> workloads_;
   std::unordered_map<Layer, std::vector<NDArray>> input_buffer_;
