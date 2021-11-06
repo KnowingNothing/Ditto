@@ -179,7 +179,6 @@ void GraphEngine::Compile() {
         counter += 1;
       }
     }
-    std::cout << arg_ptr->args.size() << "\n" << std::flush;
     for (int i = 0; i < counter; ++i) {
       TVMValue v;
       v.v_handle = &arg_ptr->args[i];

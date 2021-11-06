@@ -102,7 +102,7 @@ def train_fp32(model, batch=1, trials=10000, timeout=15,
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dnn", help="which dnn to optimize", choices=["bert", "capsule", "lenet", "lltm", "MI", "res50", "sc", "shuffle", "sub"])
+    parser.add_argument("--dnn", help="which dnn to optimize", choices=["bert", "capsule", "lenet", "lltm", "MI", "res50", "res18", "res34", "res101", "res152", "sc", "shuffle", "sub"])
     parser.add_argument("--mode", help="tune or test", choices=["tune", "test"])
     parser.add_argument("--dtype", help="precision", choices=["fp32"])
     parser.add_argument("--batch", help="batch size for network", default=1, type=int)
