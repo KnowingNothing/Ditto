@@ -72,6 +72,10 @@ class MILSTM_Cell(nn.Module):
         return hx, cx
 
 
+# NOTE(yicheng): disabled internal state updating of RNN for TorchScript tracing, 
+# should not affect the accuracy of benchmarking. same for other RNN models
+
+
 class MILSTM(nn.Module):
     def __init__(self, input_size=28*28, hidden_size=1024, n_class=10):
         super(MILSTM, self).__init__()
@@ -214,13 +218,18 @@ class DigitCaps(nn.Module):
     def forward(self, u):
         u = u[None, :, :, None, :]
         W = self.W[:, None, :, :, :]
+
+        # NOTE(yicheng): pytorch broadcasts the first dimension of u during matmul automatically.
+        # This is not properly handled by relay and will cause errors during model conversion.
+        # Thus we explicitly perform broadcast here.
+        u = u.expand(W.shape[0], -1, -1, -1, -1)
+        
         u_hat = torch.matmul(u, W)
         b_ij = torch.zeros_like(u_hat)
 
         v_j = dynamic_routing(b_ij, u_hat, self.squash, routing_iterations=3)
 
         return v_j
-    
     
     def squash(self, input_tensor):
         squared_norm = (input_tensor ** 2).sum(dim=-1, keepdim=True)
@@ -294,7 +303,7 @@ class RnnLLTM(nn.Module):
         self.hidden_dim = hidden_dim
         self.lstm = LLTM(in_dim, hidden_dim)
         self.classifier = nn.Linear(hidden_dim, n_class)
-        self.hx = torch.zeros(batch_size, self.hidden_dim)        
+        self.hx = (torch.zeros(batch_size, self.hidden_dim), torch.zeros(batch_size, self.hidden_dim))        
 
     def forward(self, x):
         # if self.hx is None:
@@ -307,6 +316,11 @@ class RnnLLTM(nn.Module):
 
 
 """ ShuffleNet """
+
+
+# NOTE(yicheng): originally disabled, turned on to circumvent a complicated issue in the model conversion process
+# to guarantee strict equivalence, we ensure manually refactor BN-without-tracking into smaller operations
+bn_track_running_stats = True
 
 
 def shuffle_channels(x, groups):
@@ -334,15 +348,15 @@ class ShuffleNetUnitA(nn.Module):
         self.groups = groups
         self.group_conv1 = nn.Conv2d(in_channels, bottleneck_channels,
                                         1, groups=groups, stride=1)
-        self.bn2 = nn.BatchNorm2d(bottleneck_channels, track_running_stats=False)
+        self.bn2 = nn.BatchNorm2d(bottleneck_channels, track_running_stats=bn_track_running_stats)
         self.depthwise_conv3 = nn.Conv2d(bottleneck_channels,
                                          bottleneck_channels,
                                          3, padding=1, stride=1,
                                          groups=bottleneck_channels)
-        self.bn4 = nn.BatchNorm2d(bottleneck_channels, track_running_stats=False)
+        self.bn4 = nn.BatchNorm2d(bottleneck_channels, track_running_stats=bn_track_running_stats)
         self.group_conv5 = nn.Conv2d(bottleneck_channels, out_channels,
                                      1, stride=1, groups=groups)
-        self.bn6 = nn.BatchNorm2d(out_channels, track_running_stats=False)
+        self.bn6 = nn.BatchNorm2d(out_channels, track_running_stats=bn_track_running_stats)
 
     def forward(self, x):
         out = self.group_conv1(x)
@@ -366,15 +380,15 @@ class ShuffleNetUnitB(nn.Module):
         self.groups = groups
         self.group_conv1 = nn.Conv2d(in_channels, bottleneck_channels,
                                      1, groups=groups, stride=1)
-        self.bn2 = nn.BatchNorm2d(bottleneck_channels, track_running_stats=False)
+        self.bn2 = nn.BatchNorm2d(bottleneck_channels, track_running_stats=bn_track_running_stats)
         self.depthwise_conv3 = nn.Conv2d(bottleneck_channels,
                                          bottleneck_channels,
                                          3, padding=1, stride=2,
                                          groups=bottleneck_channels)
-        self.bn4 = nn.BatchNorm2d(bottleneck_channels, track_running_stats=False)
+        self.bn4 = nn.BatchNorm2d(bottleneck_channels, track_running_stats=bn_track_running_stats)
         self.group_conv5 = nn.Conv2d(bottleneck_channels, out_channels,
                                      1, stride=1, groups=groups)
-        self.bn6 = nn.BatchNorm2d(out_channels, track_running_stats=False)
+        self.bn6 = nn.BatchNorm2d(out_channels, track_running_stats=bn_track_running_stats)
 
     def forward(self, x):
         out = self.group_conv1(x)

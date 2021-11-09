@@ -68,7 +68,8 @@ def tune_and_evaluate(tuning_opt, mod, params, input_shapes, target, dtype="floa
     tasks = autotvm.task.extract_from_program(
         mod["main"], target=target, params=params
     )
-    print("tasks", tasks)
+    print("All tasks")
+    for t in tasks: print(t)
 
     # run tuning tasks
     print("Tuning...")
@@ -101,7 +102,7 @@ def bench_network(model, input_shapes, model_name="model", n_trial=2000):
     shape_list = [(f"data_{i}", shape) for i, shape in enumerate(input_shapes)]
 
     scripted_model = torch.jit.trace(model, input_data).eval()
-    print("scripted_model", scripted_model)
+    print("scripted_model", scripted_model, scripted_model.graph)
 
     mod, params = relay.frontend.from_pytorch(scripted_model, shape_list)
     print(mod["main"])
