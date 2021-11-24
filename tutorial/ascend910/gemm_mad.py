@@ -1,6 +1,9 @@
+import tbe
 from tbe import tvm
 import ctypes
 import sys
+import numpy as np
+import time
 ctypes.CDLL("/usr/local/Ascend/ascend-toolkit/5.0.2.alpha001/arm64-linux/atc/lib64/libc_sec.so")
 sys.path.append("/usr/local/Ascend/ascend-toolkit/latest/opp/op_impl/built-in/ai_core/tbe")
 from impl.util.platform_adapter import tbe as platform_tbe
@@ -87,8 +90,8 @@ def gemm(M, N, K):
     return [gA, gB], [gC]
 
 
-def main():
-    ins, outs = gemm(1024, 1024, 1024)
+def compile(M, N, K):
+    ins, outs = gemm(M, N, K)
     
     gA, gB = ins
     gC, = outs
@@ -149,6 +152,7 @@ def main():
     global_A_l1_pos = j2
     global_C_dma_pos = i3
     sch[gC].emit_insn(global_C_dma_pos, "dma_copy")
+    sch[gC].bind(j1, tvm.thread_axis("blockIdx.x"))
 
     # then fuse and tile ubNdC
     sch[ubNdC].compute_at(sch[gC], global_C_ub_pos)
@@ -241,7 +245,8 @@ def main():
 
     # print(tvm.lower(sch, [gA, gB, gC], simple_mode=True))
 
-    # tvm.build(sch, [gA, gB, gC], "cce")
+    # func = tvm.build(sch, [gA, gB, gC], "cce")
+    # print(func)
     sch.cce_special = {}
     # spec_node_list
     sch.cce_special["tensor_list"] = [gA, gB, gC]
@@ -253,6 +258,135 @@ def main():
     platform_tbe.build(sch, {"print_ir": True, "name": "Gemm", "tensor_list": [gA, gB, gC]})
 
 
+class rtDevBinary_t(ctypes.Structure):
+    _fields_ = [('a', ctypes.c_uint32),
+                ('b', ctypes.c_uint32),
+                ('c', ctypes.c_char_p),
+                ('d', ctypes.c_uint64),]
+
+
+def run(M, N, K):
+    print("[NOTICE] Initializing Ascend Driver...")
+    ctypes.CDLL("/usr/local/Ascend/ascend-toolkit/latest/atc/lib64/libc_sec.so")
+    ctypes.CDLL("/usr/local/Ascend/ascend-toolkit/latest/atc/lib64/libmmpa.so")
+    ctypes.CDLL("/usr/local/Ascend/driver/lib64/driver/libascend_hal.so")
+
+    print("[NOTICE] Initializing Ascend Runtime Interface...")
+    device = ctypes.CDLL("libruntime.so")
+
+    print("[NOTICE] Prepare data with numpy")
+    A_np = np.random.uniform(-10, 10, size=[M, K]).astype("float16")
+    B_np = np.random.uniform(-10, 10, size=[K, N]).astype("float16")
+    golden_np = np.matmul(A_np.astype("float32"), B_np.astype("float32")).astype("float16")
+    C_np = np.zeros_like(golden_np).astype("float16")
+
+    # flatten
+    A_np = np.reshape(A_np, [M*K])
+    B_np = np.reshape(B_np, [K*N])
+    C_np = np.reshape(C_np, [M*N])
+    golden_np = np.reshape(golden_np, [M*N])
+
+    device.rtSetDevice(0)
+    c_context = ctypes.c_void_p()
+    device.rtCtxCreate(ctypes.c_void_p(ctypes.addressof(c_context)),
+                    ctypes.c_uint32(0),
+                    ctypes.c_int32(1))
+    with open("./kernel_meta/Gemm.o", mode="rb") as f:
+        kernel = f.read()
+    c_kernel_p = ctypes.c_char_p(kernel)
+    rts_device_binary = rtDevBinary_t(
+        c=c_kernel_p,
+        d=ctypes.c_uint64(len(kernel)),
+        b=ctypes.c_uint32(0),
+        a=ctypes.c_uint32(0x43554245))
+    rts_binary_handle = ctypes.c_void_p()
+    device.rtDevBinaryRegister(ctypes.c_void_p(ctypes.addressof(rts_device_binary)),
+                            ctypes.c_void_p(ctypes.addressof(rts_binary_handle)))
+    kernel_name_bytes = "Gemm__kernel0".encode("UTF-8")
+    c_kernel_name_p = ctypes.c_char_p(kernel_name_bytes)
+    c_func_mode = ctypes.c_uint32(0)
+    device.rtFunctionRegister(rts_binary_handle,
+                            c_kernel_name_p,
+                            c_kernel_name_p,
+                            c_kernel_name_p,
+                            c_func_mode)
+
+    kernel_map = {rts_binary_handle.value: kernel}
+    A_bytes = A_np.tobytes()
+    B_bytes = B_np.tobytes()
+    C_bytes = C_np.tobytes()
+    A_mem = ctypes.c_void_p()
+    B_mem = ctypes.c_void_p()
+    C_mem = ctypes.c_void_p()
+    device.rtMalloc(ctypes.c_void_p(ctypes.addressof(A_mem)),
+                    ctypes.c_uint64((len(A_bytes) + 31)//32 * 32),
+                    2)  # HBM + policy None
+    device.rtMalloc(ctypes.c_void_p(ctypes.addressof(B_mem)),
+                    ctypes.c_uint64((len(B_bytes) + 31)//32 * 32),
+                    2)
+    device.rtMalloc(ctypes.c_void_p(ctypes.addressof(C_mem)),
+                    ctypes.c_uint64((len(C_bytes) + 31)//32 * 32),
+                    2)
+    device.rtMemcpy(A_mem,
+                    ctypes.c_uint64((len(A_bytes) + 31)//32 * 32),
+                    ctypes.c_char_p(A_bytes),
+                    ctypes.c_uint64(len(A_bytes)),
+                    1)  # host to device
+    device.rtMemcpy(B_mem,
+                    ctypes.c_uint64((len(B_bytes) + 31)//32 * 32),
+                    ctypes.c_char_p(B_bytes),
+                    ctypes.c_uint64(len(B_bytes)),
+                    1)  # host to device
+    device.rtMemcpy(C_mem,
+                    ctypes.c_uint64((len(C_bytes) + 31)//32 * 32),
+                    ctypes.c_char_p(C_bytes),
+                    ctypes.c_uint64(len(C_bytes)),
+                    1)  # host to device
+
+    c_args = ctypes.c_uint64 * (3)
+    c_args_p = c_args(A_mem.value, B_mem.value, C_mem.value)
+
+    device.rtStreamSynchronize.restype = ctypes.c_uint64
+    res_code = device.rtStreamSynchronize(None)
+    beg = time.time()
+
+    device.rtKernelLaunch(c_kernel_name_p,
+                        ctypes.c_uint32(2),  # block dim MAX 65535
+                        ctypes.c_void_p(ctypes.addressof(c_args_p)),
+                        ctypes.c_uint32(3 * 8),  # c_s_args
+                        ctypes.c_void_p(None),  # sm_dec
+                        None)  # stream
+    
+    res_code = device.rtStreamSynchronize(None)
+    end = time.time()
+    c_buffer = (ctypes.c_char * len(C_bytes))()
+    device.rtMemcpy(c_buffer,
+                    len(C_bytes),
+                    C_mem,
+                    len(C_bytes),
+                    2)  # device to host
+    device.rtDeviceReset(ctypes.c_int32(1))
+    result_array = np.frombuffer(c_buffer, "float16")
+
+    print("Execution done!")
+
+    print("/////////////////////////////////////////////////////////////////////////")
+    print("//                             TEST RESULT                             //")
+    print("/////////////////////////////////////////////////////////////////////////")
+    print("// AICore status: OK" if res_code == 0 else 
+        "// AICore status: FAILED %d" % res_code)
+    print("// Allclose result with numpy golden:", "OK" if np.allclose(result_array, golden_np, rtol=0.01, atol=0.01, equal_nan=True) else "FAILED")
+    print("// Input array:", A_np)
+    print("// Input array:", B_np)
+    print("// Golden array:", golden_np)
+    print("// AICore array:", result_array)
+    print("// Execution time:", (end - beg) * 1e3, "ms")
+    print("/////////////////////////////////////////////////////////////////////////")
+    print("/////////////////////////////////////////////////////////////////////////")
+
+
 if __name__ == "__main__":
-    main()
+    M, N, K = 1024, 1024, 1024
+    compile(M, N, K)
+    run(M, N, K)
 
