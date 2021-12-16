@@ -88,6 +88,20 @@ class Layer(Object):
         """GFLOPS in this layer."""
         return _ffi_api.LayerGetGFLOPS(self).value
 
+    @property
+    def schedule_tensors(self):
+        """Get the tensors for schedule."""
+        outputs = self.ops
+        output_tensors = [op.output(0) for op in outputs]
+        all_tensors = [
+                *self.inputs,
+                *self.weights,
+                *self.const_scalars,
+                *self.const_tensors,
+                *output_tensors
+            ]
+        return all_tensors
+
     def __str__(self) -> str:
         all_ops = _ffi_api.LayerGetAllOps(self)
         ret = ""

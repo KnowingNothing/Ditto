@@ -196,15 +196,7 @@ def auto_schedule_tasks(tasks, schedule_option):
         def _inner():
             assert wkl_key in tasks and len(tasks[wkl_key])
             layer = tasks[wkl_key][0]
-            outputs = layer.ops
-            output_tensors = [op.output(0) for op in outputs]
-            all_tensors = [
-                *layer.inputs,
-                *layer.weights,
-                *layer.const_scalars,
-                *layer.const_tensors,
-                *output_tensors
-            ]
+            all_tensors = layer.schedule_tensors
             return all_tensors
         return _inner
 
@@ -247,13 +239,7 @@ def auto_schedule_build_tasks(tasks, schedule_option):
             output_tensors = [op.output(0) for op in outputs]
             relay_io_tensors, has_layout_free, has_complex_op = auto_scheduler.relay_integration.traverse_to_get_io_tensors(
                 output_tensors)
-            io_tensors = [
-                *layer.inputs,
-                *layer.weights,
-                *layer.const_scalars,
-                *layer.const_tensors,
-                *output_tensors
-            ]
+            io_tensors = layer.schedule_tensors
             dag = auto_scheduler.ComputeDAG(io_tensors)
             state = dispatcher.query(
                 target, wkl_key, has_complex_op, dag, None)

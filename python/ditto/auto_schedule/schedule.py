@@ -31,15 +31,7 @@ def auto_schedule_layer(fget_layer, schedule_option):
 
     def compute():
         layer = fget_layer()
-        outputs = layer.ops
-        output_tensors = [op.output(0) for op in outputs]
-        all_tensors = [
-            *layer.inputs,
-            *layer.weights,
-            *layer.const_scalars,
-            *layer.const_tensors,
-            *output_tensors
-        ]
+        all_tensors = layer.schedule_tensors
         return all_tensors
 
     return auto_schedule(compute, schedule_option)

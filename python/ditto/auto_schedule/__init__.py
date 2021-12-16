@@ -1,3 +1,5 @@
+from .hyper_fusion import IterVar, IterGraph
+
 from .schedulers import (
     ScheduleOption,
     retrieve_schedule_model,
