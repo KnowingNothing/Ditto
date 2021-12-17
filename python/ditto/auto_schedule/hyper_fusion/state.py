@@ -97,7 +97,7 @@ class SerialHyperState(object):
             feasible = False
             reason = "The given layer is not in linear topology.\nlayer info: {self.layer}."
 
-        if self.count_cubic() > 2:
+        if self.count_cubic() == 2:
             feasible = False
             reason = "There are more than 2 cubic operators in the layer.\nlayer info: {self.layer}."
 
