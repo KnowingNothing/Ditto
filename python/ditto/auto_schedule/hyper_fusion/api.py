@@ -23,5 +23,6 @@ def auto_schedule(layer, target):
     """
     hyper_state = build_hyper_state(layer)
     hw_param = hw.query_hw_param(target)
+    iter_graph = hyper_state.build_iter_graph()
     # use the hw_param to schedule
     raise NotImplementedError()

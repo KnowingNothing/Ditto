@@ -1,16 +1,11 @@
-"""Utils for hyper fusion"""
 import logging
 
 
-hf_logger = logging.getLogger("HyperFusion")
-hf_logger.setLevel(logging.DEBUG)
+ditto_logger = logging.getLogger("Ditto")
+ditto_logger.setLevel(logging.DEBUG)
 ch = logging.StreamHandler()
 ch.setLevel(logging.DEBUG)
 formatter = logging.Formatter(
     "[%(name)s] %(asctime)s: [%(levelname)s] %(message)s")
 ch.setFormatter(formatter)
-hf_logger.addHandler(ch)
-
-
-def ceil(x, y):
-    return (x + y - 1) // y
+ditto_logger.addHandler(ch)

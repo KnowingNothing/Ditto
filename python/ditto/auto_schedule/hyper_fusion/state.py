@@ -99,7 +99,7 @@ class SerialHyperState(object):
 
         if self.count_cubic() == 2:
             feasible = False
-            reason = "There are more than 2 cubic operators in the layer.\nlayer info: {self.layer}."
+            reason = "Expect only 2 cubic operators in the layer.\nlayer info: {self.layer}."
 
         if self.has_allred():
             feasible = False

@@ -71,6 +71,9 @@ class IterGraph(object):
     """
 
     def __init__(self, first_op_iters, second_op_iters, share_iter_pairs):
+        self._initial_first_op_iters = first_op_iters
+        self._initial_second_op_iters = second_op_iters
+        self._initial_share_iter_paris = share_iter_pairs
         self.common_iters = []
         self.first_op_private_iters = []
         self.first_op_num_loops = 0
@@ -105,6 +108,21 @@ class IterGraph(object):
         self.second_op_num_loops = len(second_op_iters)
         for (first, second) in share_iter_pairs:
             self.shared_iter_relations.append(ShareRelation(first, second))
+
+    def regenerate(self):
+        """Get another IterGraph that is the same as the initial one."""
+        return IterGraph(self._initial_first_op_iters,
+                         self._initial_second_op_iters,
+                         self._initial_share_iter_paris)
+
+    def get_initial_first_op_iters(self):
+        return self._initial_first_op_iters
+
+    def get_initial_second_op_iters(self):
+        return self._initial_second_op_iters
+
+    def get_initial_share_iter_pairs(self):
+        return self._initial_share_iter_paris
 
     def setFirstOpTiling(self, first_op_tile_factors):
         """Set the tiling factors for the first op.

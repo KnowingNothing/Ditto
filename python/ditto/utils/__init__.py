@@ -1,1 +1,1 @@
-from .parallel_build import parallel_build
+from .logger import ditto_logger
