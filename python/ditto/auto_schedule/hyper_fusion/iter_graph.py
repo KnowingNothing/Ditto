@@ -2,15 +2,26 @@
 from .utils import ceil
 
 
+IV_TYPE_SPATIAL = "IV_TYPE_SPATIAL"
+IV_TYPE_REDUCE = "IV_TYPE_REDUCE"
+
+
 class IterVar(object):
     """The internal IterVar object of hyper fusion.
         The name of IterVar is used as hash key.
         The IterVar is assumed to be normalized to [0, ext).
     """
 
-    def __init__(self, name, ext=None):
+    def __init__(self, name, ext=None, iv_type=None):
         self.name = name
         self.ext = ext
+        self.iv_type = iv_type
+
+    def is_spatial(self):
+        return self.iv_type == IV_TYPE_SPATIAL
+
+    def is_reduce(self):
+        return self.iv_type == IV_TYPE_REDUCE
 
     def __hash__(self):
         return hash(self.name)
@@ -132,9 +143,9 @@ class IterGraph(object):
                                                 for the first op.
         """
         assert len(first_op_tile_factors) == len(self.first_op_private_iters)
-        outer_iters = [IterVar(f"{iv.name}.outer")
+        outer_iters = [IterVar(f"{iv.name}.outer", ext=None, iv_type=iv.iv_type)
                        for iv in self.first_op_private_iters]
-        inner_iters = [IterVar(f"{iv.name}.inner", factor) for iv, factor in zip(
+        inner_iters = [IterVar(f"{iv.name}.inner", ext=factor, iv_type=iv.iv_type) for iv, factor in zip(
             self.first_op_private_iters, first_op_tile_factors)]
         for outer, inner, iv in zip(outer_iters, inner_iters, self.first_op_private_iters):
             self.split_iter_relations.append(SplitRelation(iv, outer, inner))
@@ -153,10 +164,10 @@ class IterGraph(object):
                                                 for the second op.
         """
         assert len(second_op_tile_factors) == len(self.second_op_private_iters)
-        outer_iters = [IterVar(f"{iv.name}.outer")
+        outer_iters = [IterVar(f"{iv.name}.outer", ext=None, iv_type=iv.iv_type)
                        for iv in self.second_op_private_iters]
-        inner_iters = [IterVar(f"{iv.name}.inner", factor) for iv, factor in zip(
-            self.second_op_private_iters, second_op_tile_factors)]
+        inner_iters = [IterVar(f"{iv.name}.inner", ext=factor, iv_type=iv.iv_type)
+                       for iv, factor in zip(self.second_op_private_iters, second_op_tile_factors)]
         for outer, inner, iv in zip(outer_iters, inner_iters, self.second_op_private_iters):
             self.split_iter_relations.append(SplitRelation(iv, outer, inner))
             for i in range(len(self.shared_iter_relations)):
@@ -201,7 +212,8 @@ class IterGraph(object):
                     for j in range(len(self.split_iter_relations)):
                         split_rel = self.split_iter_relations[j]
                         if split_rel.left == iv:
-                            remain = IterVar(split_rel.right.name, None)
+                            remain = IterVar(
+                                split_rel.right.name, ext=None, iv_type=split_rel.right.iv_type)
                             self.attach_iter_relations.append(AttachRelation(
                                 share_rel.iter2, remain, split_rel.parent))
                     eliminate = True

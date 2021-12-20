@@ -3,6 +3,8 @@ define the api of hyper fusion
 """
 
 from ditto import hardware as hw
+from .config import SUBSTANTIAL
+from .space import FusionTileItem, FusionTileSpace
 from .state import build_hyper_state
 
 
@@ -24,5 +26,6 @@ def auto_schedule(layer, target):
     hyper_state = build_hyper_state(layer)
     hw_param = hw.query_hw_param(target)
     iter_graph = hyper_state.build_iter_graph()
+    fuse_tile_space = FusionTileSpace(iter_graph, substantial=SUBSTANTIAL)
     # use the hw_param to schedule
     raise NotImplementedError()

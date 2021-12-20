@@ -1,4 +1,5 @@
 import tvm
+from .pattern import PATTERN_LOCAL
 
 
 def const_value(value, dtype):
@@ -21,7 +22,7 @@ def ReLU(x):
 
     def _inner(*idx):
         return tvm.tir.if_then_else(x(*idx) > zero, x(*idx), zero)
-    return tvm.te.compute(x.shape, _inner, name="ReLU")
+    return tvm.te.compute(x.shape, _inner, name="ReLU", tag=PATTERN_LOCAL)
 
 
 def GELU(x):
@@ -37,4 +38,5 @@ def GELU(x):
     return tvm.te.compute(
         x.shape,
         _gelu,
-        name="gelu")
+        name="gelu",
+        tag=PATTERN_LOCAL)

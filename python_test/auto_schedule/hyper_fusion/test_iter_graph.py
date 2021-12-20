@@ -4,7 +4,7 @@ from ditto import auto_schedule as ash
 
 @pytest.mark.basic
 def test_iter_var():
-    """[summary]
+    """The iter var.
     """
     var1 = ash.IterVar("name", 10)
     var2 = ash.IterVar("name", 20)
@@ -13,7 +13,7 @@ def test_iter_var():
     
 @pytest.mark.basic
 def test_iter_graph1():
-    """[summary]
+    """The iter graph.
     """
     
     i1 = ash.IterVar("i1", 1024)

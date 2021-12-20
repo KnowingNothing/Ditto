@@ -1,4 +1,4 @@
-from .hyper_fusion import IterVar, IterGraph
+from .hyper_fusion import *
 
 from .schedulers import (
     ScheduleOption,

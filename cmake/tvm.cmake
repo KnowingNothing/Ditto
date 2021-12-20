@@ -251,6 +251,7 @@ file(GLOB_RECURSE COMPILER_SRCS
     3rdparty/tvm/src/support/*.cc
     src/*.cc
     src/auto_compute/*.cc
+    src/auto_schedule/*.cc
     src/autograd/*.cc
     src/runtime/*.cc
     src/utils/*.cc

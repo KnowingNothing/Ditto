@@ -3,7 +3,8 @@ The fusion state implementation of hyper fusion
 """
 import tvm
 from .pattern import *
-from .iter_graph import IterVar, IterGraph
+from .iter_graph import IV_TYPE_SPATIAL, IV_TYPE_REDUCE, IterVar, IterGraph
+from ditto import auto_compute as ac
 
 
 def share_axis_analysis(op1, op2):
@@ -55,9 +56,11 @@ class OpHyperState(object):
         """Get all IterVars for the op"""
         iters = []
         for i, iv in enumerate(self.op.axis):
-            iters.append(IterVar(f"S{i}", int(iv.dom.ext)))
+            iters.append(IterVar(f"S{i}", ext=int(
+                iv.dom.ext), iv_type=IV_TYPE_SPATIAL))
         for i, iv in enumerate(self.op.reduce_axis):
-            iters.append(IterVar(f"R{i}", int(iv.dom.ext)))
+            iters.append(IterVar(f"R{i}", ext=int(
+                iv.dom.ext), iv_type=IV_TYPE_REDUCE))
         return iters
 
 
@@ -133,12 +136,12 @@ class SerialHyperState(object):
         Returns:
             [bool]
         """
-        return any([state.pattern == PATTERN_ALLRED for state in self.op_states])
+        return any([state.pattern == ac.nn.pattern.PATTERN_ALLRED for state in self.op_states])
 
     def get_cubic_op_ids(self):
         ret = []
         for i, state in enumerate(self.op_states):
-            if state.pattern == PATTERN_CUBIC:
+            if state.pattern == ac.nn.pattern.PATTERN_CUBIC:
                 ret.append(i)
         return ret
 

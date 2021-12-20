@@ -1,15 +1,10 @@
 """Pattern of op"""
+from .config import SUBSTANTIAL
+from .. import _ffi_api
+from ditto import auto_compute as ac
 
 
-# the patterns of loop nests
-PATTERN_CUBIC = "PATTERN_CUBIC"
-PATTERN_ALLRED = "PATTERN_ALLRED"
-PATTERN_SHUFFLE = "PATTERN_SHUFFLE"
-PATTERN_LOCAL = "PATTERN_LOCAL"
-PATTERN_VIEW = "PATTERN_VIEW"
-
-
-def is_cubic(op, substantial=16):
+def is_cubic(op, substantial=SUBSTANTIAL):
     """Judge if an op is cubic.
         Cubic op has both substantial outer-product
         and inner-product pattern.
@@ -21,16 +16,16 @@ def is_cubic(op, substantial=16):
         op (tvm.tensor.Operation): the operation to judge
         substantial (int): the threshhold to judge if a dimension is large enough
     """
-    raise NotImplementedError()
+    return (_ffi_api.IsCubic(op, substantial) or ac.nn.pattern.PATTERN_CUBIC in op.tag)
 
 
-def is_allred(op):
+def is_allred(op, substantial=SUBSTANTIAL):
     """Judge if an op is all reduce.
 
     Args:
         op (tvm.tensor.Operation): the operation to judge
     """
-    raise NotImplementedError()
+    return (_ffi_api.IsAllred(op, substantial) or ac.nn.pattern.PATTERN_ALLRED in op.tag)
 
 
 def is_shuffle(op):
@@ -39,16 +34,16 @@ def is_shuffle(op):
     Args:
         op (tvm.tensor.Operation): the operation to judge
     """
-    raise NotImplementedError()
+    return (_ffi_api.IsShuffle(op) or ac.nn.pattern.PATTERN_SHUFFLE in op.tag)
 
 
-def is_local(op):
+def is_local(op, substantial=SUBSTANTIAL):
     """Judge if an op is local.
 
     Args:
         op (tvm.tensor.Operation): the operation to judge
     """
-    raise NotImplementedError()
+    return (_ffi_api.IsLocal(op, substantial) or ac.nn.pattern.PATTERN_LOCAL in op.tag)
 
 
 def is_view(op):
@@ -57,7 +52,7 @@ def is_view(op):
     Args:
         op (tvm.tensor.Operation): the operation to judge
     """
-    raise NotImplementedError()
+    return (_ffi_api.IsView(op) or ac.nn.pattern.PATTERN_VIEW in op.tag)
 
 
 def get_op_pattern(op):
@@ -71,14 +66,14 @@ def get_op_pattern(op):
         pattern (str): PATTERN_XXX
     """
     if is_cubic(op):
-        return PATTERN_CUBIC
+        return ac.nn.pattern.PATTERN_CUBIC
     elif is_allred(op):
-        return PATTERN_ALLRED
+        return ac.nn.pattern.PATTERN_ALLRED
     elif is_shuffle(op):
-        return PATTERN_SHUFFLE
-    elif is_local(op):
-        return PATTERN_LOCAL
+        return ac.nn.pattern.PATTERN_SHUFFLE
     elif is_view(op):
-        return PATTERN_VIEW
+        return ac.nn.pattern.PATTERN_VIEW
+    elif is_local(op):
+        return ac.nn.pattern.PATTERN_LOCAL
     else:
         raise ValueError(f"Can't judge the pattern of op:\n{op}.")

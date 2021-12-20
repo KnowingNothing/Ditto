@@ -33,7 +33,7 @@ class SplitSpace(BaseSpace):
     """SplitSpace for tiling one iterator.
     """
 
-    def __init__(self, extent, parts, mandatory_choices=None):
+    def __init__(self, extent=None, parts=None, mandatory_choices=None):
         """
         Args:
             extent (int): the extent of one iterator
@@ -41,8 +41,6 @@ class SplitSpace(BaseSpace):
             mandatory_choices (List[SplitItem]): the tile choices
                 given by the user.
         """
-        assert isinstance(extent, int)
-        assert isinstance(parts, int)
         if mandatory_choices is not None:
             choices = []
             for it in mandatory_choices:
@@ -54,5 +52,7 @@ class SplitSpace(BaseSpace):
                     choices.append(SplitItem(it))
             self.choices = choices
         else:
+            assert isinstance(extent, int)
+            assert isinstance(parts, int)
             choices = any_factor_split(extent, parts)
             self.choices = [SplitItem(it) for it in choices]
