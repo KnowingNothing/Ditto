@@ -1,25 +1,11 @@
 """The space definition for tiling and fusion"""
 from ...dse import (
-    BaseItem, BaseSpace, SplitItem, SplitSpace, ChooseItem, ChooseSpace,
+    BaseItem, BaseCartSpace, SplitItem, SplitSpace, ChooseItem, ChooseSpace,
     PermuteItem, PermuteSpace)
 from .iter_graph import IterGraph
 
 
-class FusionTileItem(BaseItem):
-    """Item for tiling for fusion."""
-
-    def __init__(self, fuse_item, split_items, reorder_item):
-        super(FusionTileItem, self).__init__()
-        assert isinstance(split_items, dict)
-        assert isinstance(reorder_item, PermuteItem)
-        self.items = {
-            "fuse": fuse_item,
-            "split": split_items,
-            "reorder": reorder_item
-        }
-
-
-class FusionTileSpace(BaseSpace):
+class FusionTileSpace(BaseCartSpace):
     """Space for tiling for fusion."""
 
     def __init__(self, iter_graph, substantial=16):
@@ -34,34 +20,36 @@ class FusionTileSpace(BaseSpace):
         # empty choices
         self.choices = []
         # tiling
-        self.subspaces["split"] = {}
         self.first_op_iters = iter_graph.get_initial_first_op_iters()
         self.second_op_iters = iter_graph.get_initial_second_op_iters()
+        shared_iters = set()
+        for (iter1, iter2) in iter_graph.get_initial_share_iter_pairs():
+            shared_iters.add(iter1)
         for iv in self.first_op_iters:
-            if iv.ext < substantial:
+            if (iv in shared_iters) or (iv.ext < substantial):
                 if iv.is_spatial():
-                    self.subspaces["split"][iv] = SplitSpace(iv.ext, 2,
-                                                             mandatory_choices=[(iv.ext, 1)])
+                    self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(iv.ext, 2,
+                                                                           mandatory_choices=[(iv.ext, 1)])
                 elif iv.is_reduce():
-                    self.subspaces["split"][iv] = SplitSpace(
+                    self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(
                         iv.ext, 2, mandatory_choices=[(1, iv.ext)]
                     )
             else:
-                self.subspaces["split"][iv] = SplitSpace(iv.ext, 2)
+                self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(iv.ext, 2)
 
         attach_pos_list = []
         for i, iv in enumerate(self.second_op_iters):
             if iv.ext < substantial:
                 if iv.is_spatial():
-                    self.subspaces["split"][iv] = SplitSpace(iv.ext, 2,
-                                                             mandatory_choices=[(iv.ext, 1)])
+                    self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(iv.ext, 2,
+                                                                           mandatory_choices=[(iv.ext, 1)])
                 elif iv.is_reduce():
-                    self.subspaces["split"][iv] = SplitSpace(
+                    self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(
                         iv.ext, 2, mandatory_choices=[(1, iv.ext)]
                     )
             else:
                 attach_pos_list.append(i)
-                self.subspaces["split"][iv] = SplitSpace(iv.ext, 2)
+                self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(iv.ext, 2)
 
         # fusion
         self.subspaces["fuse"] = ChooseSpace(mandatory_choices=attach_pos_list)

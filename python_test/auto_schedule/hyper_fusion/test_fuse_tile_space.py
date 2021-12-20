@@ -22,7 +22,7 @@ def GemmReLUGemm(M, N, K, L):
                 C[i, j] > 0,
                 C[i, j],
                 0.0
-            ),
+        ),
         name="D"
     )
     l = tvm.te.reduce_axis([0, L], "rl")
@@ -31,7 +31,7 @@ def GemmReLUGemm(M, N, K, L):
         lambda i, j:
             tvm.te.sum(
                 D[i, l] * E[l, j], axis=l
-            ),
+        ),
         name="F"
     )
     return [A, B, E], [F]
@@ -52,5 +52,15 @@ def test_space_size():
     hyper_state = ash.build_hyper_state(layer)
     iter_graph = hyper_state.build_iter_graph()
     fuse_tile_space = ash.FusionTileSpace(iter_graph)
-    with open("test_space_size.txt", "w") as fout:
-        fout.write(f"Space size is {len(fuse_tile_space)}.")
+    print(f"Space size is {len(fuse_tile_space)}.")
+    for k, v in fuse_tile_space.subspaces.items():
+        print(f"Subspace {k} size is {len(v)}")
+    counter = 0
+    for item in fuse_tile_space.all_items():
+        assert item
+        counter += 1
+    assert counter == len(fuse_tile_space)
+
+
+if __name__ == "__main__":
+    test_space_size()

@@ -3,39 +3,9 @@ The fusion state implementation of hyper fusion
 """
 import tvm
 from .pattern import *
+from .analysis import share_axis_analysis
 from .iter_graph import IV_TYPE_SPATIAL, IV_TYPE_REDUCE, IterVar, IterGraph
 from ditto import auto_compute as ac
-
-
-def share_axis_analysis(op1, op2):
-    """Perform the share relationship analysis.
-
-    Args:
-        op1 (tvm.tensor.Operation): the first op
-        op2 (tvm.tensor.Operation): the second op
-
-        op1 and op2 may not have direct access relationship,
-        i.e., the possible topology is
-        op1-->op?-->op?-->...-->op2.
-        So in this analysis, the share relationship should
-        be propagated along the producer-consumer chain.
-
-    Example:
-        GEMM1 C[i, l] = A[i, k] * B[k ,l]
-        ReLU  D[i', l'] = ReLU(C[i', l'])
-        GEMM2 F[i'', j] = D[i, l''] * E[l'', j]
-
-        op1 is GEMM1, op2 is GEMM2
-
-        The result is [(i, i''), (l, l'')]
-
-    Returns:
-        List[Tuple(IterVar, IterVar)]
-    """
-    # Note: the IterVar in result shared_paris should use
-    # the same naming format as OpHyperState
-    # 'Si' for the i-th spatial axis, 'Ri' for the i-th reduce axis
-    raise NotImplementedError()
 
 
 class OpHyperState(object):
@@ -56,12 +26,22 @@ class OpHyperState(object):
         """Get all IterVars for the op"""
         iters = []
         for i, iv in enumerate(self.op.axis):
-            iters.append(IterVar(f"S{i}", ext=int(
-                iv.dom.ext), iv_type=IV_TYPE_SPATIAL))
+            iters.append(IterVar(f"op({hash(self.op)}).S{i}", ext=int(
+                iv.dom.extent), iv_type=IV_TYPE_SPATIAL))
         for i, iv in enumerate(self.op.reduce_axis):
-            iters.append(IterVar(f"R{i}", ext=int(
-                iv.dom.ext), iv_type=IV_TYPE_REDUCE))
+            iters.append(IterVar(f"op({hash(self.op)}).R{i}", ext=int(
+                iv.dom.extent), iv_type=IV_TYPE_REDUCE))
         return iters
+
+    def get_all_iters_dict(self):
+        iters_dict = {}
+        for i, iv in enumerate(self.op.axis):
+            iters_dict[iv] = (IterVar(f"op({hash(self.op)}).S{i}", ext=int(
+                iv.dom.extent), iv_type=IV_TYPE_SPATIAL))
+        for i, iv in enumerate(self.op.reduce_axis):
+            iters_dict[iv] = (IterVar(f"op({hash(self.op)}).R{i}", ext=int(
+                iv.dom.extent), iv_type=IV_TYPE_REDUCE))
+        return iters_dict
 
 
 class SerialHyperState(object):
@@ -86,7 +66,6 @@ class SerialHyperState(object):
             OpHyperState(op, get_op_pattern(op)) for op in self.ops
         ]
         self.validate()
-        self.iter_graph = self.build_iter_graph()
 
     def validate(self):
         """Validate whether the layer can be fused."""
@@ -98,11 +77,11 @@ class SerialHyperState(object):
         # 2. update the reason
         if not self.is_linear_topo():
             feasible = False
-            reason = "The given layer is not in linear topology.\nlayer info: {self.layer}."
+            reason = f"The given layer is not in linear topology.\nlayer info: {self.layer}."
 
-        if self.count_cubic() == 2:
+        if self.count_cubic() != 2:
             feasible = False
-            reason = "Expect only 2 cubic operators in the layer.\nlayer info: {self.layer}."
+            reason = f"Expect only 2 cubic operators in the layer, but get {self.count_cubic()}.\nlayer info: {self.layer}."
 
         if self.has_allred():
             feasible = False
@@ -120,7 +99,17 @@ class SerialHyperState(object):
         Returns:
             [bool]: whether is in linear topology.
         """
-        raise NotImplementedError()
+        for op in self.ops:
+            num_inputs = len(op.input_tensors)
+            for i in range(num_inputs):
+                for j in range(i + 1, num_inputs):
+                    if (isinstance(op.input_tensors[i].op,
+                                   tvm.te.tensor.ComputeOp) and
+                        isinstance(op.input_tensors[j].op,
+                                   tvm.te.tensor.ComputeOp) and
+                            op.input_tensors[i].op != op.input_tensors[j].op):
+                        return False
+        return True
 
     def count_cubic(self):
         """Get the number of cubic ops in the critical path.
@@ -128,7 +117,11 @@ class SerialHyperState(object):
         Returns:
             [int]
         """
-        raise NotImplementedError()
+        counter = 0
+        for op_state in self.op_states:
+            if op_state.pattern == ac.nn.pattern.PATTERN_CUBIC:
+                counter += 1
+        return counter
 
     def has_allred(self):
         """Check if any op is allred pattern.
@@ -153,9 +146,9 @@ class SerialHyperState(object):
         first_iters = first_op_state.get_all_iters()
         second_iters = second_op_state.get_all_iters()
         share_pairs = share_axis_analysis(
-            first_op_state.op, second_op_state.op)
+            first_op_state, second_op_state)
         # build the iterator graph
-        self.iter_graph = IterGraph(first_iters, second_iters, share_pairs)
+        return IterGraph(first_iters, second_iters, share_pairs)
 
 
 def build_hyper_state(layer):

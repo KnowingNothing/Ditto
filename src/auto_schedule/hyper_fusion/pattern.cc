@@ -3,6 +3,7 @@
 
 #include <auto_compute/patterns/utils.h>
 #include <auto_schedule/hyper_fusion/pattern.h>
+#include <auto_schedule/hyper_fusion/analysis.h>
 
 using namespace tvm;
 namespace ditto {
