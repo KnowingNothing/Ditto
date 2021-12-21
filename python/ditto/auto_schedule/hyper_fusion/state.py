@@ -2,17 +2,19 @@
 The fusion state implementation of hyper fusion
 """
 import tvm
+from typing import *
 from .pattern import *
 from .analysis import share_axis_analysis
-from .iter_graph import IV_TYPE_SPATIAL, IV_TYPE_REDUCE, IterVar, IterGraph
+from .iter_graph import IV_TYPE_SPATIAL, IV_TYPE_REDUCE, IterVar, IterGraph, AccessFunc
 from ditto import auto_compute as ac
+from ditto import utils
 
 
 class OpHyperState(object):
     """The state object for one op in hyper fusion.
     """
 
-    def __init__(self, op, pattern):
+    def __init__(self, op, pattern: str):
         """
         Args:
             op (tvm.tensor.Operation): the operation
@@ -43,13 +45,21 @@ class OpHyperState(object):
                 iv.dom.extent), iv_type=IV_TYPE_REDUCE))
         return iters_dict
 
+    def get_all_access_functions(self):
+        ret = []
+        iters_dict = self.get_all_iters_dict()
+        for inp in self.op.input_tensors:
+            access_indices = utils.get_access_indices(self.op, inp)
+            ret.append(AccessFunc(access_indices, iters_dict))
+        return ret
+
 
 class SerialHyperState(object):
     """The state object for hyper fusion.
         This state only models a linear topology.
     """
 
-    def __init__(self, layer):
+    def __init__(self, layer: ac.Layer):
         """
         Args:
             layer (ditto.auto_compute.Layer): the layer to fuse
@@ -145,13 +155,24 @@ class SerialHyperState(object):
         second_op_state = self.op_states[second_op_id]
         first_iters = first_op_state.get_all_iters()
         second_iters = second_op_state.get_all_iters()
-        share_pairs = share_axis_analysis(
-            first_op_state, second_op_state)
+        iters_dict = first_op_state.get_all_iters_dict()
+        iters_dict.update(second_op_state.get_all_iters_dict())
+        share_axis_pairs = share_axis_analysis(
+            first_op_state.op, second_op_state.op)
+        share_pairs = [
+            (iters_dict[x[0]], iters_dict[x[1]]) for x in share_axis_pairs
+        ]
+        first_access = first_op_state.get_all_access_functions()
+        second_access = second_op_state.get_all_access_functions()
         # build the iterator graph
-        return IterGraph(first_iters, second_iters, share_pairs)
+        return IterGraph(first_iters,
+                         second_iters,
+                         share_pairs,
+                         first_access,
+                         second_access)
 
 
-def build_hyper_state(layer):
+def build_hyper_state(layer: ac.Layer):
     """This function validate whether the argument
         layer can be fused and auto-scheduled by the
         auto_schedule function of hyper_fusion.

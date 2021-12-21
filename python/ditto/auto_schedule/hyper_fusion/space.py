@@ -17,20 +17,21 @@ class FusionTileSpace(BaseCartSpace):
         """
         super(FusionTileSpace, self).__init__()
         assert isinstance(iter_graph, IterGraph)
+        self.iter_graph = iter_graph
         # empty choices
         self.choices = []
         # tiling
-        self.first_op_iters = iter_graph.get_initial_first_op_iters()
-        self.second_op_iters = iter_graph.get_initial_second_op_iters()
+        self.first_op_iters = iter_graph.getInitialFirstOpIters()
+        self.second_op_iters = iter_graph.getInitialSecondOpIters()
         shared_iters = set()
-        for (iter1, iter2) in iter_graph.get_initial_share_iter_pairs():
+        for (iter1, iter2) in iter_graph.getInitialShareIterPairs():
             shared_iters.add(iter1)
         for iv in self.first_op_iters:
             if (iv in shared_iters) or (iv.ext < substantial):
-                if iv.is_spatial():
+                if iv.isSpatial():
                     self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(iv.ext, 2,
                                                                            mandatory_choices=[(iv.ext, 1)])
-                elif iv.is_reduce():
+                elif iv.isReduce():
                     self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(
                         iv.ext, 2, mandatory_choices=[(1, iv.ext)]
                     )
@@ -40,10 +41,10 @@ class FusionTileSpace(BaseCartSpace):
         attach_pos_list = []
         for i, iv in enumerate(self.second_op_iters):
             if iv.ext < substantial:
-                if iv.is_spatial():
+                if iv.isSpatial():
                     self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(iv.ext, 2,
                                                                            mandatory_choices=[(iv.ext, 1)])
-                elif iv.is_reduce():
+                elif iv.isReduce():
                     self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(
                         iv.ext, 2, mandatory_choices=[(1, iv.ext)]
                     )
@@ -57,3 +58,25 @@ class FusionTileSpace(BaseCartSpace):
         # reorder
         self.subspaces["reorder"] = PermuteSpace(
             num_elems=len(self.second_op_iters), hit_mask=attach_pos_list)
+        
+    def all_iter_graphs(self):
+        ret = []
+        for item in self.all_items():
+            first_op_factors = []
+            for iv in self.first_op_iters:
+                split_item = item[f"split-{iv}({hash(iv)})"]
+                first_op_factors.append(split_item[1])
+            second_op_factors = []
+            for iv in self.second_op_iters:
+                split_item = item[f"split-{iv}({hash(iv)})"]
+                second_op_factors.append(split_item[1])
+            order = item["reorder"].order
+            attach_pos = item["fuse"].item
+            
+            iter_graph = self.iter_graph.regenerate()
+            iter_graph.setFirstOpTiling(first_op_factors)
+            iter_graph.setSecondOpTiling(second_op_factors)
+            iter_graph.permute(order)
+            iter_graph.fuseLoops(attach_pos)
+            ret.append(iter_graph)
+        return ret

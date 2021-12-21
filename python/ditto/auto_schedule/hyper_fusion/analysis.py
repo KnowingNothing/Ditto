@@ -1,12 +1,17 @@
+import tvm
+from typing import *
 from .. import _ffi_api
 
 
-def share_axis_analysis(state1, state2):
+def share_axis_analysis(
+    op1: tvm.te.tensor.Operation,
+    op2: tvm.te.tensor.Operation,
+):
     """Perform the share relationship analysis.
 
     Args:
-        state1 (OpHyperState): the first op state
-        state2 (OpHyperState): the second op state
+        op1 (tvm.te.tensor.Operation): the first op
+        op2 (tvm.te.tensor.Operation): the second op
 
         op1 and op2 may not have direct access relationship,
         i.e., the possible topology is
@@ -24,15 +29,16 @@ def share_axis_analysis(state1, state2):
         The result is [(i, i''), (l, l'')]
 
     Returns:
-        List[Tuple(IterVar, IterVar)]
+        List[List[tvm.tir.IterVar]]: share_axis_pairs
     """
-    # Note: the IterVar in result shared_paris should use
-    # the same naming format as OpHyperState
-    # 'Si' for the i-th spatial axis, 'Ri' for the i-th reduce axis
-    iters_dict = state1.get_all_iters_dict()
-    iters_dict.update(state2.get_all_iters_dict())
-    share_axis_pairs = _ffi_api.ShareAxisAnalysis(state1.op, state2.op)
-    share_iters_pairs = [
-        (iters_dict[x[0]], iters_dict[x[1]]) for x in share_axis_pairs
-    ]
-    return share_iters_pairs
+    share_axis_pairs = _ffi_api.ShareAxisAnalysis(op1, op2)
+    return share_axis_pairs
+
+
+def calculate_metrics(self,
+                      common_factors: List[Tuple[str, int]],
+                      first_op_factors: List[Tuple[str, int]],
+                      second_op_factors: List[Tuple[str, int]],
+                      first_op_access_data_size: List[List[int]],
+                      second_op_access_data_size: List[List[int]]):
+    pass

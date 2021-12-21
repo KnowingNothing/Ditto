@@ -1,5 +1,7 @@
 """Utils for hyper fusion"""
 import logging
+import tvm
+from typing import Union
 
 
 hf_logger = logging.getLogger("HyperFusion")
@@ -12,5 +14,6 @@ ch.setFormatter(formatter)
 hf_logger.addHandler(ch)
 
 
-def ceil(x, y):
+def ceil(x: Union[int, tvm.ir.PrimExpr],
+         y: Union[int, tvm.ir.PrimExpr]):
     return (x + y - 1) // y

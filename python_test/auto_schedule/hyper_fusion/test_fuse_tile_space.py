@@ -2,6 +2,7 @@ import pytest
 import tvm
 from ditto import auto_compute as ac
 from ditto import auto_schedule as ash
+import time
 
 
 def GemmReLUGemm(M, N, K, L):
@@ -62,5 +63,28 @@ def test_space_size():
     assert counter == len(fuse_tile_space)
 
 
+@pytest.mark.basic
+def test_space_item():
+    """The search space size.
+    """
+    M = 512
+    N = 64
+    K = 64
+    L = 512
+    ins, outs = GemmReLUGemm(M, N, K, L)
+    A, B, E = ins
+    F, = outs
+    layer = ac.layer(F.op, inputs=[A, B, E])
+    hyper_state = ash.build_hyper_state(layer)
+    iter_graph = hyper_state.build_iter_graph()
+    fuse_tile_space = ash.FusionTileSpace(iter_graph)
+    beg = time.time()
+    for iter_graph in fuse_tile_space.all_iter_graphs():
+        bounds = iter_graph.inferBound()
+    end = time.time()
+    print(f"Use time {end - beg}s to generate all iter_graphs.")
+
+
 if __name__ == "__main__":
     test_space_size()
+    test_space_item()

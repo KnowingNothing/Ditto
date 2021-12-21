@@ -1,3 +1,4 @@
+#include <tvm/runtime/registry.h>
 #include <tvm/tir/expr_functor.h>
 #include <utils/iter_domain.h>
 
@@ -73,6 +74,40 @@ Map<tir::Var, Range> InferRange(const Map<tir::Var, PrimExpr> &vars_to_infer,
     }
   }
   return new_ranges;
+}
+
+class IndicesGetter : public tir::ExprVisitor {
+public:
+  using tir::ExprVisitor::VisitExpr;
+
+  Array<Array<PrimExpr>> get(const PrimExpr &expr, const te::Operation &op) {
+    indices_.clear();
+    op_ = op;
+    VisitExpr(expr);
+    return Array<Array<PrimExpr>>(indices_);
+  }
+
+protected:
+  using tir::ExprVisitor::VisitExpr_;
+
+  void VisitExpr_(const tir::ProducerLoadNode *op) override {
+    te::Tensor t = runtime::Downcast<te::Tensor>(op->producer);
+    if (t.defined() && t->op == op_) {
+      indices_.push_back(op->indices);
+    }
+  }
+
+private:
+  std::vector<Array<PrimExpr>> indices_;
+  te::Operation op_{nullptr};
+};
+
+Array<Array<PrimExpr>> GetAccessIndices(te::Operation op,
+                                        te::Operation producer) {
+  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+  CHECK(cop && cop->body.size() == 1U);
+  IndicesGetter getter;
+  return getter.get(cop->body[0], producer);
 }
 
 class FloatOpGetter : public tir::ExprVisitor {
@@ -211,6 +246,10 @@ float GetFloatOps(PrimExpr body) {
   FloatOpGetter getter;
   return (float)getter.Get(body);
 }
+
+TVM_REGISTER_GLOBAL("ditto.utils.InferRange").set_body_typed(InferRange);
+TVM_REGISTER_GLOBAL("ditto.utils.GetAccessIndices")
+    .set_body_typed(GetAccessIndices);
 
 } // namespace utils
 

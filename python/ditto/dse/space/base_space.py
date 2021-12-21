@@ -1,5 +1,5 @@
 """The basic search space objects"""
-
+from ...utils import ditto_logger
 
 class BaseItem(object):
     """The base item for search space."""
@@ -15,6 +15,8 @@ class BaseSpace(object):
 
     def all_items(self):
         assert self.initialized(), f"The space {self.name} is not initialized."
+        if len(self) > 100000:
+            ditto_logger.warn(f"Attempt to retrive {len(self)} items from the design space!")
         return self.choices
 
     def initialized(self):
@@ -42,6 +44,8 @@ class BaseCartSpace(object):
         self.subspaces = {}
     
     def all_items(self):
+        if len(self) > 100000:
+            ditto_logger.warn(f"Attempt to retrive {len(self)} items from the design space!")
         keys = list(self.subspaces.keys())
         num_space = len(keys)
         ret = []

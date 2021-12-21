@@ -3,12 +3,13 @@ define the api of hyper fusion
 """
 
 from ditto import hardware as hw
+from ditto import auto_compute as ac
 from .config import SUBSTANTIAL
 from .space import FusionTileItem, FusionTileSpace
 from .state import build_hyper_state
 
 
-def auto_schedule(layer, target):
+def auto_schedule(layer: ac.Layer, target: str):
     """This function performs automatic scheduling
         for the layer to be fused.
 

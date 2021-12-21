@@ -88,4 +88,4 @@ class PermuteSpace(BaseSpace):
                 for idx, v in zip(hit_mask, p):
                     it[idx] = v
                 choices.append(it)
-            self.choices = [ChooseItem(it) for it in choices]
+            self.choices = [PermuteItem(it) for it in choices]
