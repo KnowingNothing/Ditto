@@ -1,4 +1,5 @@
 from .config import V100
+from .param import HardwareParam
 
 
 SUPPORTED_TARGETS = {

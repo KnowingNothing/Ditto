@@ -21,7 +21,11 @@ def infer_range(expr_list: List[tvm.ir.PrimExpr],
 
 
 def product(vlist, one=1):
-    return list(reduce(lambda x, y: x * y, vlist, one))
+    return reduce(lambda x, y: x * y, vlist, one)
+
+
+def accumulate(vlist, zero=0):
+    return reduce(lambda x, y: x + y, vlist, zero)
 
 
 def get_access_indices(op: tvm.te.tensor.Operation,

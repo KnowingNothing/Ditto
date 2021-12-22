@@ -15,8 +15,9 @@ class IterVar(object):
         The IterVar is assumed to be normalized to [0, ext).
     """
 
-    def __init__(self, name, ext=None, iv_type=None):
+    def __init__(self, name, idx, ext=None, iv_type=None):
         self.name = name
+        self.idx = idx
         self.ext = ext
         self.iv_type = iv_type
 
@@ -91,7 +92,7 @@ class AccessFunc(object):
     def inferDataSize(self, bounds):
         ret = []
         range_map = {}
-        for k, v in self.iters_mapping:
+        for k, v in self.iters_mapping.items():
             range_map[k] = tvm.ir.Range(0, bounds[v])
         for indices in self.indices_list:
             ranges = utils.infer_range(indices, range_map)
@@ -109,22 +110,30 @@ class IterGraph(object):
                  first_op_iters: Sequence[IterVar],
                  second_op_iters: Sequence[IterVar],
                  share_iter_pairs: Sequence[Tuple[IterVar, IterVar]],
-                 first_op_access_funcs: Sequence[AccessFunc],
-                 second_op_access_funcs: Sequence[AccessFunc]):
+                 first_op_read_access_funcs: Sequence[AccessFunc],
+                 second_op_read_access_funcs: Sequence[AccessFunc],
+                 first_write_access_func: AccessFunc,
+                 second_write_access_func: AccessFunc,
+                 read_producer_pos: int):
         # these are not mutable
-        self._initial_first_op_iters = [x for x in first_op_iters]
-        self._initial_second_op_iters = [x for x in second_op_iters]
-        self._initial_share_iter_paris = [x for x in share_iter_pairs]
-        self._initial_first_op_access_funcs = [x for x in first_op_access_funcs]
-        self._initial_second_op_access_funcs = [x for x in second_op_access_funcs]
+        # we produce new values for mutable states
+        # so don't worry that these values will be changed
+        self._initial_first_op_iters = first_op_iters
+        self._initial_second_op_iters = second_op_iters
+        self._initial_share_iter_paris = share_iter_pairs
+        self._initial_first_op_access_funcs = first_op_read_access_funcs
+        self._initial_second_op_access_funcs = second_op_read_access_funcs
+        self._initial_first_write_access_func = first_write_access_func
+        self._initial_second_write_access_func = second_write_access_func
+        self._initial_read_producer_pos = read_producer_pos
         # the following are mutable states
         self.common_iters = []
         self.first_op_private_iters = []
         self.first_op_num_loops = 0
         self.second_op_private_iters = []
         self.second_op_num_loops = 0
-        self.first_op_access_funcs = []
-        self.second_op_access_funcs = []
+        self.first_op_read_access_funcs = []
+        self.second_op_read_access_funcs = []
         # i = i1*Ti + i2
         # denote two iters are split from one
         self.split_iter_relations = []  # List[SplitRelation]
@@ -139,15 +148,21 @@ class IterGraph(object):
         self._build(first_op_iters,
                     second_op_iters,
                     share_iter_pairs,
-                    first_op_access_funcs,
-                    second_op_access_funcs)
+                    first_op_read_access_funcs,
+                    second_op_read_access_funcs,
+                    first_write_access_func,
+                    second_write_access_func,
+                    read_producer_pos)
 
     def _build(self,
                first_op_iters: Sequence[IterVar],
                second_op_iters: Sequence[IterVar],
                share_iter_pairs: Sequence[Tuple[IterVar, IterVar]],
-               first_op_access_funcs: Sequence[AccessFunc],
-               second_op_access_funcs: Sequence[AccessFunc]):
+               first_op_read_access_funcs: Sequence[AccessFunc],
+               second_op_read_access_funcs: Sequence[AccessFunc],
+               first_write_access_func: AccessFunc,
+               second_write_access_func: AccessFunc,
+               read_producer_pos: int):
         """Build the iter graph using
             the iterators of the first cubic op
             and the second cubic op.
@@ -156,17 +171,23 @@ class IterGraph(object):
             first_op_iters (Sequence[IterVar]): iters of the first op
             second_op_iters (Sequence[IterVar]): iters of the second op
             share_iter_pairs (Sequence[Tuple[IterVar, IterVar]]): shared iters tuples
-            first_op_access_funcs (Sequence[AccessFunc]): access funcs of the first op
-            second_op_access_funcs (Sequence[AccessFunc]): access funcs of the second op
+            first_op_read_access_funcs (Sequence[AccessFunc]): access funcs of the first op
+            second_op_read_access_funcs (Sequence[AccessFunc]): access funcs of the second op
+            first_write_access_func (AccessFunc)
+            second_write_access_func (AccessFunc)
+            read_producer_pos (int)
         """
         self.first_op_private_iters = first_op_iters
         self.second_op_private_iters = second_op_iters
         self.first_op_num_loops = len(first_op_iters)
         self.second_op_num_loops = len(second_op_iters)
-        self.first_op_access_funcs = first_op_access_funcs
-        self.second_op_access_funcs = second_op_access_funcs
+        self.first_op_read_access_funcs = first_op_read_access_funcs
+        self.second_op_read_access_funcs = second_op_read_access_funcs
         for (first, second) in share_iter_pairs:
             self.shared_iter_relations.append(ShareRelation(first, second))
+        self.first_op_write_access_func = first_write_access_func
+        self.second_op_write_access_func = second_write_access_func
+        self.read_producer_pos = read_producer_pos
 
     def regenerate(self):
         """Get another IterGraph that is the same as the initial one."""
@@ -174,7 +195,10 @@ class IterGraph(object):
                          self._initial_second_op_iters,
                          self._initial_share_iter_paris,
                          self._initial_first_op_access_funcs,
-                         self._initial_second_op_access_funcs)
+                         self._initial_second_op_access_funcs,
+                         self._initial_first_write_access_func,
+                         self._initial_second_write_access_func,
+                         self._initial_read_producer_pos)
 
     def getInitialFirstOpIters(self):
         return [x for x in self._initial_first_op_iters]
@@ -185,10 +209,10 @@ class IterGraph(object):
     def getInitialShareIterPairs(self):
         return [x for x in self._initial_share_iter_paris]
 
-    def getInitialFirstOpAccessFuncs(self):
+    def getInitialFirstOpReadAccessFuncs(self):
         return [x for x in self._initial_first_op_access_funcs]
 
-    def getInitialSecondOpAccessFuncs(self):
+    def getInitialSecondOpReadAccessFuncs(self):
         return [x for x in self._initial_second_op_access_funcs]
 
     def setFirstOpTiling(self, first_op_tile_factors: Sequence[int]):
@@ -199,15 +223,18 @@ class IterGraph(object):
                                                 for the first op.
         """
         assert len(first_op_tile_factors) == len(self.first_op_private_iters)
-        outer_iters = [IterVar(f"{iv.name}.outer", ext=None, iv_type=iv.iv_type)
+        outer_iters = [IterVar(f"{iv.name}.outer", iv.idx, ext=None,
+                               iv_type=iv.iv_type)
                        for iv in self.first_op_private_iters]
-        inner_iters = [IterVar(f"{iv.name}.inner", ext=factor, iv_type=iv.iv_type) for iv, factor in zip(
+        inner_iters = [IterVar(f"{iv.name}.inner", iv.idx, ext=factor,
+                               iv_type=iv.iv_type) for iv, factor in zip(
             self.first_op_private_iters, first_op_tile_factors)]
         # map from original iter to inner iter
         convert_to_inner = {}
         for org, inner in zip(self.first_op_private_iters, inner_iters):
             convert_to_inner[org] = inner
-        for outer, inner, iv in zip(outer_iters, inner_iters, self.first_op_private_iters):
+        for outer, inner, iv in zip(outer_iters, inner_iters,
+                                    self.first_op_private_iters):
             self.split_iter_relations.append(SplitRelation(iv, outer, inner))
             for i in range(len(self.shared_iter_relations)):
                 share_rel = self.shared_iter_relations[i]
@@ -215,14 +242,6 @@ class IterGraph(object):
                     self.shared_iter_relations[i].iter1 = outer
 
         self.first_op_private_iters = outer_iters + inner_iters
-
-        new_access_funcs = []
-        for func in self.first_op_access_funcs:
-            new_mapping = {}
-            for k, v in func.iters_mapping.items():
-                new_mapping[k] = convert_to_inner[v]
-            new_access_funcs.append(AccessFunc(func.indices_list, new_mapping))
-        self.first_op_access_funcs = new_access_funcs
 
     def setSecondOpTiling(self, second_op_tile_factors: Sequence[int]):
         """Set the tiling factors for the second op.
@@ -232,15 +251,19 @@ class IterGraph(object):
                                                 for the second op.
         """
         assert len(second_op_tile_factors) == len(self.second_op_private_iters)
-        outer_iters = [IterVar(f"{iv.name}.outer", ext=None, iv_type=iv.iv_type)
+        outer_iters = [IterVar(f"{iv.name}.outer", iv.idx, ext=None,
+                               iv_type=iv.iv_type)
                        for iv in self.second_op_private_iters]
-        inner_iters = [IterVar(f"{iv.name}.inner", ext=factor, iv_type=iv.iv_type)
-                       for iv, factor in zip(self.second_op_private_iters, second_op_tile_factors)]
+        inner_iters = [IterVar(f"{iv.name}.inner", iv.idx, ext=factor,
+                               iv_type=iv.iv_type)
+                       for iv, factor in zip(self.second_op_private_iters,
+                                             second_op_tile_factors)]
         # map from original iter to inner iter
         convert_to_inner = {}
         for org, inner in zip(self.second_op_private_iters, inner_iters):
             convert_to_inner[org] = inner
-        for outer, inner, iv in zip(outer_iters, inner_iters, self.second_op_private_iters):
+        for outer, inner, iv in zip(outer_iters, inner_iters,
+                                    self.second_op_private_iters):
             self.split_iter_relations.append(SplitRelation(iv, outer, inner))
             for i in range(len(self.shared_iter_relations)):
                 share_rel = self.shared_iter_relations[i]
@@ -249,27 +272,20 @@ class IterGraph(object):
 
         self.second_op_private_iters = outer_iters + inner_iters
 
-        new_access_funcs = []
-        for func in self.second_op_access_funcs:
-            new_mapping = {}
-            for k, v in func.iters_mapping.items():
-                new_mapping[k] = convert_to_inner[v]
-            new_access_funcs.append(AccessFunc(func.indices_list, new_mapping))
-        self.second_op_access_funcs = new_access_funcs
-
     def permute(self, order: Sequence[int]):
         """Change the loop order of the second op.
 
         Args:
             order (List[int]): new order of the iterators
         """
-        assert len(order) == len(
-            self._initial_second_op_iters), (
-                f"order={order}, iters={self._initial_second_op_iters}")
+        length = len(self._initial_second_op_iters)
+        assert len(order) == length, (
+            f"order={order}, iters={self._initial_second_op_iters}")
         sorted_values = list(sorted(order))
         assert tuple(sorted_values) == tuple(
-            range(len(order))), "some iterator is missing"
-        permuted_loops = [self.second_op_private_iters[i] for i in order]
+            range(length)), "some iterator is missing"
+        permuted_loops = [self.second_op_private_iters[i]
+                          for i in order] + self.second_op_private_iters[length:]
         self.second_op_private_iters = permuted_loops
 
     def fuseLoops(self, attach_pos: int):
@@ -295,7 +311,8 @@ class IterGraph(object):
                         split_rel = self.split_iter_relations[j]
                         if split_rel.left == iv:
                             remain = IterVar(
-                                split_rel.right.name, ext=None, iv_type=split_rel.right.iv_type)
+                                split_rel.right.name, split_rel.right.idx,
+                                ext=None, iv_type=split_rel.right.iv_type)
                             self.attach_iter_relations.append(AttachRelation(
                                 share_rel.iter2, remain, split_rel.parent))
                     eliminate = True
@@ -306,14 +323,81 @@ class IterGraph(object):
         self.first_op_private_iters = first_op_private_iters
         self.second_op_private_iters = second_op_private_iters
 
+        first_op_iters_map = {x.name: x for x in first_op_private_iters}
+        second_op_iters_map = {x.name: x for x in second_op_private_iters}
+
+        new_first_op_access_funcs = []
+        for func in self.first_op_read_access_funcs:
+            new_mapping = {}
+            for k, v in func.iters_mapping.items():
+                if (f"{v.name}.outer" in first_op_iters_map and
+                        f"{v.name}.inner" in first_op_iters_map):
+                    new_mapping[k] = first_op_iters_map[f"{v.name}.inner"]
+                elif f"{v.name}.outer" in first_op_iters_map:
+                    new_mapping[k] = first_op_iters_map[f"{v.name}.outer"]
+                elif f"{v.name}.inner" in first_op_iters_map:
+                    new_mapping[k] = first_op_iters_map[f"{v.name}.inner"]
+                else:
+                    raise ValueError(f"Can't find iterator: {v}.")
+            new_first_op_access_funcs.append(
+                AccessFunc(func.indices_list, new_mapping))
+        self.first_op_read_access_funcs = new_first_op_access_funcs
+
+        new_write_mapping = {}
+        for k, v in self.first_op_write_access_func.iters_mapping.items():
+            if (f"{v.name}.outer" in first_op_iters_map and
+                    f"{v.name}.inner" in first_op_iters_map):
+                new_write_mapping[k] = v
+            elif f"{v.name}.outer" in first_op_iters_map:
+                new_write_mapping[k] = first_op_iters_map[f"{v.name}.outer"]
+            elif f"{v.name}.inner" in first_op_iters_map:
+                new_write_mapping[k] = first_op_iters_map[f"{v.name}.inner"]
+            else:
+                raise ValueError(f"Can't find iterator: {v}.")
+        self.first_op_write_access_func = AccessFunc(
+            self.first_op_write_access_func.indices_list, new_write_mapping)
+
+        new_second_op_access_funcs = []
+        for func in self.second_op_read_access_funcs:
+            new_mapping = {}
+            for k, v in func.iters_mapping.items():
+                if (f"{v.name}.outer" in second_op_iters_map and
+                        f"{v.name}.inner" in second_op_iters_map):
+                    new_mapping[k] = second_op_iters_map[f"{v.name}.inner"]
+                elif f"{v.name}.outer" in second_op_iters_map:
+                    new_mapping[k] = second_op_iters_map[f"{v.name}.outer"]
+                elif f"{v.name}.inner" in second_op_iters_map:
+                    new_mapping[k] = second_op_iters_map[f"{v.name}.inner"]
+                else:
+                    raise ValueError(f"Can't find iterator: {v}.")
+            new_second_op_access_funcs.append(
+                AccessFunc(func.indices_list, new_mapping))
+        self.second_op_read_access_funcs = new_second_op_access_funcs
+
+        new_write_mapping = {}
+        for k, v in self.second_op_write_access_func.iters_mapping.items():
+            if (f"{v.name}.outer" in second_op_iters_map and
+                    f"{v.name}.inner" in second_op_iters_map):
+                new_write_mapping[k] = v
+            elif f"{v.name}.outer" in second_op_iters_map:
+                new_write_mapping[k] = second_op_iters_map[f"{v.name}.outer"]
+            elif f"{v.name}.inner" in second_op_iters_map:
+                new_write_mapping[k] = second_op_iters_map[f"{v.name}.inner"]
+            else:
+                raise ValueError(f"Can't find iterator: {v}.")
+        self.second_op_write_access_func = AccessFunc(
+            self.second_op_write_access_func.indices_list, new_write_mapping)
+
     def inferBound(self):
         """Get the bounds of all existing iterators."""
         bounds = {}
-        for iter in self.common_iters + self.first_op_private_iters + self.second_op_private_iters:
+        for iter in (self.common_iters + self.first_op_private_iters +
+                     self.second_op_private_iters):
             if iter.ext is not None:
                 bounds[iter] = iter.ext
         for split_rel in self.split_iter_relations:
-            assert split_rel.parent.ext is not None, f"The root iter_var {split_rel.parent}'s bound is unknown."
+            assert split_rel.parent.ext is not None, (
+                f"The root iter_var {split_rel.parent}'s bound is unknown.")
             bounds[split_rel.parent] = split_rel.parent.ext
             if split_rel.left.ext is None:
                 assert split_rel.left not in bounds
@@ -329,19 +413,28 @@ class IterGraph(object):
             bounds[remain] = ceil(original.ext, bounds[head])
         return bounds
 
-    def getFirstOpAccessDataSize(self, bounds):
+    def getFirstOpReadAccessDataSize(self, bounds):
         ret = []
-        for access in self.first_op_access_funcs:
+        for access in self.first_op_read_access_funcs:
             size_list = access.inferDataSize(bounds)
             ret.append(size_list)
         return ret
 
-    def getSecondOpAccessDataSize(self, bounds):
+    def getFirstOpWriteAccessDataSize(self, bounds):
+        return self.first_op_write_access_func.inferDataSize(bounds)
+
+    def getSecondOpReadAccessDataSize(self, bounds):
         ret = []
-        for access in self.second_op_access_funcs:
+        for access in self.second_op_read_access_funcs:
             size_list = access.inferDataSize(bounds)
             ret.append(size_list)
         return ret
+
+    def getSecondOpWriteAccessDataSize(self, bounds):
+        return self.second_op_write_access_func.inferDataSize(bounds)
+
+    def getFirstOpSecondOpRelateInputPos(self):
+        return self.read_producer_pos
 
     def commonLoops(self):
         return self.common_iters
@@ -351,3 +444,15 @@ class IterGraph(object):
 
     def secondLoops(self):
         return self.second_op_private_iters
+
+    def redundantCommonLoops(self):
+        ret = []
+        common_loops = self.commonLoops()
+        mark = {x.name: 0 for x in common_loops}
+        for share_rel in self.shared_iter_relations:
+            if f"{share_rel.iter2.name}.outer" in mark:
+                mark[f"{share_rel.iter2.name}.outer"] += 1
+        for l in common_loops:
+            if mark[l.name] == 0:
+                ret.append(l)
+        return ret

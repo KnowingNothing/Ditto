@@ -2,6 +2,7 @@ import pytest
 import tvm
 from ditto import auto_compute as ac
 from ditto import auto_schedule as ash
+from ditto import hardware as hw
 import time
 
 
@@ -57,7 +58,7 @@ def test_space_size():
     for k, v in fuse_tile_space.subspaces.items():
         print(f"Subspace {k} size is {len(v)}")
     counter = 0
-    for item in fuse_tile_space.all_items():
+    for item in fuse_tile_space.all_items:
         assert item
         counter += 1
     assert counter == len(fuse_tile_space)
@@ -79,8 +80,8 @@ def test_space_item():
     iter_graph = hyper_state.build_iter_graph()
     fuse_tile_space = ash.FusionTileSpace(iter_graph)
     beg = time.time()
-    for iter_graph in fuse_tile_space.all_iter_graphs():
-        bounds = iter_graph.inferBound()
+    for iter_graph in fuse_tile_space.all_iter_graphs:
+        metric = ash.evaluate_iter_graph(iter_graph, hw.V100)
     end = time.time()
     print(f"Use time {end - beg}s to generate all iter_graphs.")
 

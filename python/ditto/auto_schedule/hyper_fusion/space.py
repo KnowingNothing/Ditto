@@ -58,10 +58,11 @@ class FusionTileSpace(BaseCartSpace):
         # reorder
         self.subspaces["reorder"] = PermuteSpace(
             num_elems=len(self.second_op_iters), hit_mask=attach_pos_list)
-        
+    
+    @property
     def all_iter_graphs(self):
         ret = []
-        for item in self.all_items():
+        for item in self.all_items:
             first_op_factors = []
             for iv in self.first_op_iters:
                 split_item = item[f"split-{iv}({hash(iv)})"]

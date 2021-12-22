@@ -4,9 +4,10 @@ The fusion state implementation of hyper fusion
 import tvm
 from typing import *
 from .pattern import *
-from .analysis import share_axis_analysis
+from .analysis import share_axis_analysis, calculate_metrics, AnalyticalResult
 from .iter_graph import IV_TYPE_SPATIAL, IV_TYPE_REDUCE, IterVar, IterGraph, AccessFunc
 from ditto import auto_compute as ac
+from ditto import hardware as hw
 from ditto import utils
 
 
@@ -28,30 +29,43 @@ class OpHyperState(object):
         """Get all IterVars for the op"""
         iters = []
         for i, iv in enumerate(self.op.axis):
-            iters.append(IterVar(f"op({hash(self.op)}).S{i}", ext=int(
+            iters.append(IterVar(f"op({hash(self.op)}).S{i}", i, ext=int(
                 iv.dom.extent), iv_type=IV_TYPE_SPATIAL))
         for i, iv in enumerate(self.op.reduce_axis):
-            iters.append(IterVar(f"op({hash(self.op)}).R{i}", ext=int(
+            iters.append(IterVar(f"op({hash(self.op)}).R{i}", i, ext=int(
                 iv.dom.extent), iv_type=IV_TYPE_REDUCE))
         return iters
 
     def get_all_iters_dict(self):
         iters_dict = {}
         for i, iv in enumerate(self.op.axis):
-            iters_dict[iv] = (IterVar(f"op({hash(self.op)}).S{i}", ext=int(
+            iters_dict[iv] = (IterVar(f"op({hash(self.op)}).S{i}", i, ext=int(
                 iv.dom.extent), iv_type=IV_TYPE_SPATIAL))
         for i, iv in enumerate(self.op.reduce_axis):
-            iters_dict[iv] = (IterVar(f"op({hash(self.op)}).R{i}", ext=int(
+            iters_dict[iv] = (IterVar(f"op({hash(self.op)}).R{i}", i, ext=int(
                 iv.dom.extent), iv_type=IV_TYPE_REDUCE))
         return iters_dict
 
-    def get_all_access_functions(self):
+    def get_read_access_functions(self):
         ret = []
-        iters_dict = self.get_all_iters_dict()
+        iters_dict = {iv.var: v for (
+            iv, v) in self.get_all_iters_dict().items()}
         for inp in self.op.input_tensors:
             access_indices = utils.get_access_indices(self.op, inp)
             ret.append(AccessFunc(access_indices, iters_dict))
         return ret
+
+    def get_write_access_functions(self):
+        indices = [[iv.var for iv in self.op.axis]]
+        iters_dict = {iv.var: v for (
+            iv, v) in self.get_all_iters_dict().items()}
+        return AccessFunc(indices, iters_dict)
+
+    def get_first_producer_position(self):
+        for i, inp in enumerate(self.op.input_tensors):
+            if isinstance(inp.op, tvm.te.tensor.ComputeOp):
+                return i
+        return -1
 
 
 class SerialHyperState(object):
@@ -162,14 +176,21 @@ class SerialHyperState(object):
         share_pairs = [
             (iters_dict[x[0]], iters_dict[x[1]]) for x in share_axis_pairs
         ]
-        first_access = first_op_state.get_all_access_functions()
-        second_access = second_op_state.get_all_access_functions()
+        first_read_access = first_op_state.get_read_access_functions()
+        first_write_access = first_op_state.get_write_access_functions()
+        second_read_access = second_op_state.get_read_access_functions()
+        second_write_access = second_op_state.get_write_access_functions()
+        read_producer_pos = second_op_state.get_first_producer_position()
+        assert read_producer_pos >= 0, "Can't find a producer for the second op."
         # build the iterator graph
         return IterGraph(first_iters,
                          second_iters,
                          share_pairs,
-                         first_access,
-                         second_access)
+                         first_read_access,
+                         second_read_access,
+                         first_write_access,
+                         second_write_access,
+                         read_producer_pos)
 
 
 def build_hyper_state(layer: ac.Layer):
@@ -194,3 +215,53 @@ def build_hyper_state(layer: ac.Layer):
     hyper_state = SerialHyperState(layer)
     # update the hyper state according to some logic
     return hyper_state
+
+
+def evaluate_iter_graph(iter_graph: IterGraph,
+                        hw_param: hw.HardwareParam):
+    """Evaluate the quality of an iter_graph
+
+    Args:
+        iter_graph (IterGraph): The iter graph
+        hw_param (hw.HardwareParam): The target hardware
+
+    Returns:
+        [AnalyticalResult]: results
+    """
+    bounds = iter_graph.inferBound()
+    common_iters = iter_graph.commonLoops()
+    first_iters = iter_graph.firstLoops()
+    second_iters = iter_graph.secondLoops()
+    common_factors = [
+        ("S" if iv.isSpatial() else "R", bounds[iv]) for iv in common_iters
+    ]
+    first_factors = [
+        ("S" if iv.isSpatial() else "R", bounds[iv]) for iv in first_iters
+    ]
+    second_factors = [
+        ("S" if iv.isSpatial() else "R", bounds[iv]) for iv in second_iters
+    ]
+    first_read = iter_graph.getFirstOpReadAccessDataSize(bounds)
+    second_read = iter_graph.getSecondOpReadAccessDataSize(bounds)
+    first_write = iter_graph.getFirstOpWriteAccessDataSize(bounds)
+    second_write = iter_graph.getSecondOpWriteAccessDataSize(bounds)
+    relate_pos = iter_graph.getFirstOpSecondOpRelateInputPos()
+    redundant_factors = [bounds[iv]
+                         for iv in iter_graph.redundantCommonLoops()]
+    metric = calculate_metrics(
+        # first_op_types: Tuple[str, str, str],
+        ("float16", "float32", "float16-float32"),
+        # second_op_types: Tuple[str, str, str],
+        ("float16", "float32", "float32"),
+        common_factors,  # common_factors: List[Tuple[str, int]],
+        first_factors,  # first_op_factors: List[Tuple[str, int]],
+        second_factors,  # second_op_factors: List[Tuple[str, int]],
+        first_read,  # first_op_read_data_size: List[List[int]],
+        first_write,  # first_op_write_data_size: int,
+        second_read,  # second_op_read_data_size: List[List[int]],
+        second_write,  # second_op_write_data_size: int,
+        relate_pos,  # first_op_second_op_relate_pos: int,
+        redundant_factors,  # redundant_common_factors: List[int],
+        hw_param,  # hw_param: hw.HardwareParam
+    )
+    return metric
