@@ -1,5 +1,7 @@
 """The basic search space objects"""
 from ...utils import ditto_logger
+from ditto import utils
+
 
 class BaseItem(object):
     """The base item for search space."""
@@ -17,7 +19,8 @@ class BaseSpace(object):
     def all_items(self):
         assert self.initialized(), f"The space {self.name} is not initialized."
         if len(self) > 100000:
-            ditto_logger.warn(f"Attempt to retrive {len(self)} items from the design space!")
+            ditto_logger.warn(
+                f"Attempt to retrive {len(self)} items from the design space!")
         return self.choices
 
     def initialized(self):
@@ -43,19 +46,22 @@ class BaseCartSpace(object):
     def __init__(self):
         self.name = ""
         self.subspaces = {}
-    
+
     @property
     def all_items(self):
         if len(self) > 100000:
-            ditto_logger.warn(f"Attempt to retrive {len(self)} items from the design space!")
+            ditto_logger.warn(
+                f"Attempt to retrive {len(self)} items from the design space!")
         space_shape = []
         for key, subspace in self.subspaces.items():
             space_shape.append((key, len(subspace)))
         dim = len(space_shape)
         space_factors = [[k, 1] for (k, _) in space_shape]
         for i in range(0, dim-1):
-            space_factors[dim - i - 2][1] = space_shape[dim - i - 1][1] * space_factors[dim - i - 1][1]
+            space_factors[dim - i - 2][1] = space_shape[dim -
+                                                        i - 1][1] * space_factors[dim - i - 1][1]
         ids = range(len(self))
+
         def _inner(idx):
             item = {}
             v = idx
@@ -65,23 +71,7 @@ class BaseCartSpace(object):
                 item[k] = self.subspaces[k].all_items[outer]
                 v = inner
             return item
-        ret = map(lambda x: _inner(x), ids)
-        return ret
-        # keys = list(self.subspaces.keys())
-        # num_space = len(keys)
-        # ret = []
-        # def _inner(idx, cur):
-        #     if idx == num_space:
-        #         ret.append(cur)
-        #         return
-        #     else:
-        #         for item in self.subspaces[keys[idx]].all_items():
-        #             next_item = {}
-        #             next_item.update(cur)
-        #             next_item[keys[idx]] = item
-        #             _inner(idx + 1, next_item)
-        # _inner(0, {})
-        # return ret      
+        return utils.parallel_map(_inner, ids)
 
     def __getitem__(self, items):
         return self.subspaces[items]
