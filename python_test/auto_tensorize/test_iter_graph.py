@@ -1,13 +1,13 @@
 import pytest
-from ditto import auto_schedule as ash
+from ditto import auto_tensorize as at
 
 
 @pytest.mark.basic
 def test_iter_var():
     """The iter var.
     """
-    var1 = ash.IterVar("name", 10)
-    var2 = ash.IterVar("name", 20)
+    var1 = at.IterVar("name", 10)
+    var2 = at.IterVar("name", 20)
     assert var1 == var2
     
     
@@ -16,14 +16,14 @@ def test_iter_graph1():
     """The iter graph.
     """
     
-    i1 = ash.IterVar("i1", 1024)
-    j1 = ash.IterVar("j1", 1024)
-    k1 = ash.IterVar("k1", 1024)
+    i1 = at.IterVar("i1", 1024)
+    j1 = at.IterVar("j1", 1024)
+    k1 = at.IterVar("k1", 1024)
     gemm1_iters = [i1, j1, k1]
     
-    i2 = ash.IterVar("i2", 1024)
-    j2 = ash.IterVar("j2", 1024)
-    k2 = ash.IterVar("k2", 1024)
+    i2 = at.IterVar("i2", 1024)
+    j2 = at.IterVar("j2", 1024)
+    k2 = at.IterVar("k2", 1024)
     gemm2_iters = [i2, j2, k2]
     
     share_pairs = [
@@ -31,7 +31,7 @@ def test_iter_graph1():
         (j1, k2)
     ]
     
-    g = ash.IterGraph(gemm1_iters, gemm2_iters, share_pairs)
+    g = at.IterGraph(gemm1_iters, gemm2_iters, share_pairs)
     g.setFirstOpTiling([7, 8, 9])
     g.setSecondOpTiling([10, 11, 12])
     g.fuseLoops(2)

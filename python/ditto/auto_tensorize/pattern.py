@@ -1,6 +1,6 @@
 """Pattern of op"""
 from .config import SUBSTANTIAL
-from .. import _ffi_api
+from . import _ffi_api
 from ditto import auto_compute as ac
 
 

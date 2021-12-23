@@ -1,7 +1,7 @@
 import pytest
 import tvm
 from ditto import auto_compute as ac
-from ditto import auto_schedule as ash
+from ditto import auto_tensorize as at
 from ditto import hardware as hw
 from ditto import utils
 import time
@@ -52,9 +52,9 @@ def test_space_size():
     A, B, E = ins
     F, = outs
     layer = ac.layer(F.op, inputs=[A, B, E])
-    hyper_state = ash.build_hyper_state(layer)
+    hyper_state = at.build_hyper_state(layer)
     iter_graph = hyper_state.build_iter_graph()
-    fuse_tile_space = ash.FusionTileSpace(iter_graph)
+    fuse_tile_space = at.FusionTileSpace(iter_graph)
     print(f"Space size is {len(fuse_tile_space)}.")
     for k, v in fuse_tile_space.subspaces.items():
         print(f"Subspace {k} size is {len(v)}")
@@ -77,9 +77,9 @@ def test_space_item():
     A, B, E = ins
     F, = outs
     layer = ac.layer(F.op, inputs=[A, B, E])
-    hyper_state = ash.build_hyper_state(layer)
+    hyper_state = at.build_hyper_state(layer)
     iter_graph = hyper_state.build_iter_graph()
-    fuse_tile_space = ash.FusionTileSpace(iter_graph)
+    fuse_tile_space = at.FusionTileSpace(iter_graph)
     ids = range(len(fuse_tile_space))
     beg = time.time()
     all_items = fuse_tile_space.all_items
@@ -100,7 +100,7 @@ def test_space_item():
     iter_graph.setSecondOpTiling(second_op_factors)
     iter_graph.permute(order)
     iter_graph.fuseLoops(attach_pos)
-    metric = ash.evaluate_iter_graph(iter_graph, hw.V100)
+    metric = at.evaluate_iter_graph(iter_graph, hw.V100)
 
     end = time.time()
     print(f"Use time {end - beg}s to finish.")
@@ -118,16 +118,16 @@ def test_space_iter_graph():
     A, B, E = ins
     F, = outs
     layer = ac.layer(F.op, inputs=[A, B, E])
-    hyper_state = ash.build_hyper_state(layer)
+    hyper_state = at.build_hyper_state(layer)
     iter_graph = hyper_state.build_iter_graph()
-    fuse_tile_space = ash.FusionTileSpace(iter_graph)
+    fuse_tile_space = at.FusionTileSpace(iter_graph)
     print(len(fuse_tile_space))
     ids = range(len(fuse_tile_space))
     all_items = fuse_tile_space.all_items
     
     beg = time.time()
     for iter_graph in fuse_tile_space.all_iter_graphs:
-        metric = ash.evaluate_iter_graph(iter_graph, hw.V100)
+        metric = at.evaluate_iter_graph(iter_graph, hw.V100)
     end = time.time()
     print(f"Use time {end - beg}s to generate all iter_graphs.")
     

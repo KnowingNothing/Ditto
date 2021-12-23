@@ -1,4 +1,4 @@
-#include <auto_schedule/hyper_fusion/analysis.h>
+#include <auto_tensorize/analysis.h>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -7,7 +7,7 @@
 using namespace tvm;
 namespace ditto {
 
-namespace auto_schedule {
+namespace auto_tensorize {
 
 PrimExpr flatten_indices(const Array<PrimExpr> shape,
                          const Array<PrimExpr> indices) {
@@ -139,9 +139,9 @@ Array<Array<tir::IterVar>> share_axis_analysis(te::Operation op1,
   return ret;
 }
 
-TVM_REGISTER_GLOBAL("ditto.auto_schedule.ShareAxisAnalysis")
+TVM_REGISTER_GLOBAL("ditto.auto_tensorize.ShareAxisAnalysis")
     .set_body_typed(share_axis_analysis);
 
-} // namespace auto_schedule
+} // namespace auto_tensorize
 
 } // namespace ditto

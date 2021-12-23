@@ -2,7 +2,7 @@ import tvm
 from typing import *
 from ditto import hardware as hw
 from ditto import utils
-from .. import _ffi_api
+from . import _ffi_api
 
 
 BYTES_OF_TYPES = {

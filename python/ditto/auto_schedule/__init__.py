@@ -1,5 +1,3 @@
-from .hyper_fusion import *
-
 from .schedulers import (
     ScheduleOption,
     retrieve_schedule_model,

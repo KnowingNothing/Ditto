@@ -2,13 +2,13 @@
 #include <vector>
 
 #include <auto_compute/patterns/utils.h>
-#include <auto_schedule/hyper_fusion/pattern.h>
-#include <auto_schedule/hyper_fusion/analysis.h>
+#include <auto_tensorize/analysis.h>
+#include <auto_tensorize/pattern.h>
 
 using namespace tvm;
 namespace ditto {
 using namespace ditto::auto_compute;
-namespace auto_schedule {
+namespace auto_tensorize {
 
 bool IsCubic(te::Operation op, int substantial) {
   const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
@@ -90,7 +90,8 @@ bool IsCubic(te::Operation op, int substantial) {
   }
   bool is_inner = (inner_ivs.size() > 0U);
 
-  return is_outer && is_inner;
+  return (is_outer && is_inner) ||
+         (op->tag.find("PATTERN_CUBIC") != std::string::npos);
 }
 
 bool IsAllred(te::Operation op, int substantial) {
@@ -125,7 +126,7 @@ bool IsAllred(te::Operation op, int substantial) {
     }
   }
   bool is_inner = (inner_ivs.size() > 0U);
-  return is_inner;
+  return is_inner || (op->tag.find("PATTERN_ALLRED") != std::string::npos);
 }
 
 bool IsShuffle(te::Operation op) {
@@ -181,7 +182,7 @@ bool IsShuffle(te::Operation op) {
     }
   }
 
-  return shuffle;
+  return shuffle || (op->tag.find("PATTERN_SHUFFLE") != std::string::npos);
 }
 
 bool IsLocal(te::Operation op, int substantial) {
@@ -238,7 +239,7 @@ bool IsLocal(te::Operation op, int substantial) {
     }
   }
 
-  return local;
+  return local || (op->tag.find("PATTERN_LOCAL") != std::string::npos);
 }
 
 bool IsView(te::Operation op) {
@@ -299,15 +300,59 @@ bool IsView(te::Operation op) {
     }
   }
 
-  return view;
+  return view || (op->tag.find("PATTERN_VIEW") != std::string::npos);
 }
 
-TVM_REGISTER_GLOBAL("ditto.auto_schedule.IsCubic").set_body_typed(IsCubic);
-TVM_REGISTER_GLOBAL("ditto.auto_schedule.IsAllred").set_body_typed(IsAllred);
-TVM_REGISTER_GLOBAL("ditto.auto_schedule.IsShuffle").set_body_typed(IsShuffle);
-TVM_REGISTER_GLOBAL("ditto.auto_schedule.IsLocal").set_body_typed(IsLocal);
-TVM_REGISTER_GLOBAL("ditto.auto_schedule.IsView").set_body_typed(IsView);
+OpPattern GetOpPattern(te::Operation op) {
+  if (IsCubic(op)) {
+    return OpPattern::PATTERN_CUBIC;
+  } else if (IsAllred(op)) {
+    return OpPattern::PATTERN_ALLRED;
+  } else if (IsShuffle(op)) {
+    return OpPattern::PATTERN_SHUFFLE;
+  } else if (IsLocal(op)) {
+    return OpPattern::PATTERN_LOCAL;
+  } else if (IsView(op)) {
+    return OpPattern::PATTERN_VIEW;
+  } else {
+    CHECK(false) << "Can't judge the pattern of op:\n" << op << "\n";
+  }
+}
 
-} // namespace auto_schedule
+TVM_REGISTER_GLOBAL("ditto.auto_tensorize.IsCubic").set_body_typed(IsCubic);
+TVM_REGISTER_GLOBAL("ditto.auto_tensorize.IsAllred").set_body_typed(IsAllred);
+TVM_REGISTER_GLOBAL("ditto.auto_tensorize.IsShuffle").set_body_typed(IsShuffle);
+TVM_REGISTER_GLOBAL("ditto.auto_tensorize.IsLocal").set_body_typed(IsLocal);
+TVM_REGISTER_GLOBAL("ditto.auto_tensorize.IsView").set_body_typed(IsView);
+TVM_REGISTER_GLOBAL("ditto.auto_tensorize.GetOpPattern")
+    .set_body_typed([](te::Operation op) {
+      switch (GetOpPattern(op)) {
+      case OpPattern::PATTERN_CUBIC:
+        return "PATTERN_CUBIC";
+        break;
+
+      case OpPattern::PATTERN_ALLRED:
+        return "PATTERN_ALLRED";
+        break;
+
+      case OpPattern::PATTERN_SHUFFLE:
+        return "PATTERN_SHUFFLE";
+        break;
+
+      case OpPattern::PATTERN_LOCAL:
+        return "PATTERN_LOCAL";
+        break;
+
+      case OpPattern::PATTERN_VIEW:
+        return "PATTERN_VIEW";
+        break;
+
+      default:
+        CHECK(false) << "Can't judge the pattern of op:\n" << op << "\n";
+        break;
+      }
+    });
+
+} // namespace auto_tensorize
 
 } // namespace ditto

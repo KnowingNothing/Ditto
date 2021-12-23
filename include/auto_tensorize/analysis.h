@@ -15,7 +15,7 @@
 
 using namespace tvm;
 namespace ditto {
-namespace auto_schedule {
+namespace auto_tensorize {
 
 class VarIn : public tir::ExprVisitor {
 public:
@@ -137,6 +137,6 @@ private:
 Array<Array<tir::IterVar>> share_axis_analysis(te::Operation op1,
                                                te::Operation op2);
 
-} // namespace auto_schedule
+} // namespace auto_tensorize
 
 } // namespace ditto

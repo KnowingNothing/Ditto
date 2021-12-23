@@ -2,7 +2,7 @@ import pytest
 import tvm
 from ditto.auto_compute.nn import functional as F
 from ditto import auto_compute as ac
-from ditto import auto_schedule as ash
+from ditto import auto_tensorize as at
 
 
 @pytest.mark.basic
@@ -10,7 +10,7 @@ def test_conv2d():
     Img = tvm.te.placeholder([1, 16, 224, 224])
     Weight = tvm.te.placeholder([64, 16, 7, 7])
     conv2d = F.conv2d(Img, Weight, 2, 3, 1)
-    assert ash.get_op_pattern(conv2d.op) == ac.nn.pattern.PATTERN_CUBIC
+    assert at.get_op_pattern(conv2d.op) == ac.nn.pattern.PATTERN_CUBIC
 
 
 @pytest.mark.basic
@@ -18,7 +18,7 @@ def test_linear():
     Img = tvm.te.placeholder([1, 16, 224, 224])
     Weight = tvm.te.placeholder([112, 224])
     linear = F.linear(Img, Weight)
-    assert ash.get_op_pattern(linear.op) == ac.nn.pattern.PATTERN_CUBIC
+    assert at.get_op_pattern(linear.op) == ac.nn.pattern.PATTERN_CUBIC
 
 
 @pytest.mark.basic
@@ -27,7 +27,7 @@ def test_relu():
     relu = F.ReLU(Img)
     print(relu.op.tag)
     print(ac.nn.pattern.PATTERN_LOCAL in relu.op.tag)
-    assert ash.get_op_pattern(relu.op) == ac.nn.pattern.PATTERN_LOCAL
+    assert at.get_op_pattern(relu.op) == ac.nn.pattern.PATTERN_LOCAL
 
 
 @pytest.mark.basic
@@ -37,7 +37,7 @@ def test_add():
     res = F.add(Img, Weight)
     print(res.op.tag)
     print(ac.nn.pattern.PATTERN_LOCAL in res.op.tag)
-    assert ash.get_op_pattern(res.op) == ac.nn.pattern.PATTERN_LOCAL
+    assert at.get_op_pattern(res.op) == ac.nn.pattern.PATTERN_LOCAL
 
 
 @pytest.mark.basic
@@ -46,7 +46,7 @@ def test_transpose():
     res = F.transpose(Img, 1, 3)
     print(res.op.tag)
     print(ac.nn.pattern.PATTERN_SHUFFLE in res.op.tag)
-    assert ash.get_op_pattern(res.op) == ac.nn.pattern.PATTERN_SHUFFLE
+    assert at.get_op_pattern(res.op) == ac.nn.pattern.PATTERN_SHUFFLE
 
 
 @pytest.mark.basic
@@ -59,7 +59,7 @@ def test_im2col():
     )
     print(res.op.tag)
     print(ac.nn.pattern.PATTERN_SHUFFLE in res.op.tag)
-    assert ash.get_op_pattern(res.op) == ac.nn.pattern.PATTERN_SHUFFLE
+    assert at.get_op_pattern(res.op) == ac.nn.pattern.PATTERN_SHUFFLE
 
 
 if __name__ == "__main__":

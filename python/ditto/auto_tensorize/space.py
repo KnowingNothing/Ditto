@@ -1,5 +1,5 @@
 """The space definition for tiling and fusion"""
-from ...dse import (
+from ..dse import (
     BaseItem, BaseCartSpace, SplitItem, SplitSpace, ChooseItem, ChooseSpace,
     PermuteItem, PermuteSpace)
 from .iter_graph import IterGraph
