@@ -1,6 +1,8 @@
 #pragma once
 
 #include <auto_compute/graph.h>
+#include <auto_tensorize/state.h>
+#include <hardware/hw_model.h>
 
 namespace ditto {
 using namespace auto_compute;
@@ -39,6 +41,19 @@ public:
                                         LayerAndScheduleNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(LayerAndScheduleNode);
 };
+
+/*!
+ * \brief The function to validate if a layer is applicable.
+ * \param state The fusion state
+ */
+std::pair<bool, std::string> validate(SerialFusionState state);
+
+/*!
+ * \brief The entry function of auto_schedule that uses auto_tensorize.
+ * \param layer The layer to schedule
+ * \param hw The hardware to schedule for
+ */
+TVM_DLL LayerAndSchedule auto_schedule(Layer layer, hardware::Hardware hw);
 
 } // namespace auto_tensorize
 

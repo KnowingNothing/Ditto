@@ -110,14 +110,18 @@ class SerialFusionStateNode : public Object {
 public:
   /*! \brief The layer state */
   LayerState layer_state;
+  /*! \brief The compute ops */
+  Array<te::Operation> ops;
   /*! \brief The states for ops */
   std::unordered_map<te::Operation, OpHyperState> op_hyper_states;
 
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("layer_state", &layer_state);
+    v->Visit("ops", &ops);
   }
 
   bool IsLinearTopo();
+  int CountOp(OpPattern pattern);
 
   static constexpr const char *_type_key =
       "ditto.auto_tensorize.SerialFusionState";

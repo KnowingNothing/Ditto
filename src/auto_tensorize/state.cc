@@ -71,6 +71,16 @@ bool SerialFusionStateNode::IsLinearTopo() {
   return true;
 }
 
+int SerialFusionStateNode::CountOp(OpPattern pattern) {
+  int counter = 0;
+  for (auto op : this->ops) {
+    if (this->op_hyper_states[op]->pattern == pattern) {
+      counter += 1;
+    }
+  }
+  return counter;
+}
+
 SerialFusionState::SerialFusionState(Layer layer) {
   auto node = make_object<SerialFusionStateNode>();
   node->layer_state = LayerState(layer);
@@ -78,6 +88,7 @@ SerialFusionState::SerialFusionState(Layer layer) {
     // we only consider compute op
     const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
     if (cop != nullptr) {
+      node->ops.push_back(op);
       node->op_hyper_states[op] = OpHyperState(op);
     }
   }
