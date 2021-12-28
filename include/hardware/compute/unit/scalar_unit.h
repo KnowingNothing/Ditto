@@ -1,3 +1,5 @@
+#pragma once
+
 #include <hardware/compute/unit/hw_unit.h>
 
 using namespace tvm;
@@ -12,8 +14,7 @@ class AdderNode : public HardwareUnitNode {
 public:
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("name", &name);
-    v->Visit("latency", &latency);
-    v->Visit("functionality", &functionality);
+    v->Visit("isa_list", &isa_list);
   }
 
   static constexpr const char *_type_key = "ditto.hardware.Adder";
@@ -25,11 +26,9 @@ public:
   /*!
    * \brief The constructor.
    * \param name The name of the hardware
-   * \param latency The latency of the hardware
-   * \param functionality The functionality of the hardware
+   * \param isa_list The supported isa list
    */
-  TVM_DLL Adder(String name, double latency,
-                Array<te::Operation> functionality);
+  TVM_DLL Adder(String name, Array<ISA> isa_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(Adder, HardwareUnit, AdderNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(AdderNode);
@@ -42,8 +41,7 @@ class MultiplierNode : public HardwareUnitNode {
 public:
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("name", &name);
-    v->Visit("latency", &latency);
-    v->Visit("functionality", &functionality);
+    v->Visit("isa_list", &isa_list);
   }
 
   static constexpr const char *_type_key = "ditto.hardware.Multiplier";
@@ -55,11 +53,9 @@ public:
   /*!
    * \brief The constructor.
    * \param name The name of the hardware
-   * \param latency The latency of the hardware
-   * \param functionality The functionality of the hardware
+   * \param isa_list The supported isa list
    */
-  TVM_DLL Multiplier(String name, double latency,
-                     Array<te::Operation> functionality);
+  TVM_DLL Multiplier(String name, Array<ISA> isa_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(Multiplier, HardwareUnit,
                                         MultiplierNode);
@@ -73,8 +69,7 @@ class MultiplyAdderNode : public HardwareUnitNode {
 public:
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("name", &name);
-    v->Visit("latency", &latency);
-    v->Visit("functionality", &functionality);
+    v->Visit("isa_list", &isa_list);
   }
 
   static constexpr const char *_type_key = "ditto.hardware.MultiplyAdder";
@@ -86,11 +81,9 @@ public:
   /*!
    * \brief The constructor.
    * \param name The name of the hardware
-   * \param latency The latency of the hardware
-   * \param functionality The functionality of the hardware
+   * \param isa_list The supported isa list
    */
-  TVM_DLL MultiplyAdder(String name, double latency,
-                        Array<te::Operation> functionality);
+  TVM_DLL MultiplyAdder(String name, Array<ISA> isa_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(MultiplyAdder, HardwareUnit,
                                         MultiplyAdderNode);

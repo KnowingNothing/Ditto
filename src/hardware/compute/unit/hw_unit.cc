@@ -4,12 +4,10 @@ namespace ditto {
 
 namespace hardware {
 
-HardwareUnit::HardwareUnit(String name, double latency,
-                           Array<te::Operation> functionality) {
+HardwareUnit::HardwareUnit(String name, Array<ISA> isa_list) {
   auto node = make_object<HardwareUnitNode>();
   node->name = name;
-  node->latency = latency;
-  node->functionality = functionality;
+  node->isa_list = isa_list;
   data_ = node;
 }
 

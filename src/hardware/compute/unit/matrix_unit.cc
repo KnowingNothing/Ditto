@@ -4,12 +4,11 @@ namespace ditto {
 
 namespace hardware {
 
-MatrixMultiplyAccumulate::MatrixMultiplyAccumulate(
-    String name, double latency, Array<te::Operation> functionality) {
+MatrixMultiplyAccumulate::MatrixMultiplyAccumulate(String name,
+                                                   Array<ISA> isa_list) {
   auto node = make_object<MatrixMultiplyAccumulateNode>();
   node->name = name;
-  node->latency = latency;
-  node->functionality = functionality;
+  node->isa_list = isa_list;
   data_ = node;
 }
 

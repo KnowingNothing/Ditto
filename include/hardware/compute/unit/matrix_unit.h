@@ -1,3 +1,5 @@
+#pragma once
+
 #include <hardware/compute/unit/hw_unit.h>
 
 using namespace tvm;
@@ -12,8 +14,7 @@ class MatrixMultiplyAccumulateNode : public HardwareUnitNode {
 public:
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("name", &name);
-    v->Visit("latency", &latency);
-    v->Visit("functionality", &functionality);
+    v->Visit("isa_list", &isa_list);
   }
 
   static constexpr const char *_type_key =
@@ -26,11 +27,9 @@ public:
   /*!
    * \brief The constructor.
    * \param name The name of the hardware
-   * \param latency The latency of the hardware
-   * \param functionality The functionality of the hardware
+   * \param isa_list The supported list of isa
    */
-  TVM_DLL MatrixMultiplyAccumulate(String name, double latency,
-                                   Array<te::Operation> functionality);
+  TVM_DLL MatrixMultiplyAccumulate(String name, Array<ISA> isa_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(MatrixMultiplyAccumulate, HardwareUnit,
                                         MatrixMultiplyAccumulateNode);

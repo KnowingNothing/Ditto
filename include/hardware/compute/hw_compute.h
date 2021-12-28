@@ -1,3 +1,5 @@
+#pragma once
+
 #include <hardware/base/hw_base.h>
 
 namespace ditto {

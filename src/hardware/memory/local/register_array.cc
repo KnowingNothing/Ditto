@@ -5,11 +5,11 @@ namespace ditto {
 namespace hardware {
 
 RegisterArray::RegisterArray(String name, double kb,
-                             Array<te::Tensor> pattern) {
+                             Array<Pattern> pattern_list) {
   auto node = make_object<RegisterArrayNode>();
   node->name = name;
   node->kb = kb;
-  node->pattern = pattern;
+  node->pattern_list = pattern_list;
   data_ = node;
 }
 

@@ -4,29 +4,24 @@ namespace ditto {
 
 namespace hardware {
 
-Adder::Adder(String name, double latency, Array<te::Operation> functionality) {
+Adder::Adder(String name, Array<ISA> isa_list) {
   auto node = make_object<AdderNode>();
   node->name = name;
-  node->latency = latency;
-  node->functionality = functionality;
+  node->isa_list = isa_list;
   data_ = node;
 }
 
-Multiplier::Multiplier(String name, double latency,
-                       Array<te::Operation> functionality) {
+Multiplier::Multiplier(String name, Array<ISA> isa_list) {
   auto node = make_object<MultiplierNode>();
   node->name = name;
-  node->latency = latency;
-  node->functionality = functionality;
+  node->isa_list = isa_list;
   data_ = node;
 }
 
-MultiplyAdder::MultiplyAdder(String name, double latency,
-                             Array<te::Operation> functionality) {
+MultiplyAdder::MultiplyAdder(String name, Array<ISA> isa_list) {
   auto node = make_object<MultiplyAdderNode>();
   node->name = name;
-  node->latency = latency;
-  node->functionality = functionality;
+  node->isa_list = isa_list;
   data_ = node;
 }
 

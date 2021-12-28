@@ -1,4 +1,4 @@
-#include <hardware/hw_model.h>
+#include <hardware/base/hw_base.h>
 
 namespace ditto {
 

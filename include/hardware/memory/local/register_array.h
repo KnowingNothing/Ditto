@@ -1,3 +1,5 @@
+#pragma once
+
 #include <hardware/memory/local/local_mem.h>
 
 namespace ditto {
@@ -10,7 +12,7 @@ namespace hardware {
 class RegisterArrayNode : public LocalMemoryNode {
 public:
   static constexpr const char *_type_key = "ditto.hardware.RegisterArray";
-  TVM_DECLARE_BASE_OBJECT_INFO(RegisterArrayNode, LocalMemoryNode);
+  TVM_DECLARE_FINAL_OBJECT_INFO(RegisterArrayNode, LocalMemoryNode);
 }; // namespace hardware
 
 class RegisterArray : public LocalMemory {
@@ -19,9 +21,9 @@ public:
    * \brief The constructor.
    * \param name The name of the hardware
    * \param capacity The size of this memory in kilo-bytes
-   * \param pattern Allowed view of the memory
+   * \param pattern_list Allowed access patterns
    */
-  TVM_DLL RegisterArray(String name, double kb, Array<te::Tensor> pattern);
+  TVM_DLL RegisterArray(String name, double kb, Array<Pattern> pattern_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(RegisterArray, LocalMemory,
                                         RegisterArrayNode);

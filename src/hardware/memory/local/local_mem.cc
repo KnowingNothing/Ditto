@@ -4,11 +4,11 @@ namespace ditto {
 
 namespace hardware {
 
-LocalMemory::LocalMemory(String name, double kb, Array<te::Tensor> pattern) {
+LocalMemory::LocalMemory(String name, double kb, Array<Pattern> pattern_list) {
   auto node = make_object<LocalMemoryNode>();
   node->name = name;
   node->kb = kb;
-  node->pattern = pattern;
+  node->pattern_list = pattern_list;
   data_ = node;
 }
 
