@@ -5,7 +5,7 @@ namespace ditto {
 namespace hardware {
 
 MatrixMultiplyAccumulate::MatrixMultiplyAccumulate(String name,
-                                                   Array<ISA> isa_list) {
+                                                   Map<String, ISA> isa_list) {
   auto node = make_object<MatrixMultiplyAccumulateNode>();
   node->name = name;
   node->isa_list = isa_list;

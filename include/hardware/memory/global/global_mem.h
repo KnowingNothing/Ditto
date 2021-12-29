@@ -23,7 +23,7 @@ public:
    * \param capacity The size of this memory in kilo-bytes
    * \param pattern_list Allowed access patterns
    */
-  TVM_DLL GlobalMemory(String name, double kb, Array<Pattern> pattern_list);
+  TVM_DLL GlobalMemory(String name, double gb, Map<String, Pattern> pattern_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(GlobalMemory, HardwareMemory,
                                         GlobalMemoryNode);

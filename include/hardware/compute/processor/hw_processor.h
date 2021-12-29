@@ -1,6 +1,8 @@
 #pragma once
 
 #include <hardware/compute/hw_compute.h>
+#include <hardware/compute/unit/hw_unit.h>
+#include <hardware/memory/local/local_mem.h>
 
 namespace ditto {
 

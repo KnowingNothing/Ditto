@@ -5,7 +5,7 @@ namespace ditto {
 namespace hardware {
 
 RegisterArray::RegisterArray(String name, double kb,
-                             Array<Pattern> pattern_list) {
+                             Map<String, Pattern> pattern_list) {
   auto node = make_object<RegisterArrayNode>();
   node->name = name;
   node->kb = kb;

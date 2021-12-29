@@ -53,6 +53,14 @@ public:
   TVM_DEFINE_OBJECT_REF_COW_METHOD(ISANode);
 };
 
+tir::IterVar SpatialAxis(int extent, std::string name = "Siv");
+
+tir::IterVar ReduceAxis(int extent, std::string name = "Riv");
+
+ISA Direct();
+
+ISA None();
+
 } // namespace hardware
 
 } // namespace ditto

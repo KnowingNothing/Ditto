@@ -4,7 +4,7 @@ namespace ditto {
 
 namespace hardware {
 
-HardwareUnit::HardwareUnit(String name, Array<ISA> isa_list) {
+HardwareUnit::HardwareUnit(String name, Map<String, ISA> isa_list) {
   auto node = make_object<HardwareUnitNode>();
   node->name = name;
   node->isa_list = isa_list;

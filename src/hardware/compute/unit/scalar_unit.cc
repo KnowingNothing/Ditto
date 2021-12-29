@@ -4,21 +4,21 @@ namespace ditto {
 
 namespace hardware {
 
-Adder::Adder(String name, Array<ISA> isa_list) {
+Adder::Adder(String name, Map<String, ISA> isa_list) {
   auto node = make_object<AdderNode>();
   node->name = name;
   node->isa_list = isa_list;
   data_ = node;
 }
 
-Multiplier::Multiplier(String name, Array<ISA> isa_list) {
+Multiplier::Multiplier(String name, Map<String, ISA> isa_list) {
   auto node = make_object<MultiplierNode>();
   node->name = name;
   node->isa_list = isa_list;
   data_ = node;
 }
 
-MultiplyAdder::MultiplyAdder(String name, Array<ISA> isa_list) {
+MultiplyAdder::MultiplyAdder(String name, Map<String, ISA> isa_list) {
   auto node = make_object<MultiplyAdderNode>();
   node->name = name;
   node->isa_list = isa_list;

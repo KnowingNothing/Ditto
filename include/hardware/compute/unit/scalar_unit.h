@@ -28,7 +28,7 @@ public:
    * \param name The name of the hardware
    * \param isa_list The supported isa list
    */
-  TVM_DLL Adder(String name, Array<ISA> isa_list);
+  TVM_DLL Adder(String name, Map<String, ISA> isa_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(Adder, HardwareUnit, AdderNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(AdderNode);
@@ -55,7 +55,7 @@ public:
    * \param name The name of the hardware
    * \param isa_list The supported isa list
    */
-  TVM_DLL Multiplier(String name, Array<ISA> isa_list);
+  TVM_DLL Multiplier(String name, Map<String, ISA> isa_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(Multiplier, HardwareUnit,
                                         MultiplierNode);
@@ -83,7 +83,7 @@ public:
    * \param name The name of the hardware
    * \param isa_list The supported isa list
    */
-  TVM_DLL MultiplyAdder(String name, Array<ISA> isa_list);
+  TVM_DLL MultiplyAdder(String name, Map<String, ISA> isa_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(MultiplyAdder, HardwareUnit,
                                         MultiplyAdderNode);

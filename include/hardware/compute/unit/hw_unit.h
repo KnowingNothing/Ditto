@@ -12,7 +12,7 @@ namespace hardware {
  */
 class HardwareUnitNode : public HardwareComputeNode {
 public:
-  Array<ISA> isa_list;
+  Map<String, ISA> isa_list;
 
   static constexpr const char *_type_key = "ditto.hardware.HardwareUnit";
   TVM_DECLARE_BASE_OBJECT_INFO(HardwareUnitNode, HardwareComputeNode);
@@ -25,7 +25,7 @@ public:
    * \param name The name of the hardware
    * \param isa_list The list of supported isa
    */
-  TVM_DLL HardwareUnit(String name, Array<ISA> isa_list);
+  TVM_DLL HardwareUnit(String name, Map<String, ISA> isa_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(HardwareUnit, HardwareCompute,
                                         HardwareUnitNode);

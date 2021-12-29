@@ -9,7 +9,7 @@ namespace ditto {
 
 namespace hardware {
 
-using Topology = Map<Hardware, Map<LocalMemory, HardwarePath>>;
+using Topology = Map<Hardware, Map<LocalMemory, Array<HardwarePath>>>;
 
 /*!
  * \brief A class for heterogeneous processor.

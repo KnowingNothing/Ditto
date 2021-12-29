@@ -13,7 +13,7 @@ namespace hardware {
 class HardwareMemoryNode : public HardwareNode {
 public:
   double kb;
-  Array<Pattern> pattern_list;
+  Map<String, Pattern> pattern_list;
 
   static constexpr const char *_type_key = "ditto.hardware.HardwareMemory";
   TVM_DECLARE_BASE_OBJECT_INFO(HardwareMemoryNode, HardwareNode);
@@ -27,7 +27,7 @@ public:
    * \param capacity The size of this memory in kilo-bytes
    * \param pattern_list The supported access patterns
    */
-  TVM_DLL HardwareMemory(String name, double kb, Array<Pattern> pattern_list);
+  TVM_DLL HardwareMemory(String name, double kb, Map<String, Pattern> pattern_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(HardwareMemory, Hardware,
                                         HardwareMemoryNode);

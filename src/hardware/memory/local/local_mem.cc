@@ -4,7 +4,7 @@ namespace ditto {
 
 namespace hardware {
 
-LocalMemory::LocalMemory(String name, double kb, Array<Pattern> pattern_list) {
+LocalMemory::LocalMemory(String name, double kb, Map<String, Pattern> pattern_list) {
   auto node = make_object<LocalMemoryNode>();
   node->name = name;
   node->kb = kb;

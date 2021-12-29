@@ -27,7 +27,7 @@ public:
    * \param name The name of the hardware
    * \param isa_list The supported isa list
    */
-  TVM_DLL VectorAdder(String name, Array<ISA> isa_list);
+  TVM_DLL VectorAdder(String name, Map<String, ISA> isa_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(VectorAdder, HardwareUnit,
                                         VectorAdderNode);

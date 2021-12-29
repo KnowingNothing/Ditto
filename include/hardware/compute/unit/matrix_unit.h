@@ -29,7 +29,7 @@ public:
    * \param name The name of the hardware
    * \param isa_list The supported list of isa
    */
-  TVM_DLL MatrixMultiplyAccumulate(String name, Array<ISA> isa_list);
+  TVM_DLL MatrixMultiplyAccumulate(String name, Map<String, ISA> isa_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(MatrixMultiplyAccumulate, HardwareUnit,
                                         MatrixMultiplyAccumulateNode);
