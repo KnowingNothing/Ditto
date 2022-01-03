@@ -2,10 +2,11 @@ import tvm._ffi
 import tvm
 from . import _ffi_api
 from tvm.runtime import Object
+from .hw_base import Hardware
 
 
 @tvm._ffi.register_object("ditto.hardware.HardwareCompute")
-class HardwareCompute(Object):
+class HardwareCompute(Hardware):
     """HardwareCompute object"""
 
     def __str__(self) -> str:
