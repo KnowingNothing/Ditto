@@ -1,5 +1,10 @@
+from .hw_compute import *
+from .hw_memory import *
+from .hw_path import *
+from . import pattern
+from . import visa
 from .config import V100
-from .param import HardwareParam
+from .hw_param import HardwareParam
 
 
 SUPPORTED_TARGETS = {
@@ -22,11 +27,11 @@ def parse_target(target):
     return target.split(".")
 
 
-def query_hw_param(target):
+def query_hw(target):
     """Use a string key to query the hardare params
 
     Args:
-        target (str): the string key, e.g., cuda
+        target (str): the string key, e.g., gpu.cuda.V100
 
     Returns:
     ---

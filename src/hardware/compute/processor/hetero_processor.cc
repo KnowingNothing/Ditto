@@ -4,6 +4,9 @@ namespace ditto {
 
 namespace hardware {
 
+TVM_REGISTER_NODE_TYPE(HardwareProcessorNode);
+TVM_REGISTER_NODE_TYPE(HeteroProcessorNode);
+
 HeteroProcessor::HeteroProcessor(String name, Array<HardwareUnit> units,
                                  Array<LocalMemory> local_mems,
                                  Topology topology) {
@@ -14,6 +17,12 @@ HeteroProcessor::HeteroProcessor(String name, Array<HardwareUnit> units,
   node->topology = topology;
   data_ = node;
 }
+
+TVM_REGISTER_GLOBAL("ditto.hardware.HeteroProcessor")
+    .set_body_typed([](String name, Array<HardwareUnit> units,
+                       Array<LocalMemory> local_mems, Topology topology) {
+      return HeteroProcessor(name, units, local_mems, topology);
+    });
 
 } // namespace hardware
 

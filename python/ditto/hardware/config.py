@@ -1,16 +1,11 @@
-from .param import HardwareParam
+from .hw_param import hardware_param
 
 
-V100 = HardwareParam(
-    dram_bandwidth=750, # GiB/s
-    f32_peak_perf=14*1e3, # GFLOPs
-    launch_latency=5*1e-6, #s
-    compute_coeff_dict={
-            "float32": 1.0,
-            "float16": 0.5,
-            "float64": 2.0,
-            "float16-float32": 1.5
-        },
-    shared_memory_per_block_byte=128*1e3,
-    blocks=80
+V100 = hardware_param(
+    750,  # dram_bandwidth_gbs,
+    14*1e3,  # fp32_peak_perf_gflops,
+    5*1e-6,  # launch_latency_s,
+    128,  # shared_memory_per_group_kb,
+    80,  # num_groups,
+    4,  # num_processors_per_group
 )

@@ -14,6 +14,11 @@ class HardwareUnitNode : public HardwareComputeNode {
 public:
   Map<String, ISA> isa_list;
 
+  void VisitAttrs(tvm::AttrVisitor *v) {
+    v->Visit("name", &name);
+    v->Visit("isa_list", &isa_list);
+  }
+
   static constexpr const char *_type_key = "ditto.hardware.HardwareUnit";
   TVM_DECLARE_BASE_OBJECT_INFO(HardwareUnitNode, HardwareComputeNode);
 };

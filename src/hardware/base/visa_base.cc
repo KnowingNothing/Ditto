@@ -4,6 +4,8 @@ namespace ditto {
 
 namespace hardware {
 
+TVM_REGISTER_NODE_TYPE(ISANode);
+
 ISA::ISA(String name, double latency, te::Operation func) {
   auto node = make_object<ISANode>();
   node->name = name;
@@ -27,6 +29,15 @@ tir::IterVar ReduceAxis(int extent, std::string name) {
 ISA Direct() { return ISA("special.direct", 0.0, te::Operation()); }
 
 ISA None() { return ISA("special.none", 0.0, te::Operation()); }
+
+TVM_REGISTER_GLOBAL("ditto.hardware.ISA")
+    .set_body_typed([](String name, double latency, te::Operation func) {
+      return ISA(name, latency, func);
+    });
+
+TVM_REGISTER_GLOBAL("ditto.hardware.ISADirect").set_body_typed(Direct);
+
+TVM_REGISTER_GLOBAL("ditto.hardware.ISANone").set_body_typed(None);
 
 } // namespace hardware
 

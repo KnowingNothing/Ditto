@@ -19,7 +19,7 @@ public:
   }
 
   static constexpr const char *_type_key = "ditto.hardware.ScalarPattern";
-  TVM_DECLARE_BASE_OBJECT_INFO(ScalarPatternNode, Object);
+  TVM_DECLARE_BASE_OBJECT_INFO(ScalarPatternNode, PatternNode);
 };
 
 class ScalarPattern : public Pattern {

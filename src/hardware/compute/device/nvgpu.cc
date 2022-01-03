@@ -489,6 +489,9 @@ HardwareDevice NvSimtGPU(String sm_arch) {
   }
 }
 
+TVM_REGISTER_GLOBAL("ditto.hardware.NvSimtGPU")
+    .set_body_typed([](String sm_arch) { return NvSimtGPU(sm_arch); });
+
 } // namespace hardware
 
 } // namespace ditto

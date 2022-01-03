@@ -26,8 +26,8 @@ public:
 
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("name", &name);
-    v->Visit("sm", &group);
-    v->Visit("device_mem", &global_mem);
+    v->Visit("group", &group);
+    v->Visit("global_mem", &global_mem);
     v->Visit("grid_x", &grid_x);
     v->Visit("grid_y", &grid_y);
     v->Visit("block_z", &grid_z);

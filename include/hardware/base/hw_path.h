@@ -14,6 +14,7 @@ namespace hardware {
  */
 class HardwarePathNode : public Object {
 public:
+  void VisitAttrs(tvm::AttrVisitor *v) {}
   static constexpr const char *_type_key = "ditto.hardware.HardwarePath";
   TVM_DECLARE_BASE_OBJECT_INFO(HardwarePathNode, Object);
 };

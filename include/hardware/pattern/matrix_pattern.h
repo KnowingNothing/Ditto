@@ -21,7 +21,7 @@ public:
   }
 
   static constexpr const char *_type_key = "ditto.hardware.MatrixPattern";
-  TVM_DECLARE_BASE_OBJECT_INFO(MatrixPatternNode, Object);
+  TVM_DECLARE_BASE_OBJECT_INFO(MatrixPatternNode, PatternNode);
 };
 
 class MatrixPattern : public Pattern {

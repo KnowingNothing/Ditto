@@ -87,8 +87,6 @@ def calculate_metrics(first_op_types: Tuple[str, str, str],
     first_out_byte = BYTES_OF_TYPES[first_op_types[1]]
     second_inp_byte = BYTES_OF_TYPES[second_op_types[0]]
     second_out_byte = BYTES_OF_TYPES[second_op_types[1]]
-    first_compute_weight = hw_param.get_compute_coeff(first_op_types[2])
-    second_compute_weight = hw_param.get_compute_coeff(second_op_types[2])
     # the estimated shared memory usage for inputs
     # has already removed the effect of outer private reduce loops
     first_op_read_shared_memory_usage = utils.accumulate(
@@ -114,7 +112,7 @@ def calculate_metrics(first_op_types: Tuple[str, str, str],
     )
 
     valid = valid and (total_shared_memory_usage <
-                       hw_param.shared_memory_per_block())
+                       hw_param.shared_memory_per_group_kb * 1e3)
 
     # reduce factors in common iters can't be ignored because
     # we always do reduction within one block (not parallel)
@@ -127,7 +125,7 @@ def calculate_metrics(first_op_types: Tuple[str, str, str],
                                                                 for x in second_op_factors]
     )
 
-    locality = ((first_op_compute * first_compute_weight + second_op_compute * second_compute_weight) /
+    locality = ((first_op_compute + second_op_compute) /
                 (first_op_read_shared_memory_usage * first_inp_byte + second_op_read_shared_memory_usage + second_inp_byte))
     sw_parallelism = utils.product(
         [1 if x[0] == "R" else x[1] for x in common_factors]
@@ -135,11 +133,11 @@ def calculate_metrics(first_op_types: Tuple[str, str, str],
     parallelism = min(
         sw_parallelism,
         # occupancy
-        (hw_param.shared_memory_per_block() //
-         total_shared_memory_usage) * hw_param.num_blocks()
+        (hw_param.shared_memory_per_group_kb * 1e3 //
+         total_shared_memory_usage) * hw_param.num_groups
     )
     recompute = utils.product(redundant_common_factors) * \
-        first_op_compute * first_compute_weight
+        first_op_compute
 
     return AnalyticalResult(
         locality,

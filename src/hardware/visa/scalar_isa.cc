@@ -4,6 +4,8 @@ namespace ditto {
 
 namespace hardware {
 
+TVM_REGISTER_NODE_TYPE(ScalarISANode);
+
 ScalarISA::ScalarISA(String name, double latency, te::Operation func) {
   auto node = make_object<ScalarISANode>();
   node->name = name;
@@ -103,6 +105,29 @@ ScalarISA ScalarMultiplyAdd(String name, double latency,
       te::ComputeOp("func", "scalar.multiply_add", {}, {iv}, {multiply_add});
   return ScalarISA(name, latency, func);
 }
+
+TVM_REGISTER_GLOBAL("ditto.hardware.ScalarISA")
+    .set_body_typed([](String name, double latency, te::Operation func) {
+      return ScalarISA(name, latency, func);
+    });
+
+TVM_REGISTER_GLOBAL("ditto.hardware.ScalarBinaryAdd")
+    .set_body_typed(ScalarBinaryAdd);
+
+TVM_REGISTER_GLOBAL("ditto.hardware.ScalarBinarySub")
+    .set_body_typed(ScalarBinaryAdd);
+
+TVM_REGISTER_GLOBAL("ditto.hardware.ScalarBinaryMul")
+    .set_body_typed(ScalarBinaryMul);
+
+TVM_REGISTER_GLOBAL("ditto.hardware.ScalarBinaryDiv")
+    .set_body_typed(ScalarBinaryDiv);
+
+TVM_REGISTER_GLOBAL("ditto.hardware.ScalarBinaryMod")
+    .set_body_typed(ScalarBinaryMod);
+
+TVM_REGISTER_GLOBAL("ditto.hardware.ScalarMultiplyAdd")
+    .set_body_typed(ScalarMultiplyAdd);
 
 } // namespace hardware
 

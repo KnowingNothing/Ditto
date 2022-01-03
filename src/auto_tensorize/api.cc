@@ -45,29 +45,33 @@ LayerAndSchedule auto_schedule(Layer layer, hardware::Hardware hw) {
    *    by the front-end auto_compute.
    *    auto_compute will merge allred
    *    ops into cubic ops if possible.
-   * 
+   *
    * We call this step 'validate'.
    */
   bool valid = false;
   std::string reason = "";
   std::tie(valid, reason) = validate(state);
   CHECK(valid) << "The given layer is not suitable for auto_tensorize because "
-               << reason << "The layer is:\n" << layer << "\n.";
+               << reason << "The layer is:\n"
+               << layer << "\n.";
   // second step, match the cubic ops with the hardware units
   /*
    * The hardware provides heterogeneous compute units
    * including cube/matrix units and vector units,
    * so Ditto should check which compute units can be used.
-   * For example, if the input is Conv+ReLU+Conv in 
+   * For example, if the input is Conv+ReLU+Conv in
    * mix precision and the hardware is V100 GPU with Tensor Core,
    * then Ditto will find that the first Conv can be mapped to
    * Tensor Core, the ReLU can be mapped to CUDA Core, and the
    * third Conv can be mapped to Tensor Core.
-   * 
+   *
    * We call this step 'placement'.
    */
   return ret;
 }
+
+TVM_REGISTER_GLOBAL("ditto.auto_tensorize.auto_schedule")
+    .set_body_typed(auto_schedule);
 
 } // namespace auto_tensorize
 

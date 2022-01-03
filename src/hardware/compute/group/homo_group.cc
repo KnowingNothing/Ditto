@@ -4,6 +4,9 @@ namespace ditto {
 
 namespace hardware {
 
+TVM_REGISTER_NODE_TYPE(HardwareGroupNode);
+TVM_REGISTER_NODE_TYPE(HomoGroupNode);
+
 HomoGroup::HomoGroup(String name, HardwareProcessor processor,
                      SharedMemory shared_mem, int block_x, int block_y,
                      int block_z) {
@@ -16,6 +19,13 @@ HomoGroup::HomoGroup(String name, HardwareProcessor processor,
   node->block_z = block_z;
   data_ = node;
 }
+
+TVM_REGISTER_GLOBAL("ditto.hardware.HomoGroup")
+    .set_body_typed([](String name, HardwareProcessor processor,
+                       SharedMemory shared_mem, int block_x, int block_y,
+                       int block_z) {
+      return HomoGroup(name, processor, shared_mem, block_x, block_y, block_z);
+    });
 
 } // namespace hardware
 

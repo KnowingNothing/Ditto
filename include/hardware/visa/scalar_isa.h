@@ -19,7 +19,7 @@ public:
   }
 
   static constexpr const char *_type_key = "ditto.hardware.ScalarISA";
-  TVM_DECLARE_BASE_OBJECT_INFO(ScalarISANode, Object);
+  TVM_DECLARE_BASE_OBJECT_INFO(ScalarISANode, ISANode);
 };
 
 class ScalarISA : public ISA {
