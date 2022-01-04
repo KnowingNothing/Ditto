@@ -42,6 +42,32 @@ def scalar_isa(latency, func, name="scalar_isa"):
     return _ffi_api.ScalarISA(name, latency, func)
 
 
+@tvm._ffi.register_object("ditto.hardware.MatrixISA")
+class MatrixISA(ISA):
+    """Matrix ISA object"""
+
+    def __str__(self) -> str:
+        ret = f"MatrixISA({self.name})"
+        return ret
+
+    def __repr__(self) -> str:
+        return str(self)
+
+
+def matrix_isa(latency, func, name="matrix_isa"):
+    """Get a matrix ISA
+
+    Args:
+        latency (float): the latency in cycle
+        func (tvm.te.tensor.Operation): the functionality
+        name (str, optional): name of the isa. Defaults to "matrix_isa".
+
+    Returns:
+        hardware.MatrixISA: the matrix isa
+    """
+    return _ffi_api.MatrixISA(name, latency, func)
+
+
 def scalar_binary_add(latency, lhs_type, rhs_type, res_type, name="scalar_binary_add"):
     """Get a scalar ISA
 

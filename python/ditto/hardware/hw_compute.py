@@ -46,6 +46,9 @@ def hw_unit(supported_isa, name="hw_unit"):
 class HardwareProcessor(HardwareCompute):
     """HardwareProcessor object"""
 
+    def summary(self):
+        raise NotImplementedError()
+
     def __str__(self) -> str:
         ret = f"HardwareProcessor({self.name})"
         return ret
@@ -57,6 +60,21 @@ class HardwareProcessor(HardwareCompute):
 @tvm._ffi.register_object("ditto.hardware.HeteroProcessor")
 class HeteroProcessor(HardwareProcessor):
     """Hardware HeteroProcessor object"""
+
+    def summary(self):
+        ret = ""
+        indent = "  "
+        ret += "| " + indent + "| " + indent + \
+            "|--------------------------------------\n"
+        for unit in self.units:
+            ret += "| " + indent + "| " + indent + "| " + f"{unit}\n"
+        ret += "| " + indent + "| " + indent + \
+            "|--------------------------------------\n"
+        for mem in self.local_mems:
+            ret += "| " + indent + "| " + indent + "| " + f"{mem}\n"
+        ret += "| " + indent + "| " + indent + \
+            "|--------------------------------------\n"
+        return ret
 
     def __str__(self) -> str:
         ret = f"HeteroProcessor({self.name})"
@@ -85,6 +103,9 @@ def hw_heteroprocessor(units, local_mems, topology, name="hw_heteroprocessor"):
 class HardwareGroup(HardwareCompute):
     """HardwareGroup object"""
 
+    def summary(self):
+        raise NotImplementedError()
+
     def __str__(self) -> str:
         ret = f"HardwareGroup({self.name})"
         return ret
@@ -96,6 +117,18 @@ class HardwareGroup(HardwareCompute):
 @tvm._ffi.register_object("ditto.hardware.HomoGroup")
 class HomoGroup(HardwareGroup):
     """Hardware HomoGroup object"""
+
+    def summary(self):
+        ret = ""
+        indent = "  "
+        ret += "| " + indent + "|--------------------------------------\n"
+        ret += "| " + indent + "| " + \
+            f"{self.processor.__class__.__name__}<{self.block_x}, {self.block_y}, {self.block_z}>:\n"
+        ret += self.processor.summary()
+        ret += "| " + indent + "|--------------------------------------\n"
+        ret += "| " + indent + "| " + f"{self.shared_mem}\n"
+        ret += "| " + indent + "|--------------------------------------\n"
+        return ret
 
     def __str__(self) -> str:
         ret = f"HomoGroup({self.name})"
@@ -125,6 +158,21 @@ def hw_homogroup(processor, shared_mem, block_x, block_y=1, block_z=1, name="hw_
 @tvm._ffi.register_object("ditto.hardware.HardwareDevice")
 class HardwareDevice(HardwareCompute):
     """HardwareDevice object"""
+
+    def summary(self):
+        group = self.group
+        global_mem = self.global_mem
+        ret = ""
+        ret += "|--------------------------------------\n"
+        ret += "| " + f"{self.name}\n"
+        ret += "|--------------------------------------\n"
+        ret += "| " + \
+            f"{self.group.__class__.__name__}<{self.grid_x}, {self.grid_y}, {self.grid_z}>:\n"
+        ret += self.group.summary()
+        ret += "|--------------------------------------\n"
+        ret += "|" + f"{self.global_mem}\n"
+        ret += "|--------------------------------------\n"
+        return ret
 
     def __str__(self) -> str:
         ret = f"HardwareDevice({self.name})"

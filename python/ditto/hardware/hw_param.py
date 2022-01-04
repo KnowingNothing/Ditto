@@ -9,30 +9,34 @@ class HardwareParam(Object):
     """HardwareParam object"""
 
 
-def hardware_param(dram_bandwidth_gbs: float,
-                   fp32_peak_perf_gflops: float,
-                   launch_latency_s: float,
+def hardware_param(register_per_processor_kb: float,
                    shared_memory_per_group_kb: float,
+                   shared_memory_bandwidth_gbs: float,
+                   global_memory_gb: float,
+                   global_memory_bandwidth_gbs: float,
+                   num_processors_per_group: int,
                    num_groups: int,
-                   num_processors_per_group: int):
-    """Get hardware params
+                   fp32_peak_perf_gflops: float,
+                   launch_latency_s: float):
+    """The hardware params
 
     Args:
-        dram_bandwidth_gbs (float): GB/s
+        register_per_processor_kb (float): KB
+        shared_memory_per_group_kb (float): KB
+        shared_memory_bandwidth_gbs (float): GB/s
+        global_memory_gb (float): GB
+        global_memory_bandwidth_gbs (float): GB
+        num_processors_per_group (int):
+        num_groups (int):
         fp32_peak_perf_gflops (float): GFLOPs
         launch_latency_s (float): second
-        shared_memory_per_group_kb (float): KB
-        num_groups (int):
-        num_processors_per_group (int):
 
     Returns:
-        hardware.HardwareParam
+        HardwareParam
     """
     return _ffi_api.HardwareParam(
-        dram_bandwidth_gbs,
-        fp32_peak_perf_gflops,
-        launch_latency_s,
-        shared_memory_per_group_kb,
-        num_groups,
-        num_processors_per_group
+        register_per_processor_kb, shared_memory_per_group_kb,
+        shared_memory_bandwidth_gbs, global_memory_gb,
+        global_memory_bandwidth_gbs, num_processors_per_group, num_groups,
+        fp32_peak_perf_gflops, launch_latency_s
     )

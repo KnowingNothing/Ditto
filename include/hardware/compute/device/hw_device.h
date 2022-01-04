@@ -30,7 +30,7 @@ public:
     v->Visit("global_mem", &global_mem);
     v->Visit("grid_x", &grid_x);
     v->Visit("grid_y", &grid_y);
-    v->Visit("block_z", &grid_z);
+    v->Visit("grid_z", &grid_z);
   }
   static constexpr const char *_type_key = "ditto.hardware.HardwareDevice";
   TVM_DECLARE_BASE_OBJECT_INFO(HardwareDeviceNode, HardwareNode);

@@ -3,15 +3,21 @@ from .hw_memory import *
 from .hw_path import *
 from . import pattern
 from . import visa
-from .config import V100
-from .hw_param import HardwareParam
+from .devices.nvgpu import (
+    query_gpu as query_nvgpu,
+    query_gpu_param as query_nvgpu_param
+)
 
 
-SUPPORTED_TARGETS = {
+QUERY_FUNCS = {
     "gpu": {
-        "cuda": {
-            "V100": V100
-        }
+        "cuda": query_nvgpu
+    }
+}
+
+QUERY_PARAM_FUNCS = {
+    "gpu": {
+        "cuda": query_nvgpu_param
     }
 }
 
@@ -31,11 +37,25 @@ def query_hw(target):
     """Use a string key to query the hardare params
 
     Args:
-        target (str): the string key, e.g., gpu.cuda.V100
+        target (str): the string key, e.g., gpu.cuda.V100-16GB
 
     Returns:
     ---
     ditto.hardware.HardwareParam
     """
     dev_type, pmodel, arch = parse_target(target)
-    return SUPPORTED_TARGETS[dev_type][pmodel][arch]
+    return QUERY_FUNCS[dev_type][pmodel](arch)
+
+
+def query_hw_param(target):
+    """Use a string key to query the hardare params
+
+    Args:
+        target (str): the string key, e.g., gpu.cuda.V100-16GB
+
+    Returns:
+    ---
+    ditto.hardware.HardwareParam
+    """
+    dev_type, pmodel, arch = parse_target(target)
+    return QUERY_PARAM_FUNCS[dev_type][pmodel](arch)

@@ -111,12 +111,13 @@ def test_make_device():
 
     topology = {
         unit: {
-            mem: hw.compute_path(isa["test.fma.fp32.fp32.fp32"],
-                                 pattern["scalar_fp32"], hw.visa.direct(), hw.visa.direct())
+            mem: [hw.compute_path(isa["test.fma.fp32.fp32.fp32"],
+                                  pattern["scalar_fp32"], hw.visa.direct(), hw.visa.direct())]
         }
     }
 
     proc = hw.hw_heteroprocessor([unit], [mem], topology, name="test_proc")
+    print(proc.topology)
 
     shared_mem = hw.hw_shared_mem(128, pattern, name="test_shared")
 

@@ -22,7 +22,7 @@ class LocalMemory(HardwareMemory):
     """Hardware local memory object"""
 
     def __str__(self) -> str:
-        ret = f"LocalMemory({self.name})"
+        ret = f"LocalMemory({self.name}, {self.kb}KB)"
         return ret
 
     def __repr__(self) -> str:
@@ -48,7 +48,7 @@ class SharedMemory(HardwareMemory):
     """Hardware shared memory object"""
 
     def __str__(self) -> str:
-        ret = f"SharedMemory({self.name})"
+        ret = f"SharedMemory({self.name}, {self.kb}KB)"
         return ret
 
     def __repr__(self) -> str:
@@ -74,7 +74,7 @@ class GlobalMemory(HardwareMemory):
     """Hardware global memory object"""
 
     def __str__(self) -> str:
-        ret = f"GlobalMemory({self.name})"
+        ret = f"GlobalMemory({self.name}, {self.kb/1e6}GB)"
         return ret
 
     def __repr__(self) -> str:
