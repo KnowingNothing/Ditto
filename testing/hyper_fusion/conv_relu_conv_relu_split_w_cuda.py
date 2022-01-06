@@ -39,8 +39,12 @@ def conv_relu_conv_relu(
     Q1 = (W + 2 * padding1 - S1) // stride1 + 1
     P2 = (P1 + 2 * padding2 - R2) // stride2 + 1
     Q2 = (Q1 + 2 * padding2 - S2) // stride2 + 1
-    assert Q1 >= MI
-    assert Q2 >= MI
+    assert Q1 % MI == 0
+    assert Q2 % MI == 0
+    assert C % KI == 0
+    assert K1 % NI == 0
+    assert K1 % KI == 0
+    assert K2 % NI == 0
 
     CI = KI
     CO = ceil(C, KI)
@@ -729,7 +733,7 @@ def schedule_conv_relu_conv_relu_cpu(
 
 def test_cuda():
     ins, outs, func = schedule_conv_relu_conv_relu(
-        1,
+        16,
         256,
         32,
         16,
