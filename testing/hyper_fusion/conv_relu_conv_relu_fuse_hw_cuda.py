@@ -36,17 +36,17 @@ def conv_relu_conv_relu(
     Q1 = (W + 2 * padding1 - S1) // stride1 + 1
     P2 = (P1 + 2 * padding2 - R2) // stride2 + 1
     Q2 = (Q1 + 2 * padding2 - S2) // stride2 + 1
-    assert Q1 >= MI
-    assert Q2 >= MI
+    assert P1 * Q1 >= MI
+    assert Q1 * Q2 >= MI
 
     CI = KI
     CO = ceil(C, KI)
-    Q1I = MI
-    Q1O = ceil(Q1, MI)
+    PQ1I = MI
+    PQ1O = ceil(P1 * Q1, MI)
     K1I = NI
     K1O = ceil(K1, NI)
-    Q2I = MI
-    Q2O = ceil(Q2, MI)
+    PQ2I = MI
+    PQ2O = ceil(P2 * Q2, MI)
     K2I = NI
     K2O = ceil(K2, NI)
     RK1I = KI
@@ -69,10 +69,15 @@ def conv_relu_conv_relu(
         name="pad1",
     )
     pad1_fact = tvm.te.compute(
-        [N, CO, R1, S1, P1, Q1O, Q1I, CI],
-        lambda n, co, r, s, p, qo, qi, ci: tvm.tir.if_then_else(
-            tvm.tir.all(co * CI + ci < C, (qo * Q1I + qi) < Q1),
-            pad1[n, co * CI + ci, p * stride1 + r, (qo * Q1I + qi) * stride1 + s],
+        [N, CO, R1, S1, PQ1O, PQ1I, CI],
+        lambda n, co, r, s, pqo, pqi, ci: tvm.tir.if_then_else(
+            tvm.tir.all(co * CI + ci < C, (pqo * PQ1I + pqi) < P1 * Q1),
+            pad1[
+                n,
+                co * CI + ci,
+                (pqo * PQ1I + pqi) // Q1 * stride1 + r,
+                (pqo * PQ1I + pqi) % Q1 * stride1 + s,
+            ],
             tvm.tir.const(0, in_dtype),
         ),
         name="pad1_fact",
@@ -90,8 +95,8 @@ def conv_relu_conv_relu(
 
     # wmma begin
     pad1_fact_frag = tvm.te.compute(
-        [N, CO, R1, S1, P1, Q1O, Q1I, CI],
-        lambda n, co, r, s, p, qo, qi, ci: pad1_fact[n, co, r, s, p, qo, qi, ci],
+        [N, CO, R1, S1, PQ1O, PQ1I, CI],
+        lambda n, co, r, s, pqo, pqi, ci: pad1_fact[n, co, r, s, pqo, pqi, ci],
         name="pad1_fact_frag",
     )
     Weight1_fact_frag = tvm.te.compute(
@@ -105,9 +110,9 @@ def conv_relu_conv_relu(
     rr1 = tvm.te.reduce_axis([0, R1], "rr1")
     rs1 = tvm.te.reduce_axis([0, S1], "rs1")
     conv1_frag = tvm.te.compute(
-        [N, K1O, P1, Q1O, Q1I, K1I],
-        lambda n, ko, p, qo, qi, ki: tvm.te.sum(
-            pad1_fact_frag[n, rc1o, rr1, rs1, p, qo, qi, rc1i].astype(acc_dtype)
+        [N, K1O, PQ1O, PQ1I, K1I],
+        lambda n, ko, pqo, pqi, ki: tvm.te.sum(
+            pad1_fact_frag[n, rc1o, rr1, rs1, pqo, pqi, rc1i].astype(acc_dtype)
             * Weight1_fact_frag[ko, rc1o, rr1, rs1, rc1i, ki].astype(acc_dtype),
             axis=[rr1, rs1, rc1o, rc1i],
         ),
@@ -115,35 +120,37 @@ def conv_relu_conv_relu(
     )
 
     conv1_shared = tvm.te.compute(
-        [N, K1O, P1, Q1O, Q1I, K1I],
-        lambda n, ko, p, qo, qi, ki: conv1_frag[n, ko, p, qo, qi, ki],
+        [N, K1O, PQ1O, PQ1I, K1I],
+        lambda n, ko, pqo, pqi, ki: conv1_frag[n, ko, pqo, pqi, ki],
         name="conv1_shared",
     )
     # wmma end
 
     # shared scope begin
     relu1 = tvm.te.compute(
-        [N, K1O, P1, Q1O, Q1I, K1I],
-        lambda n, ko, p, qo, qi, ki: tvm.tir.if_then_else(
-            conv1_shared[n, ko, p, qo, qi, ki] > tvm.tir.const(0, acc_dtype),
-            conv1_shared[n, ko, p, qo, qi, ki].astype(in_dtype),
+        [N, K1O, PQ1O, PQ1I, K1I],
+        lambda n, ko, pqo, pqi, ki: tvm.tir.if_then_else(
+            conv1_shared[n, ko, pqo, pqi, ki] > tvm.tir.const(0, acc_dtype),
+            conv1_shared[n, ko, pqo, pqi, ki].astype(in_dtype),
             tvm.tir.const(0, in_dtype),
         ),
         name="relu1",
     )
 
-    if K1O * K1I > K1 or Q1O * Q1I > Q1:
+    if K1O * K1I > K1 or PQ1O * PQ1I > P1 * Q1:
         relu1_refact = tvm.te.compute(
             [N, K1, P1, Q1],
-            lambda n, k1, p1, q1: relu1[n, k1 // K1I, p1, q1 // Q1I, q1 % Q1I, k1 % K1I]
-            + relu1[N - 1, K1O - 1, P1 - 1, Q1O - 1, Q1I - 1, K1I - 1],
+            lambda n, k1, p1, q1: relu1[
+                n, k1 // K1I, (p1 * Q1 + q1) // PQ1I, (p1 * Q1 + q1) % PQ1I, k1 % K1I
+            ]
+            + relu1[N - 1, K1O - 1, PQ1O - 1, PQ1I - 1, K1I - 1],
             name="relu1_refact_trail",
         )
     else:
         relu1_refact = tvm.te.compute(
             [N, K1, P1, Q1],
             lambda n, k1, p1, q1: relu1[
-                n, k1 // K1I, p1, q1 // Q1I, q1 % Q1I, k1 % K1I
+                n, k1 // K1I, (p1 * Q1 + q1) // PQ1I, (p1 * Q1 + q1) % PQ1I, k1 % K1I
             ],
             name="relu1_refact",
         )
@@ -162,10 +169,15 @@ def conv_relu_conv_relu(
     )
 
     pad2_fact = tvm.te.compute(
-        [N, RK1O, R2, S2, P2, Q2O, Q2I, RK1I],
-        lambda n, co, r, s, p, qo, qi, ci: tvm.tir.if_then_else(
-            tvm.tir.all(co * RK1I + ci < K1, (qo * Q2I + qi) < Q2),
-            pad2[n, co * RK1I + ci, p * stride2 + r, (qo * Q2I + qi) * stride2 + s],
+        [N, RK1O, R2, S2, PQ2O, PQ2I, RK1I],
+        lambda n, co, r, s, pqo, pqi, ci: tvm.tir.if_then_else(
+            tvm.tir.all(co * RK1I + ci < K1, (pqo * PQ2I + pqi) < P2 * Q2),
+            pad2[
+                n,
+                co * RK1I + ci,
+                (pqo * PQ2I + pqi) // Q2 * stride2 + r,
+                (pqo * PQ2I + pqi) % Q2 * stride2 + s,
+            ],
             tvm.tir.const(0, in_dtype),
         ),
         name="pad2_fact",
@@ -183,8 +195,8 @@ def conv_relu_conv_relu(
 
     # wmma begin
     pad2_fact_frag = tvm.te.compute(
-        [N, RK1O, R2, S2, P2, Q2O, Q2I, RK1I],
-        lambda n, co, r, s, p, qo, qi, ci: pad2_fact[n, co, r, s, p, qo, qi, ci],
+        [N, RK1O, R2, S2, PQ2O, PQ2I, RK1I],
+        lambda n, co, r, s, pqo, pqi, ci: pad2_fact[n, co, r, s, pqo, pqi, ci],
         name="pad2_fact_frag",
     )
     Weight2_fact_frag = tvm.te.compute(
@@ -197,9 +209,9 @@ def conv_relu_conv_relu(
     rr2 = tvm.te.reduce_axis([0, R2], "rr2")
     rs2 = tvm.te.reduce_axis([0, S2], "rs2")
     conv2_frag = tvm.te.compute(
-        [N, K2O, P2, Q2O, Q2I, K2I],
-        lambda n, ko, p, qo, qi, ki: tvm.te.sum(
-            pad2_fact_frag[n, rk1o, rr2, rs2, p, qo, qi, rk1i].astype(acc_dtype)
+        [N, K2O, PQ2O, PQ2I, K2I],
+        lambda n, ko, pqo, pqi, ki: tvm.te.sum(
+            pad2_fact_frag[n, rk1o, rr2, rs2, pqo, pqi, rk1i].astype(acc_dtype)
             * Weight2_fact_frag[ko, rk1o, rr2, rs2, rk1i, ki].astype(acc_dtype),
             axis=[rr2, rs2, rk1o, rk1i],
         ),
@@ -207,8 +219,8 @@ def conv_relu_conv_relu(
     )
 
     conv2_shared = tvm.te.compute(
-        [N, K2O, P2, Q2O, Q2I, K2I],
-        lambda n, ko, p, qo, qi, ki: conv2_frag[n, ko, p, qo, qi, ki],
+        [N, K2O, PQ2O, PQ2I, K2I],
+        lambda n, ko, pqo, pqi, ki: conv2_frag[n, ko, pqo, pqi, ki],
         name="conv2_shared",
     )
 
@@ -216,26 +228,30 @@ def conv_relu_conv_relu(
 
     # global scope begin
     relu2 = tvm.te.compute(
-        [N, K2O, P2, Q2O, Q2I, K2I],
-        lambda n, ko, p, qo, qi, ki: tvm.tir.if_then_else(
-            conv2_shared[n, ko, p, qo, qi, ki] > tvm.tir.const(0, acc_dtype),
-            conv2_shared[n, ko, p, qo, qi, ki].astype(in_dtype),
+        [N, K2O, PQ2O, PQ2I, K2I],
+        lambda n, ko, pqo, pqi, ki: tvm.tir.if_then_else(
+            conv2_shared[n, ko, pqo, pqi, ki] > tvm.tir.const(0, acc_dtype),
+            conv2_shared[n, ko, pqo, pqi, ki].astype(in_dtype),
             tvm.tir.const(0, in_dtype),
         ),
         name="relu2",
     )
 
-    if K2O * K2I > K2 or Q2O * Q2I > Q2:
+    if K2O * K2I > K2 or PQ2O * PQ2I > P2 * Q2:
         relu2_refact = tvm.te.compute(
             [N, K2, P2, Q2],
-            lambda n, k, p, q: relu2[n, k // K2I, p, q // Q2I, q % Q2I, k % K2I]
-            + relu2[N - 1, K2O - 1, P2 - 1, Q2O - 1, Q2I - 1, K2I - 1],
+            lambda n, k, p, q: relu2[
+                n, k // K2I, (p * Q2 + q) // PQ2I, (p * Q2 + q) % PQ2I, k % K2I
+            ]
+            + relu2[N - 1, K2O - 1, PQ2O - 1, PQ2I - 1, K2I - 1],
             name="relu2_refact_trail",
         )
     else:
         relu2_refact = tvm.te.compute(
             [N, K2, P2, Q2],
-            lambda n, k, p, q: relu2[n, k // K2I, p, q // Q2I, q % Q2I, k % K2I],
+            lambda n, k, p, q: relu2[
+                n, k // K2I, (p * Q2 + q) // PQ2I, (p * Q2 + q) % PQ2I, k % K2I
+            ],
             name="relu2_refact",
         )
     # global scope end
@@ -529,25 +545,23 @@ def schedule_conv_relu_conv_relu(
     WARP_SIZE = 32
     VEC_LEN = 4
 
-    P2_factors = [-1, 1, 1]
-    Q2_factors = [-1, 1, 1, MI]
+    PQ2_factors = [-1, 1, 1, MI]
     K2_factors = [-1, 1, 1, NI]
-    TY_factor = P2_factors[1] * Q2_factors[1] * K2_factors[1]
+    TY_factor = PQ2_factors[1] * K2_factors[1]
     RK1_factors = [-1, 1, 1]
 
-    P1_factors = [-1, P2_factors[1], 1]
-    Q1_factors = [-1, Q2_factors[1], 1, MI]
+    PQ1_factors = [-1, PQ2_factors[1], 1, MI]
     K1_factors = [-1, K2_factors[2], 1, NI]
     RC_factors = [-1, 1, 2]
 
     n, k, p, q = sch[relu2_refact].op.axis
-    q1, q2, q3, qi = tile_axes(sch, relu2_refact, q, Q2_factors)
-    p1, p2, p3 = tile_axes(sch, relu2_refact, p, P2_factors)
+    pq = sch[relu2_refact].fuse(p, q)
+    pq1, pq2, pq3, pqi = tile_axes(sch, relu2_refact, pq, PQ2_factors)
     k1, k2, k3, ki = tile_axes(sch, relu2_refact, k, K2_factors)
-    sch[relu2_refact].reorder(n, k1, p1, q1, k2, p2, q2, k3, p3, q3, qi, ki)
-    bx = sch[relu2_refact].fuse(n, k1, p1, q1)
-    ty = sch[relu2_refact].fuse(k2, p2, q2)
-    tx = sch[relu2_refact].fuse(qi, ki)
+    sch[relu2_refact].reorder(n, k1, pq1, k2, pq2, k3, pq3, pqi, ki)
+    bx = sch[relu2_refact].fuse(n, k1, pq1)
+    ty = sch[relu2_refact].fuse(k2, pq2)
+    tx = sch[relu2_refact].fuse(pqi, ki)
     _, tx = sch[relu2_refact].split(tx, factor=WARP_SIZE)
     sch[relu2_refact].bind(bx, tvm.te.thread_axis("blockIdx.x"))
     sch[relu2_refact].bind(ty, tvm.te.thread_axis("threadIdx.y"))
@@ -555,24 +569,23 @@ def schedule_conv_relu_conv_relu(
     conv2_shared_attach_pos = bx
 
     sch[conv2_shared].compute_at(sch[relu2_refact], conv2_shared_attach_pos)
-    n, ko, p, qo, qi, ki = sch[conv2_shared].op.axis
-    q1, q2, q3 = tile_axes(sch, conv2_shared, qo, Q2_factors[:-1])
-    p1, p2, p3 = tile_axes(sch, conv2_shared, p, P2_factors)
+    n, ko, pqo, pqi, ki = sch[conv2_shared].op.axis
+    pq1, pq2, pq3 = tile_axes(sch, conv2_shared, pqo, PQ2_factors[:-1])
     k1, k2, k3 = tile_axes(sch, conv2_shared, ko, K2_factors[:-1])
-    sch[conv2_shared].reorder(n, k1, p1, q1, k2, p2, q2, k3, p3, q3, qi, ki)
-    ty = sch[conv2_shared].fuse(k2, p2, q2)
+    sch[conv2_shared].reorder(n, k1, pq1, k2, pq2, k3, pq3, pqi, ki)
+    ty = sch[conv2_shared].fuse(k2, pq2)
     sch[conv2_shared].bind(ty, tvm.te.thread_axis("threadIdx.y"))
     # tensorize qi
-    sch[conv2_shared].tensorize(qi, intrin_wmma_store_matrix("shared"))
+    sch[conv2_shared].tensorize(pqi, intrin_wmma_store_matrix("shared"))
     conv2_frag_attach_pos = ty
 
     sch[conv2_frag].compute_at(sch[conv2_shared], conv2_frag_attach_pos)
-    n, ko, p, qo, qi, ki = sch[conv2_frag].op.axis
+    n, ko, pqo, pqi, ki = sch[conv2_frag].op.axis
     rr, rs, rco, rci = sch[conv2_frag].op.reduce_axis
     rco1, rco2, rco3 = tile_axes(sch, conv2_frag, rco, RK1_factors)
-    sch[conv2_frag].reorder(n, rco1, rr, rs, rco2, ko, p, qo, rco3, qi, ki, rci)
+    sch[conv2_frag].reorder(n, rco1, rr, rs, rco2, ko, pqo, rco3, pqi, ki, rci)
     # tensorize qi
-    sch[conv2_frag].tensorize(qi, intrin_wmma_gemm())
+    sch[conv2_frag].tensorize(pqi, intrin_wmma_gemm())
     pad2_fact_frag_attach_pos = rco2
     weight2_fact_frag_attach_pos = rco2
     pad2_fact_attach_pos = rco1
@@ -580,9 +593,9 @@ def schedule_conv_relu_conv_relu(
     conv1_shared_attach_pos = rco1
 
     sch[pad2_fact_frag].compute_at(sch[conv2_frag], pad2_fact_frag_attach_pos)
-    n, co, r, s, p, qo, qi, ci = sch[pad2_fact_frag].op.axis
+    n, co, r, s, pqo, pqi, ci = sch[pad2_fact_frag].op.axis
     # tensorize qi
-    sch[pad2_fact_frag].tensorize(qi, intrin_wmma_load_matrix_a())
+    sch[pad2_fact_frag].tensorize(pqi, intrin_wmma_load_matrix_a())
 
     sch[Weight2_fact_frag].compute_at(sch[conv2_frag], weight2_fact_frag_attach_pos)
     ko, co, r, s, ci, ki = sch[Weight2_fact_frag].op.axis
@@ -590,8 +603,8 @@ def schedule_conv_relu_conv_relu(
     sch[Weight2_fact_frag].tensorize(ci, intrin_wmma_load_matrix_b())
 
     sch[pad2_fact].compute_at(sch[conv2_frag], pad2_fact_attach_pos)
-    n, co, r, s, p, qo, qi, ci = sch[pad2_fact].op.axis
-    fused = sch[pad2_fact].fuse(n, co, r, s, p, qo, qi, ci)
+    n, co, r, s, pqo, pqi, ci = sch[pad2_fact].op.axis
+    fused = sch[pad2_fact].fuse(n, co, r, s, pqo, pqi, ci)
     fused, ty, tx, vec = tile_axes(
         sch, pad2_fact, fused, [-1, TY_factor, WARP_SIZE, VEC_LEN]
     )
@@ -610,33 +623,32 @@ def schedule_conv_relu_conv_relu(
     sch[Weight2_fact].vectorize(vec)
 
     sch[conv1_shared].compute_at(sch[conv2_frag], conv1_shared_attach_pos)
-    n, ko, p, qo, qi, ki = sch[conv1_shared].op.axis
-    q1, q2, q3 = tile_axes(sch, conv1_shared, qo, Q1_factors[:-1])
-    p1, p2, p3 = tile_axes(sch, conv1_shared, p, P1_factors)
+    n, ko, pqo, pqi, ki = sch[conv1_shared].op.axis
+    pq1, pq2, pq3 = tile_axes(sch, conv1_shared, pqo, PQ1_factors[:-1])
     k1, k2, k3 = tile_axes(sch, conv1_shared, ko, K1_factors[:-1])
-    sch[conv1_shared].reorder(n, k1, p1, q1, k2, p2, q2, k3, p3, q3, qi, ki)
-    ty = sch[conv1_shared].fuse(k2, p2, q2)
+    sch[conv1_shared].reorder(n, k1, pq1, k2, pq2, k3, pq3, pqi, ki)
+    ty = sch[conv1_shared].fuse(k2, pq2)
     sch[conv1_shared].bind(ty, tvm.te.thread_axis("threadIdx.y"))
     # tensorize qi
-    sch[conv1_shared].tensorize(qi, intrin_wmma_store_matrix("shared"))
+    sch[conv1_shared].tensorize(pqi, intrin_wmma_store_matrix("shared"))
     conv1_frag_attach_pos = ty
 
     sch[conv1_frag].compute_at(sch[conv1_shared], conv1_frag_attach_pos)
-    n, ko, p, qo, qi, ki = sch[conv1_frag].op.axis
+    n, ko, pqo, pqi, ki = sch[conv1_frag].op.axis
     rr, rs, rco, rci = sch[conv1_frag].op.reduce_axis
     rco1, rco2, rco3 = tile_axes(sch, conv1_frag, rco, RC_factors)
-    sch[conv1_frag].reorder(n, rco1, rr, rs, rco2, ko, p, qo, rco3, qi, ki, rci)
+    sch[conv1_frag].reorder(n, rco1, rr, rs, rco2, ko, pqo, rco3, pqi, ki, rci)
     # tensorize qi
-    sch[conv1_frag].tensorize(qi, intrin_wmma_gemm())
+    sch[conv1_frag].tensorize(pqi, intrin_wmma_gemm())
     pad1_fact_frag_attach_pos = rco2
     weight1_fact_frag_attach_pos = rco2
     pad1_fact_attach_pos = rco1
     weight1_fact_attach_pos = rco1
 
     sch[pad1_fact_frag].compute_at(sch[conv1_frag], pad1_fact_frag_attach_pos)
-    n, co, r, s, p, qo, qi, ci = sch[pad1_fact_frag].op.axis
+    n, co, r, s, pqo, pqi, ci = sch[pad1_fact_frag].op.axis
     # tensorize qi
-    sch[pad1_fact_frag].tensorize(qi, intrin_wmma_load_matrix_a())
+    sch[pad1_fact_frag].tensorize(pqi, intrin_wmma_load_matrix_a())
 
     sch[Weight1_fact_frag].compute_at(sch[conv1_frag], weight1_fact_frag_attach_pos)
     ko, co, r, s, ci, ki = sch[Weight1_fact_frag].op.axis
@@ -644,8 +656,8 @@ def schedule_conv_relu_conv_relu(
     sch[Weight1_fact_frag].tensorize(ci, intrin_wmma_load_matrix_b())
 
     sch[pad1_fact].compute_at(sch[conv1_frag], pad1_fact_attach_pos)
-    n, co, r, s, p, qo, qi, ci = sch[pad1_fact].op.axis
-    fused = sch[pad1_fact].fuse(n, co, r, s, p, qo, qi, ci)
+    n, co, r, s, pqo, pqi, ci = sch[pad1_fact].op.axis
+    fused = sch[pad1_fact].fuse(n, co, r, s, pqo, pqi, ci)
     fused, ty, tx, vec = tile_axes(
         sch, pad1_fact, fused, [-1, TY_factor, WARP_SIZE, VEC_LEN]
     )
@@ -730,8 +742,8 @@ def test_cuda():
     ins, outs, func = schedule_conv_relu_conv_relu(
         1,
         256,
-        32,
-        32,
+        16,
+        16,
         512,
         3,
         3,
@@ -770,14 +782,14 @@ def test_cuda():
     testing.assert_allclose(
         output.cpu().numpy(), outputs_tvm[0].asnumpy(), rtol=0.1, atol=0.1
     )
-    
-    
+
+
 def test_llvm():
     ins, outs, func = schedule_conv_relu_conv_relu_cpu(
         1,
         256,
-        32,
-        32,
+        14,
+        14,
         512,
         3,
         3,
@@ -800,7 +812,7 @@ def test_llvm():
         np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(in_dtype)
         for y in outs
     ]
-    
+
     ctx = tvm.cpu()
     inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
     outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
