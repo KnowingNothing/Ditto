@@ -28,9 +28,6 @@ tvm_option(USE_ROCM "Build with ROCM" OFF)
 tvm_option(ROCM_PATH "The path to rocm" /opt/rocm)
 tvm_option(USE_HEXAGON_DEVICE "Build with Hexagon device support in TVM runtime" OFF)
 tvm_option(USE_HEXAGON_SDK "Path to the Hexagon SDK root (required for Hexagon support in TVM runtime or for building TVM runtime for Hexagon)" /path/to/sdk)
-tvm_option(USE_HEXAGON_RPC "Enable Hexagon RPC using minRPC implementation over Android." OFF)
-tvm_option(USE_HEXAGON_LAUNCHER "Build the Hexagon graph launcher application" OFF)
-tvm_option(USE_HEXAGON_PROXY_RPC "Build the Hexagon Proxy RPC server application" OFF)
 tvm_option(USE_RPC "Build with RPC" ON)
 tvm_option(USE_THREADS "Build with thread support" ON)
 tvm_option(USE_LLVM "Build with LLVM, can be set to specific llvm-config path" OFF)
@@ -46,15 +43,13 @@ tvm_option(USE_MICRO "Build with Micro TVM support" OFF)
 tvm_option(INSTALL_DEV "Install compiler infrastructure" OFF)
 tvm_option(HIDE_PRIVATE_SYMBOLS "Compile with -fvisibility=hidden." OFF)
 tvm_option(USE_TF_TVMDSOOP "Build with TensorFlow TVMDSOOp" OFF)
-tvm_option(USE_PT_TVMDSOOP "Build with PyTorch TVMDSOOp" OFF)
 tvm_option(USE_FALLBACK_STL_MAP "Use TVM's POD compatible Map" OFF)
-tvm_option(USE_ETHOSN "Build with Arm(R) Ethos(TM)-N" OFF)
+tvm_option(USE_ETHOSN "Build with Arm Ethos-N" OFF)
 tvm_option(USE_CMSISNN "Build with Arm CMSIS-NN" OFF)
 tvm_option(INDEX_DEFAULT_I64 "Defaults the index datatype to int64" ON)
 tvm_option(USE_LIBBACKTRACE "Build libbacktrace to supply linenumbers on stack traces" AUTO)
 tvm_option(BUILD_STATIC_RUNTIME "Build static version of libtvm_runtime" OFF)
 tvm_option(USE_PAPI "Use Performance Application Programming Interface (PAPI) to read performance counters" OFF)
-tvm_option(USE_GTEST "Use GoogleTest for C++ sanity tests" AUTO)
 
 # 3rdparty libraries
 tvm_option(DLPACK_PATH "Path to DLPACK" "3rdparty/tvm/3rdparty/dlpack/include")
@@ -71,7 +66,6 @@ tvm_option(USE_MKLDNN "Build with MKLDNN" OFF)
 tvm_option(USE_DNNL_CODEGEN "Enable MKLDNN (DNNL) codegen" OFF)
 tvm_option(USE_CUDNN "Build with cuDNN" OFF)
 tvm_option(USE_CUBLAS "Build with cuBLAS" OFF)
-tvm_option(USE_CUTLASS "Build with CUTLASS" OFF)
 tvm_option(USE_THRUST "Build with Thrust" OFF)
 tvm_option(USE_MIOPEN "Build with ROCM:MIOpen" OFF)
 tvm_option(USE_ROCBLAS "Build with ROCM:RoCBLAS" OFF)
@@ -92,7 +86,6 @@ tvm_option(USE_TENSORRT_CODEGEN "Build with TensorRT Codegen support" OFF)
 tvm_option(USE_TENSORRT_RUNTIME "Build with TensorRT runtime" OFF)
 tvm_option(USE_RUST_EXT "Build with Rust based compiler extensions, STATIC, DYNAMIC, or OFF" OFF)
 tvm_option(USE_VITIS_AI "Build with VITIS-AI Codegen support" OFF)
-tvm_option(SUMMARIZE "Print CMake option summary after configuring" OFF)
 
 # include directories
 include_directories(${CMAKE_INCLUDE_PATH})
@@ -244,9 +237,8 @@ assign_source_group("Source" ${GROUP_SOURCE})
 assign_source_group("Include" ${GROUP_INCLUDE})
 
 # Source file lists
-tvm_file_glob(GLOB_RECURSE COMPILER_SRCS
+file(GLOB_RECURSE COMPILER_SRCS
     3rdparty/tvm/src/auto_scheduler/*.cc
-    3rdparty/tvm/src/meta_schedule/*.cc
     3rdparty/tvm/src/node/*.cc
     3rdparty/tvm/src/ir/*.cc
     3rdparty/tvm/src/arith/*.cc
@@ -268,29 +260,29 @@ tvm_file_glob(GLOB_RECURSE COMPILER_SRCS
     src/utils/*.cc
     )
 
-tvm_file_glob(GLOB CODEGEN_SRCS
+file(GLOB CODEGEN_SRCS
   3rdparty/tvm/src/target/*.cc
   3rdparty/tvm/src/target/source/*.cc
     )
 
 list(APPEND COMPILER_SRCS ${CODEGEN_SRCS})
 
-tvm_file_glob(GLOB_RECURSE RELAY_OP_SRCS
+file(GLOB_RECURSE RELAY_OP_SRCS
     3rdparty/tvm/src/relay/op/*.cc
     )
-tvm_file_glob(GLOB_RECURSE RELAY_PASS_SRCS
+file(GLOB_RECURSE RELAY_PASS_SRCS
     3rdparty/tvm/src/relay/analysis/*.cc
     3rdparty/tvm/src/relay/transforms/*.cc
     3rdparty/tvm/src/relay/quantize/*.cc
     )
-tvm_file_glob(GLOB RELAY_BACKEND_SRCS
+file(GLOB RELAY_BACKEND_SRCS
     3rdparty/tvm/src/relay/backend/*.cc
     3rdparty/tvm/src/relay/backend/vm/*.cc
     )
-tvm_file_glob(GLOB_RECURSE RELAY_IR_SRCS
+file(GLOB_RECURSE RELAY_IR_SRCS
     3rdparty/tvm/src/relay/ir/*.cc
     )
-tvm_file_glob(GLOB_RECURSE RELAY_QNN_SRCS
+file(GLOB_RECURSE RELAY_QNN_SRCS
     3rdparty/tvm/src/relay/qnn/*.cc
 )
 
@@ -301,11 +293,11 @@ list(APPEND COMPILER_SRCS ${RELAY_BACKEND_SRCS})
 list(APPEND COMPILER_SRCS ${RELAY_IR_SRCS})
 list(APPEND COMPILER_SRCS ${RELAY_QNN_SRCS})
 
-tvm_file_glob(GLOB DATATYPE_SRCS 3rdparty/tvm/src/target/datatype/*.cc)
+file(GLOB DATATYPE_SRCS 3rdparty/tvm/src/target/datatype/*.cc)
 list(APPEND COMPILER_SRCS ${DATATYPE_SRCS})
 list(APPEND COMPILER_SRCS "3rdparty/tvm/src/target/datatype/myfloat/myfloat.cc")
 
-tvm_file_glob(GLOB RUNTIME_SRCS
+file(GLOB RUNTIME_SRCS
   3rdparty/tvm/src/runtime/*.cc
   3rdparty/tvm/src/runtime/vm/*.cc
 )
@@ -322,12 +314,9 @@ if(BUILD_FOR_HEXAGON)
   # static one.
   if(NOT BUILD_STATIC_RUNTIME)
     list(APPEND RUNTIME_SRCS 3rdparty/tvm/src/runtime/hexagon/hexagon_posix.cc)
-    # Allow undefined symbols (there will be some from libc).
-    set(TVM_NO_UNDEFINED_SYMBOLS "")
   endif()
 
   add_definitions(-D_MACH_I32=int)
-  add_definitions(-DDMLC_CXX11_THREAD_LOCAL=0)
 endif()
 
 # Package runtime rules
@@ -341,12 +330,12 @@ endif()
 
 if(USE_RPC)
   message(STATUS "Build with RPC support...")
-  tvm_file_glob(GLOB RUNTIME_RPC_SRCS 3rdparty/tvm/src/runtime/rpc/*.cc)
+  file(GLOB RUNTIME_RPC_SRCS 3rdparty/tvm/src/runtime/rpc/*.cc)
   list(APPEND RUNTIME_SRCS ${RUNTIME_RPC_SRCS})
 endif(USE_RPC)
 
-tvm_file_glob(GLOB STACKVM_RUNTIME_SRCS 3rdparty/tvm/src/runtime/stackvm/*.cc)
-tvm_file_glob(GLOB STACKVM_CODEGEN_SRCS 3rdparty/tvm/src/target/stackvm/*.cc)
+file(GLOB STACKVM_RUNTIME_SRCS 3rdparty/tvm/src/runtime/stackvm/*.cc)
+file(GLOB STACKVM_CODEGEN_SRCS 3rdparty/tvm/src/target/stackvm/*.cc)
 list(APPEND COMPILER_SRCS ${STACKVM_CODEGEN_SRCS})
 if(USE_STACKVM_RUNTIME)
   message(STATUS "Build with stackvm support in runtime...")
@@ -371,7 +360,7 @@ endif(USE_GRAPH_RUNTIME_DEBUG AND NOT DEFINED USE_PROFILER)
 
 if(USE_GRAPH_EXECUTOR)
   message(STATUS "Build with Graph Executor support...")
-  tvm_file_glob(GLOB RUNTIME_GRAPH_EXECUTOR_SRCS 3rdparty/tvm/src/runtime/graph_executor/*.cc)
+  file(GLOB RUNTIME_GRAPH_EXECUTOR_SRCS 3rdparty/tvm/src/runtime/graph_executor/*.cc)
   list(APPEND RUNTIME_SRCS ${RUNTIME_GRAPH_EXECUTOR_SRCS})
 
 endif(USE_GRAPH_EXECUTOR)
@@ -391,45 +380,33 @@ endif()
 if(USE_PROFILER)
   message(STATUS "Build with profiler...")
 
-  tvm_file_glob(GLOB RUNTIME_GRAPH_EXECUTOR_DEBUG_SRCS 3rdparty/tvm/src/runtime/graph_executor/debug/*.cc)
+  file(GLOB RUNTIME_GRAPH_EXECUTOR_DEBUG_SRCS 3rdparty/tvm/src/runtime/graph_executor/debug/*.cc)
   list(APPEND RUNTIME_SRCS ${RUNTIME_GRAPH_EXECUTOR_DEBUG_SRCS})
   set_source_files_properties(${RUNTIME_GRAPH_EXECUTOR_SRCS}
     PROPERTIES COMPILE_DEFINITIONS "TVM_GRAPH_EXECUTOR_DEBUG")
 
-  tvm_file_glob(GLOB RUNTIME_VM_PROFILER_SRCS 3rdparty/tvm/src/runtime/vm/profiler/*.cc)
+  file(GLOB RUNTIME_VM_PROFILER_SRCS 3rdparty/tvm/src/runtime/vm/profiler/*.cc)
   list(APPEND RUNTIME_SRCS ${RUNTIME_VM_PROFILER_SRCS})
 endif(USE_PROFILER)
 
 # Enable ctest if gtest is available
-if(USE_GTEST)
-  # Check env var for backward compatibility. A better way to specify package
-  # locations is to use CMAKE_PREFIX_PATH or other standard cmake mechanism
-  # (see cmake documentation for `find_package`).
-  set(GTEST_ROOT "$ENV{GTEST_LIB}")
-  if("${USE_GTEST}" STREQUAL "AUTO")
-    # If USE_GTEST is AUTO, treat GTest as optional: enable if found.
-    find_package(GTest)
-  elseif("${USE_GTEST}" MATCHES ${IS_TRUE_PATTERN})
-    # USE_GTEST is set to ON, TRUE, etc. Treat GTest as a required package.
-    find_package(GTest REQUIRED)
-  endif()
-  if(GTEST_FOUND)
-    enable_testing()
-    include(CTest)
-  endif()
+find_path(GTEST_INCLUDE_DIR gtest/gtest.h)
+find_library(GTEST_LIB gtest "$ENV{GTEST_LIB}")
+if(GTEST_INCLUDE_DIR AND GTEST_LIB)
+  enable_testing()
+  include(CTest)
+  include(GoogleTest)
 endif()
 
 if(USE_PIPELINE_EXECUTOR)
   message(STATUS "Build with Pipeline Executor support...")
-  tvm_file_glob(GLOB RUNTIME_PIPELINE_SRCS 3rdparty/tvm/src/runtime/pipeline/*.cc)
+  file(GLOB RUNTIME_PIPELINE_SRCS 3rdparty/tvm/src/runtime/pipeline/*.cc)
   list(APPEND RUNTIME_SRCS ${RUNTIME_PIPELINE_SRCS})
 endif(USE_PIPELINE_EXECUTOR)
 
 # Module rules
 include(cmake/tvm_cmake/modules/VTA.cmake)
 include(cmake/tvm_cmake/modules/StandaloneCrt.cmake)
-include(cmake/tvm_cmake/modules/Zephyr.cmake)
-include(cmake/tvm_cmake/modules/Arduino.cmake)
 include(cmake/tvm_cmake/modules/CUDA.cmake)
 include(cmake/tvm_cmake/modules/Hexagon.cmake)
 include(cmake/tvm_cmake/modules/OpenCL.cmake)
@@ -445,8 +422,6 @@ include(cmake/tvm_cmake/modules/contrib/EthosU.cmake)
 include(cmake/tvm_cmake/modules/contrib/BLAS.cmake)
 include(cmake/tvm_cmake/modules/contrib/CODEGENC.cmake)
 include(cmake/tvm_cmake/modules/contrib/DNNL.cmake)
-include(cmake/tvm_cmake/modules/contrib/CUTLASS.cmake)
-include(cmake/tvm_cmake/modules/contrib/ExampleTargetHooks.cmake)
 include(cmake/tvm_cmake/modules/contrib/Random.cmake)
 include(cmake/tvm_cmake/modules/contrib/Posit.cmake)
 include(cmake/tvm_cmake/modules/contrib/MicroStandaloneRuntime.cmake)
@@ -455,7 +430,6 @@ include(cmake/tvm_cmake/modules/contrib/NNPack.cmake)
 include(cmake/tvm_cmake/modules/contrib/HybridDump.cmake)
 include(cmake/tvm_cmake/modules/contrib/TFLite.cmake)
 include(cmake/tvm_cmake/modules/contrib/TF_TVMDSOOP.cmake)
-include(cmake/tvm_cmake/modules/contrib/PT_TVMDSOOP.cmake)
 include(cmake/tvm_cmake/modules/contrib/CoreML.cmake)
 include(cmake/tvm_cmake/modules/contrib/BNNS.cmake)
 include(cmake/tvm_cmake/modules/contrib/ONNX.cmake)
@@ -478,9 +452,6 @@ else()
   set(CMAKE_CUDA_STANDARD 14)
 endif()
 
-# Original TVM uses CMAKE_CURRENT_LIST_DIR
-# We deliberately replace it with CMAKE_CURRENT_SOURCE_DIR
-# to avoid multiple compliation of libinfo.cc.o
 set(LIBINFO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tvm/src/support/libinfo.cc)
 add_lib_info(${LIBINFO_FILE})
 list(REMOVE_ITEM COMPILER_SRCS ${LIBINFO_FILE})
@@ -493,7 +464,7 @@ add_library(tvm SHARED $<TARGET_OBJECTS:tvm_objs> $<TARGET_OBJECTS:tvm_runtime_o
 set_property(TARGET tvm APPEND PROPERTY LINK_OPTIONS "${TVM_NO_UNDEFINED_SYMBOLS}")
 set_property(TARGET tvm APPEND PROPERTY LINK_OPTIONS "${TVM_VISIBILITY_FLAG}")
 if(BUILD_STATIC_RUNTIME)
-  add_library(tvm_runtime STATIC $<TARGET_OBJECTS:tvm_runtime_objs> $<TARGET_OBJECTS:tvm_libinfo_objs>)
+  add_library(tvm_runtime STATIC $<TARGET_OBJECTS:tvm_runtime_objs>)
   set(NOTICE_MULTILINE
     "You have build static version of the TVM runtime library. Make "
     "sure to use --whole-archive when linking it into your project.")
@@ -501,7 +472,7 @@ if(BUILD_STATIC_RUNTIME)
   add_custom_command(TARGET tvm_runtime POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --yellow --bold ${NOTICE})
 else()
-  add_library(tvm_runtime SHARED $<TARGET_OBJECTS:tvm_runtime_objs> $<TARGET_OBJECTS:tvm_libinfo_objs>)
+  add_library(tvm_runtime SHARED $<TARGET_OBJECTS:tvm_runtime_objs>)
   set_property(TARGET tvm_runtime APPEND PROPERTY LINK_OPTIONS "${TVM_NO_UNDEFINED_SYMBOLS}")
 endif()
 set_property(TARGET tvm_runtime APPEND PROPERTY LINK_OPTIONS "${TVM_VISIBILITY_FLAG}")
@@ -522,8 +493,6 @@ if(USE_MICRO)
   # Unix Makefiles generator, need to add these explicit target-level dependency)
   add_dependencies(tvm host_standalone_crt)
   add_dependencies(tvm_runtime host_standalone_crt)
-  add_dependencies(tvm_runtime zephyr)
-  add_dependencies(tvm_runtime arduino)
 endif()
 
 if(USE_CPP_RPC)
@@ -582,15 +551,15 @@ target_link_libraries(tvm_runtime PRIVATE ${TVM_RUNTIME_LINKER_LIBS})
 include(cmake/tvm_cmake/modules/ClangFlags.cmake)
 
 # Related headers
-target_include_directories(
-  tvm
-  PUBLIC "3rdparty/tvm/topi/include")
-target_include_directories(
-  tvm_objs
-  PUBLIC "3rdparty/tvm/topi/include")
-target_include_directories(
-  tvm_libinfo_objs
-  PUBLIC "3rdparty/tvm/topi/include")
+# target_include_directories(
+#   tvm
+#   PUBLIC "3rdparty/tvm/topi/include")
+# target_include_directories(
+#   tvm_objs
+#   PUBLIC "3rdparty/tvm/topi/include")
+# target_include_directories(
+#   tvm_libinfo_objs
+#   PUBLIC "3rdparty/tvm/topi/include")
 set(CRC16_INCLUDE_PATH "3rdparty/tvm/3rdparty/libcrc/include")
 target_include_directorieS(
   tvm_objs
@@ -620,15 +589,22 @@ endif()
 
 # Create the `cpptest` target if we can find GTest.  If not, we create dummy
 # targets that give the user an informative error message.
-if(GTEST_FOUND)
-  tvm_file_glob(GLOB_RECURSE TEST_SRCS 3rdparty/tvm/tests/cpp/*.cc)
+if(GTEST_INCLUDE_DIR AND GTEST_LIB)
+  file(GLOB TEST_SRCS 3rdparty/tvm/tests/cpp/*.cc)
   add_executable(cpptest ${TEST_SRCS})
-  # include runtime files for unit testing
-  target_include_directories(cpptest PUBLIC "3rdparty/tvm/src/runtime")
-  target_link_libraries(cpptest PRIVATE ${TVM_TEST_LIBRARY_NAME} GTest::GTest GTest::Main pthread dl)
+  target_include_directories(cpptest SYSTEM PUBLIC ${GTEST_INCLUDE_DIR})
+  target_link_libraries(cpptest PRIVATE ${TVM_TEST_LIBRARY_NAME} ${GTEST_LIB} gtest_main pthread dl)
   set_target_properties(cpptest PROPERTIES EXCLUDE_FROM_ALL 1)
   set_target_properties(cpptest PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD 1)
   gtest_discover_tests(cpptest)
+elseif(NOT GTEST_INCLUDE_DIR)
+  add_custom_target(cpptest
+      COMMAND echo "Missing Google Test headers in include path"
+      COMMAND exit 1)
+elseif(NOT GTEST_LIB)
+  add_custom_target(cpptest
+      COMMAND echo "Missing Google Test library"
+      COMMAND exit 1)
 endif()
 
 # Custom targets
@@ -724,7 +700,7 @@ if(USE_CCACHE) # True for AUTO, ON, /path/to/ccache
       message(STATUS "Found the path to ccache, enabling ccache")
       set(PATH_TO_CCACHE ccache)
     else()
-      message(FATAL_ERROR "Cannot find ccache. Set USE_CCACHE mode to AUTO or OFF to build without ccache. USE_CCACHE=" "${USE_CCACHE}")
+      message(FATAL_ERROR "Cannot find ccache. Set USE_CCACHE mode to AUTO or OFF to build without ccache. USE_CCACHE=" "${USE_CCACHE")
     endif(CCACHE_FOUND)
   else() # /path/to/ccache
     set(PATH_TO_CCACHE USE_CCACHE)
@@ -733,7 +709,3 @@ if(USE_CCACHE) # True for AUTO, ON, /path/to/ccache
   # Set the flag for ccache
   set(CXX_COMPILER_LAUNCHER PATH_TO_CCACHE)
 endif(USE_CCACHE)
-
-if(${SUMMARIZE})
-  print_summary()
-endif()
