@@ -222,10 +222,10 @@ def conv_relu_conv_relu(
         name="conv2_frag",
     )
 
-    conv2_shared = tvm.te.compute(
+    conv2_global = tvm.te.compute(
         [N, K2O, PQ2O, PQ2I, K2I],
         lambda n, ko, pqo, pqi, ki: conv2_frag[n, ko, pqo, pqi, ki],
-        name="conv2_shared",
+        name="conv2_global",
     )
 
     # wmma end
@@ -234,8 +234,8 @@ def conv_relu_conv_relu(
     relu2 = tvm.te.compute(
         [N, K2O, PQ2O, PQ2I, K2I],
         lambda n, ko, pqo, pqi, ki: tvm.tir.if_then_else(
-            conv2_shared[n, ko, pqo, pqi, ki] > tvm.tir.const(0, acc_dtype),
-            conv2_shared[n, ko, pqo, pqi, ki].astype(in_dtype),
+            conv2_global[n, ko, pqo, pqi, ki] > tvm.tir.const(0, acc_dtype),
+            conv2_global[n, ko, pqo, pqi, ki].astype(in_dtype),
             tvm.tir.const(0, in_dtype),
         ),
         name="relu2",
@@ -260,7 +260,7 @@ def conv_relu_conv_relu(
         )
     # global scope end
 
-    return [Img, Weight1, Weight2], [relu2_refact]
+    return (Img, Weight1, Weight2), (conv2_global, relu2_refact)
 
 
 def tile_axes(sch, op, axis, factors):
@@ -501,12 +501,12 @@ def schedule_conv_relu_conv_relu(
         acc_dtype=acc_dtype,
     )
     Img, Weight1, Weight2 = ins
-    (relu2_refact,) = outs
+    conv2_global, relu2_refact = outs
 
     sch = tvm.te.create_schedule(relu2_refact.op)
     relu2 = relu2_refact.op.input_tensors[0]
-    conv2_shared = relu2.op.input_tensors[0]
-    conv2_frag = conv2_shared.op.input_tensors[0]
+    # conv2_global = relu2.op.input_tensors[0]
+    conv2_frag = conv2_global.op.input_tensors[0]
     pad2_fact_frag = conv2_frag.op.input_tensors[0]
     Weight2_fact_frag = conv2_frag.op.input_tensors[1]
     pad2_fact = pad2_fact_frag.op.input_tensors[0]
@@ -543,47 +543,40 @@ def schedule_conv_relu_conv_relu(
     # sch[pad2_fact_frag].set_scope("local")
     # sch[Weight2_fact_frag].set_scope("local")
     # sch[conv2_frag].set_scope("local")
-    sch[conv2_shared].set_scope("shared")
+    # sch[conv2_global].set_scope("shared")
     sch[relu2].compute_inline()
 
     WARP_SIZE = 32
     VEC_LEN = 4
 
-    PQ2_factors = [-1, 1, 1, MI]
-    K2_factors = [-1, 1, 1, NI]
+    PQ2_factors = [-1, 2, 1]
+    K2_factors = [-1, 2, 1]
     TY_factor = PQ2_factors[1] * K2_factors[1]
     RK1_factors = [-1, 1, 1]
 
-    PQ1_factors = [-1, PQ2_factors[1], 1, MI]
-    K1_factors = [-1, K2_factors[2], 1, NI]
-    RC_factors = [-1, 1, 2]
+    PQ1_factors = [-1, PQ2_factors[1], 1]
+    K1_factors = [-1, K2_factors[2], 1]
+    RC_factors = [-1, 1, 1]
 
     n, k, p, q = sch[relu2_refact].op.axis
-    pq = sch[relu2_refact].fuse(p, q)
-    pq1, pq2, pq3, pqi = tile_axes(sch, relu2_refact, pq, PQ2_factors)
-    k1, k2, k3, ki = tile_axes(sch, relu2_refact, k, K2_factors)
-    sch[relu2_refact].reorder(n, k1, pq1, k2, pq2, k3, pq3, pqi, ki)
-    bx = sch[relu2_refact].fuse(n, k1, pq1)
-    ty = sch[relu2_refact].fuse(k2, pq2)
-    tx = sch[relu2_refact].fuse(pqi, ki)
-    _, tx = sch[relu2_refact].split(tx, factor=WARP_SIZE)
+    fused = sch[relu2_refact].fuse(n, k, p, q)
+    bx, tx = tile_axes(sch, relu2_refact, fused, [-1, WARP_SIZE])
     sch[relu2_refact].bind(bx, tvm.te.thread_axis("blockIdx.x"))
-    sch[relu2_refact].bind(ty, tvm.te.thread_axis("threadIdx.y"))
     sch[relu2_refact].bind(tx, tvm.te.thread_axis("threadIdx.x"))
-    conv2_shared_attach_pos = bx
 
-    sch[conv2_shared].compute_at(sch[relu2_refact], conv2_shared_attach_pos)
-    n, ko, pqo, pqi, ki = sch[conv2_shared].op.axis
-    pq1, pq2, pq3 = tile_axes(sch, conv2_shared, pqo, PQ2_factors[:-1])
-    k1, k2, k3 = tile_axes(sch, conv2_shared, ko, K2_factors[:-1])
-    sch[conv2_shared].reorder(n, k1, pq1, k2, pq2, k3, pq3, pqi, ki)
-    ty = sch[conv2_shared].fuse(k2, pq2)
-    sch[conv2_shared].bind(ty, tvm.te.thread_axis("threadIdx.y"))
+    n, ko, pqo, pqi, ki = sch[conv2_global].op.axis
+    pq1, pq2, pq3 = tile_axes(sch, conv2_global, pqo, PQ2_factors)
+    k1, k2, k3 = tile_axes(sch, conv2_global, ko, K2_factors)
+    sch[conv2_global].reorder(n, k1, pq1, k2, pq2, k3, pq3, pqi, ki)
+    bx = sch[conv2_global].fuse(n, k1, pq1)
+    ty = sch[conv2_global].fuse(k2, pq2)
+    sch[conv2_global].bind(bx, tvm.te.thread_axis("blockIdx.x"))
+    sch[conv2_global].bind(ty, tvm.te.thread_axis("threadIdx.y"))
     # tensorize qi
-    sch[conv2_shared].tensorize(pqi, intrin_wmma_store_matrix("shared"))
+    sch[conv2_global].tensorize(pqi, intrin_wmma_store_matrix("global"))
     conv2_frag_attach_pos = ty
 
-    sch[conv2_frag].compute_at(sch[conv2_shared], conv2_frag_attach_pos)
+    sch[conv2_frag].compute_at(sch[conv2_global], conv2_frag_attach_pos)
     n, ko, pqo, pqi, ki = sch[conv2_frag].op.axis
     rr, rs, rco, rci = sch[conv2_frag].op.reduce_axis
     rco1, rco2, rco3 = tile_axes(sch, conv2_frag, rco, RK1_factors)
@@ -592,8 +585,8 @@ def schedule_conv_relu_conv_relu(
     sch[conv2_frag].tensorize(pqi, intrin_wmma_gemm())
     pad2_fact_frag_attach_pos = rco2
     weight2_fact_frag_attach_pos = rco2
-    pad2_fact_attach_pos = rco1
-    weight2_fact_attach_pos = rco1
+    pad2_fact_attach_pos = rs
+    weight2_fact_attach_pos = rs
     conv1_shared_attach_pos = rco1
 
     sch[pad2_fact_frag].compute_at(sch[conv2_frag], pad2_fact_frag_attach_pos)
@@ -615,6 +608,9 @@ def schedule_conv_relu_conv_relu(
     sch[pad2_fact].bind(ty, tvm.te.thread_axis("threadIdx.y"))
     sch[pad2_fact].bind(tx, tvm.te.thread_axis("threadIdx.x"))
     sch[pad2_fact].vectorize(vec)
+    sx = sch.normalize()
+    bounds = tvm.te.schedule.InferBound(sx)
+    print(f"pad2_fact: [{bounds[n]}, {bounds[co]}, {bounds[r]}, {bounds[s]}, {bounds[pqo]}, {bounds[pqi]}, {bounds[ci]}]")
 
     sch[Weight2_fact].compute_at(sch[conv2_frag], weight2_fact_attach_pos)
     ko, co, r, s, ci, ki = sch[Weight2_fact].op.axis
@@ -625,11 +621,14 @@ def schedule_conv_relu_conv_relu(
     sch[Weight2_fact].bind(ty, tvm.te.thread_axis("threadIdx.y"))
     sch[Weight2_fact].bind(tx, tvm.te.thread_axis("threadIdx.x"))
     sch[Weight2_fact].vectorize(vec)
+    sx = sch.normalize()
+    bounds = tvm.te.schedule.InferBound(sx)
+    print(f"Weight2_fact: [{bounds[ko]}, {bounds[co]}, {bounds[r]}, {bounds[s]}, {bounds[ci]}, {bounds[ki]}]")
 
     sch[conv1_shared].compute_at(sch[conv2_frag], conv1_shared_attach_pos)
     n, ko, pqo, pqi, ki = sch[conv1_shared].op.axis
-    pq1, pq2, pq3 = tile_axes(sch, conv1_shared, pqo, PQ1_factors[:-1])
-    k1, k2, k3 = tile_axes(sch, conv1_shared, ko, K1_factors[:-1])
+    pq1, pq2, pq3 = tile_axes(sch, conv1_shared, pqo, PQ1_factors)
+    k1, k2, k3 = tile_axes(sch, conv1_shared, ko, K1_factors)
     sch[conv1_shared].reorder(n, k1, pq1, k2, pq2, k3, pq3, pqi, ki)
     ty = sch[conv1_shared].fuse(k2, pq2)
     sch[conv1_shared].bind(ty, tvm.te.thread_axis("threadIdx.y"))
@@ -646,7 +645,7 @@ def schedule_conv_relu_conv_relu(
     sch[conv1_frag].tensorize(pqi, intrin_wmma_gemm())
     pad1_fact_frag_attach_pos = rco2
     weight1_fact_frag_attach_pos = rco2
-    pad1_fact_attach_pos = rco1
+    pad1_fact_attach_pos = rs
     weight1_fact_attach_pos = rco1
 
     sch[pad1_fact_frag].compute_at(sch[conv1_frag], pad1_fact_frag_attach_pos)
@@ -668,6 +667,9 @@ def schedule_conv_relu_conv_relu(
     sch[pad1_fact].bind(ty, tvm.te.thread_axis("threadIdx.y"))
     sch[pad1_fact].bind(tx, tvm.te.thread_axis("threadIdx.x"))
     sch[pad1_fact].vectorize(vec)
+    sx = sch.normalize()
+    bounds = tvm.te.schedule.InferBound(sx)
+    print(f"pad1_fact: [{bounds[n]}, {bounds[co]}, {bounds[r]}, {bounds[s]}, {bounds[pqo]}, {bounds[pqi]}, {bounds[ci]}]")
 
     sch[Weight1_fact].compute_at(sch[conv1_frag], weight1_fact_attach_pos)
     ko, co, r, s, ci, ki = sch[Weight1_fact].op.axis
@@ -678,6 +680,9 @@ def schedule_conv_relu_conv_relu(
     sch[Weight1_fact].bind(ty, tvm.te.thread_axis("threadIdx.y"))
     sch[Weight1_fact].bind(tx, tvm.te.thread_axis("threadIdx.x"))
     sch[Weight1_fact].vectorize(vec)
+    sx = sch.normalize()
+    bounds = tvm.te.schedule.InferBound(sx)
+    print(f"Weight1_fact: [{bounds[ko]}, {bounds[co]}, {bounds[r]}, {bounds[s]}, {bounds[ci]}, {bounds[ki]}]")
 
     print(tvm.lower(sch, [Img, Weight1, Weight2, relu2_refact], simple_mode=True))
     func = tvm.build(sch, [Img, Weight1, Weight2, relu2_refact], "cuda")
@@ -831,7 +836,63 @@ def test_llvm():
     testing.assert_allclose(
         output.cpu().numpy(), outputs_tvm[0].asnumpy(), rtol=0.1, atol=0.1
     )
+    
+    
+def test_cuda_perf():
+    ins, outs, func = schedule_conv_relu_conv_relu(
+        1,
+        256,
+        32,
+        16,
+        512,
+        3,
+        3,
+        512,
+        3,
+        3,
+        stride1=1,
+        stride2=1,
+        padding1=1,
+        padding2=1,
+        in_dtype=in_dtype,
+        acc_dtype=acc_dtype,
+    )
+
+    inputs_np = [
+        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(in_dtype)
+        for y in ins
+    ]
+
+    outputs_np = [
+        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(in_dtype)
+        for y in outs
+    ]
+
+    ctx = tvm.cuda()
+    inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
+    outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
+    func(*inputs_tvm, *outputs_tvm)
+    
+    evaluator = func.time_evaluator(func.entry_name, ctx, number=10, min_repeat_ms=150)
+    cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
+
+    inputs_torch_list = [[torch.tensor(x).cuda() for x in inputs_np] for i in range(100)]
+    perf_list = []
+    for inputs_torch in inputs_torch_list:
+        torch.cuda.synchronize()
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        output = torch_conv_relu_conv_relu(
+            *inputs_torch, stride1=1, stride2=1, padding1=1, padding2=1
+        )
+        end.record()
+        torch.cuda.synchronize()
+        total = start.elapsed_time(end)
+        perf_list.append(total)
+    torch_cost = np.mean(perf_list)
+    print(f"Our time: {cost} ms, Torch time: {torch_cost} ms.")
 
 
 if __name__ == "__main__":
-    test_cuda()
+    test_cuda_perf()
