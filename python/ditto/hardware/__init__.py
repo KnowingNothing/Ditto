@@ -7,6 +7,7 @@ from .devices.nvgpu import (
     query_gpu as query_nvgpu,
     query_gpu_param as query_nvgpu_param
 )
+from .hw_param import HardwareParam
 
 
 QUERY_FUNCS = {

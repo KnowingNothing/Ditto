@@ -104,7 +104,7 @@ source <vir-name>
 
 Then, install python dependencies of TVM after activating your virtual environment.
 ```sh
-(<vir-name>) pip install numpy decorator attrs tornado psutil xgboost cloudpickle
+(<vir-name>) pip install numpy decorator attrs tornado psutil xgboost cloudpickle synr
 ```
 
 At last, setup the environments.

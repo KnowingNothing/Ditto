@@ -100,7 +100,7 @@ def test_space_item():
     iter_graph.setSecondOpTiling(second_op_factors)
     iter_graph.permute(order)
     iter_graph.fuseLoops(attach_pos)
-    metric = at.evaluate_iter_graph(iter_graph, hw.V100)
+    metric = at.evaluate_iter_graph(iter_graph, hw.query_hw_param("gpu.cuda.V100"))
 
     end = time.time()
     print(f"Use time {end - beg}s to finish.")
@@ -127,7 +127,7 @@ def test_space_iter_graph():
     
     beg = time.time()
     for iter_graph in fuse_tile_space.all_iter_graphs:
-        metric = at.evaluate_iter_graph(iter_graph, hw.V100)
+        metric = at.evaluate_iter_graph(iter_graph, hw.query_hw_param("gpu.cuda.V100"))
     end = time.time()
     print(f"Use time {end - beg}s to generate all iter_graphs.")
     
