@@ -1,6 +1,7 @@
 import tvm
 from tvm.script import tir as T
 from tvm.ir.module import IRModule
+import numpy as np
 
 
 @T.prim_func
@@ -100,3 +101,19 @@ def gemm_kernel(a: T.handle, b: T.handle, c: T.handle):
 if __name__ == "__main__":
     sch = tvm.tir.Schedule(gemm_kernel)
     print(sch.mod.script())
+    cuda_mod = tvm.build(sch.mod, target="cuda")
+    
+    A_np = np.random.uniform(-1, 1, [1024, 1024]).astype("float16")
+    B_np = np.random.uniform(-1, 1, [1024, 1024]).astype("float16")
+    C_np = np.random.uniform(-1, 1, [1024, 1024]).astype("float32")
+    
+    ctx = tvm.cuda()
+    A_tvm = tvm.nd.array(A_np, ctx)
+    B_tvm = tvm.nd.array(B_np, ctx)
+    C_tvm = tvm.nd.array(C_np, ctx)
+
+    cuda_mod(A_tvm, B_tvm, C_tvm)
+    
+    golden = np.matmul(A_np, B_np)
+    from tvm import testing
+    testing.assert_allclose(golden, C_tvm.asnumpy())
