@@ -36,9 +36,9 @@ def gemm_kernel_16(a: T.handle, b: T.handle, c: T.handle):
     T.evaluate(
         T.call_extern(
             "mma_m8n8k4_row_row_fp16fp16fp32",
-            MultiA, #.access_ptr("r"),
-            MultiB, #.access_ptr("r"),
-            Accum, #.access_ptr("rw"),
+            MultiA,  # .access_ptr("r"),
+            MultiB,  # .access_ptr("r"),
+            Accum,  # .access_ptr("rw"),
             dtype="float32",
         )
     )
@@ -61,11 +61,12 @@ def gemm_kernel_16(a: T.handle, b: T.handle, c: T.handle):
             + ((mma_accum_c_id // 2 % 2) * 2)
             + 4 * ((tx % 32) // 16)
             + ((tx % 32) % 16 // 4) % 2 * 8,
-            (tx % 32) % 4 // 2 * 2 + (tx % 32) % 16 // 8 * 4 + mma_accum_c_id % 2
+            (tx % 32) % 4 // 2 * 2 + (tx %
+                                      32) % 16 // 8 * 4 + mma_accum_c_id % 2
             + mma_accum_c_id // 4 * 8,
         ] = T.load("float32", Accum, mma_accum_c_id)
-        
-        
+
+
 @T.prim_func
 def gemm_kernel_16_vec(a: T.handle, b: T.handle, c: T.handle):
     T.func_attr({"global_symbol": "default_function", "tir.noalias": True})
@@ -98,9 +99,9 @@ def gemm_kernel_16_vec(a: T.handle, b: T.handle, c: T.handle):
     T.evaluate(
         T.call_extern(
             "mma_m8n8k4_row_row_fp16fp16fp32",
-            MultiA, #.access_ptr("r"),
-            MultiB, #.access_ptr("r"),
-            Accum, #.access_ptr("rw"),
+            MultiA,  # .access_ptr("r"),
+            MultiB,  # .access_ptr("r"),
+            Accum,  # .access_ptr("rw"),
             dtype="float32",
         )
     )
@@ -110,7 +111,8 @@ def gemm_kernel_16_vec(a: T.handle, b: T.handle, c: T.handle):
             + ((mma_accum_c_id // 2 % 2) * 2)
             + 4 * ((tx % 32) // 16)
             + ((tx % 32) % 16 // 4) % 2 * 8,
-            (tx % 32) % 4 // 2 * 2 + (tx % 32) % 16 // 8 * 4 + mma_accum_c_id % 2
+            (tx % 32) % 4 // 2 * 2 + (tx %
+                                      32) % 16 // 8 * 4 + mma_accum_c_id % 2
             + mma_accum_c_id // 4 * 8,
         ] = T.load("float32", Accum, mma_accum_c_id)
     for mma_accum_c_id in T.vectorized(4):
@@ -119,7 +121,8 @@ def gemm_kernel_16_vec(a: T.handle, b: T.handle, c: T.handle):
             + (((mma_accum_c_id + 4) // 2 % 2) * 2)
             + 4 * ((tx % 32) // 16)
             + ((tx % 32) % 16 // 4) % 2 * 8,
-            (tx % 32) % 4 // 2 * 2 + (tx % 32) % 16 // 8 * 4 + (mma_accum_c_id + 4) % 2
+            (tx % 32) % 4 // 2 * 2 + (tx %
+                                      32) % 16 // 8 * 4 + (mma_accum_c_id + 4) % 2
             + (mma_accum_c_id + 4) // 4 * 8,
         ] = T.load("float32", Accum, mma_accum_c_id + 4)
 
@@ -129,7 +132,7 @@ if __name__ == "__main__":
     print(sch.mod.script())
     cuda_mod = tvm.build(sch.mod, target="cuda")
     print(cuda_mod.imported_modules[0].get_source())
-    
+
     A_np = np.random.uniform(-1, 1, [16, 4]).astype("float16")
     B_np = np.random.uniform(-1, 1, [4, 16]).astype("float16")
     C_np = np.random.uniform(-1, 1, [16, 16]).astype("float32")
@@ -139,21 +142,21 @@ if __name__ == "__main__":
     # for i in range(16):
     #     for j in range(4):
     #         B_np[j, i] = j * 16 + i
-    
+
     ctx = tvm.cuda()
     A_tvm = tvm.nd.array(A_np, ctx)
     B_tvm = tvm.nd.array(B_np, ctx)
     C_tvm = tvm.nd.array(C_np, ctx)
 
     cuda_mod(A_tvm, B_tvm, C_tvm)
-    
+
     golden = np.matmul(A_np.astype("float32"), B_np.astype("float32"))
-    
+
     # for i in range(16):
     #     for j in range(16):
     #         print(golden[i, j], ",", end="")
     #     print()
-    
+
     # print()
     C_numpy = C_tvm.asnumpy()
     # for i in range(16):
