@@ -39,8 +39,12 @@ def conv_relu_conv_relu(
     Q1 = (W + 2 * padding1 - S1) // stride1 + 1
     P2 = (P1 + 2 * padding2 - R2) // stride2 + 1
     Q2 = (Q1 + 2 * padding2 - S2) // stride2 + 1
-    assert Q1 >= MI
-    assert Q2 >= MI
+    assert Q1 % MI == 0
+    assert Q2 % MI == 0
+    assert C % KI == 0
+    assert K1 % NI == 0
+    assert K1 % KI == 0
+    assert K2 % NI == 0
 
     CI = KI
     CO = ceil(C, KI)
@@ -531,15 +535,15 @@ def schedule_conv_relu_conv_relu(
     VEC_LEN = 4
 
     P2_factors = [-1, 1, 1]
-    Q2_factors = [-1, 1, 1, MI]
+    Q2_factors = [-1, 4, 1, MI]
     K2_factors = [-1, 1, 1, NI]
     TY_factor = P2_factors[1] * Q2_factors[1] * K2_factors[1]
-    RK1_factors = [-1, 1, 1]
+    RK1_factors = [-1, 2, 1]
 
     P1_factors = [-1, P2_factors[1], 1]
     Q1_factors = [-1, Q2_factors[1], 1, MI]
     K1_factors = [-1, K2_factors[2], 1, NI]
-    RC_factors = [-1, 1, 2]
+    RC_factors = [-1, 2, 2]
 
     n, k, p, q = sch[relu2_refact].op.axis
     q1, q2, q3, qi = tile_axes(sch, relu2_refact, q, Q2_factors)
@@ -729,7 +733,7 @@ def schedule_conv_relu_conv_relu_cpu(
 
 def test_cuda():
     ins, outs, func = schedule_conv_relu_conv_relu(
-        1,
+        16,
         256,
         32,
         16,
@@ -818,5 +822,61 @@ def test_llvm():
     )
 
 
+def test_cuda_perf():
+    ins, outs, func = schedule_conv_relu_conv_relu(
+        16,
+        256,
+        32,
+        16,
+        512,
+        3,
+        3,
+        512,
+        3,
+        3,
+        stride1=1,
+        stride2=1,
+        padding1=1,
+        padding2=1,
+        in_dtype=in_dtype,
+        acc_dtype=acc_dtype,
+    )
+
+    inputs_np = [
+        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(in_dtype)
+        for y in ins
+    ]
+
+    outputs_np = [
+        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(in_dtype)
+        for y in outs
+    ]
+
+    ctx = tvm.cuda()
+    inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
+    outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
+    func(*inputs_tvm, *outputs_tvm)
+    
+    evaluator = func.time_evaluator(func.entry_name, ctx, number=10, min_repeat_ms=150)
+    cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
+
+    inputs_torch_list = [[torch.tensor(x).cuda() for x in inputs_np] for i in range(100)]
+    perf_list = []
+    for inputs_torch in inputs_torch_list:
+        torch.cuda.synchronize()
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        output = torch_conv_relu_conv_relu(
+            *inputs_torch, stride1=1, stride2=1, padding1=1, padding2=1
+        )
+        end.record()
+        torch.cuda.synchronize()
+        total = start.elapsed_time(end)
+        perf_list.append(total)
+    torch_cost = np.mean(perf_list)
+    print(f"Our time: {cost} ms, Torch time: {torch_cost} ms.")
+    
+
 if __name__ == "__main__":
-    test_cuda()
+    test_cuda_perf()
