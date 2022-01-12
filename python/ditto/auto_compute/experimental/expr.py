@@ -174,7 +174,6 @@ class MultiDimIndexExpr:
 
     # replace an iterator with an affine expr
     def replace_iter(self, iter: Iter, idx_expr: IndexExpr):
-        assert not self.morphable
         return MultiDimIndexExpr([
             expr.replace_iter(iter, idx_expr)
             for expr in self.idx_exprs
@@ -209,7 +208,7 @@ class Tensor:
         self.init_shape = init_shape
         self.shape = init_shape
         self.morphable = morphable
-        self.accesses = list()  # TODO: find a better way to manage related ``TensorAccess``es
+        self.accesses: list[TensorAccess] = list()  # TODO: find a better way to manage related ``TensorAccess``es
 
     @property
     def ndim(self):
@@ -226,6 +225,15 @@ class Tensor:
     @property
     def is_weight(self):
         return self.morphable and len(self.accesses) == 1
+
+    @property
+    def producer(self):
+        for acc in self.accesses:
+            if acc.is_output: 
+                if acc.compute_expr is None:
+                    raise RuntimeError
+                return acc.compute_expr.stage
+        raise RuntimeError
 
     def __repr__(self):
         return self.name
@@ -285,6 +293,12 @@ class TensorAccess:
     def is_weight(self):
         return self.tensor.is_weight
 
+    @property
+    def is_output(self):
+        if self.compute_expr is None:
+            raise RuntimeError
+        return self is self.compute_expr.output
+
     def __repr__(self) -> str:
         return str(self.tensor) + "[" + str(self.md_idx_expr) + "]"
 
@@ -298,12 +312,8 @@ class TensorAccess:
 class ComputeExpr:
     """
     einsum style compute expression
-    A[i, j] = B[i, k] * C[k, i]
     """
     def __init__(self, output: TensorAccess, operands: "list[TensorAccess]"):
-        # TODO: support compute expr with more operands
-        assert len(operands) == 2
-        
         self.output = output
         self.operands = operands
         
@@ -334,11 +344,12 @@ class ComputeExpr:
 
 
 class Stage: 
-    def __init__(self, iters: "list[Iter]", compute_expr: ComputeExpr):
+    def __init__(self, iters: "list[Iter]", compute_expr: ComputeExpr, act_key: str = None):
         self.iters = iters
         self.compute_expr = compute_expr
         assert self.compute_expr.iters == set(self.iters)
         self.compute_expr.stage = self
+        self.act_key = act_key
 
     @property
     def tensors(self):
@@ -346,3 +357,7 @@ class Stage:
 
     def copy(self, tensor_map):
         return Stage(self.iters, self.compute_expr.copy(tensor_map))
+
+    def set_activation(self, act_key):
+        assert self.act_key is None  # activation should not be modified
+        self.act_key = act_key

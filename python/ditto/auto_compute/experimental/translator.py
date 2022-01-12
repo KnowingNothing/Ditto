@@ -305,6 +305,7 @@ class StateEinsum(nn.Module):
                 
                 n_producers, n_consumers = 0, 0
                 for acc in tensor.accesses:
+                    assert acc.compute_expr is not None
                     if acc.compute_expr.output.tensor is tensor:
                         n_producers += 1
                     else: 
