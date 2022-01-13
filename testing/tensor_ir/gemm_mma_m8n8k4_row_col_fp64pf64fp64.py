@@ -25,8 +25,7 @@ def gemm_kernel(a: T.handle, b: T.handle, c: T.handle):
     MultiA[0] = A[(tx % 32) // 4, (tx % 32) % 4]
     MultiB[0] = B[(tx % 32) // 4, (tx % 32) % 4]
     T.evaluate(
-        T.call_extern(
-            "ptx_mma",
+        T.ptx_mma(
             "m8n8k4",
             "row",
             "col",

@@ -24,17 +24,16 @@ def gemm_kernel(a: T.handle, b: T.handle, c: T.handle):
 
     for mma_multi_a_col in T.vectorized(4):
         MultiA[mma_multi_a_col] = A[
-            (tx%32)//4 + mma_multi_a_col//2 * 8,
-            (tx%32)%4 * 2 + mma_multi_a_col%2
+            (tx % 32) // 4 + mma_multi_a_col // 2 * 8,
+            (tx % 32) % 4 * 2 + mma_multi_a_col % 2,
         ]
     for mma_multi_b_col in T.vectorized(4):
         MultiB[mma_multi_b_col] = B[
-            (tx%32)//4 + mma_multi_b_col//2 * 8,
-            (tx%32)%4 * 2 + mma_multi_b_col % 2
+            (tx % 32) // 4 + mma_multi_b_col // 2 * 8,
+            (tx % 32) % 4 * 2 + mma_multi_b_col % 2,
         ]
     T.evaluate(
-        T.call_extern(
-            "ptx_mma",
+        T.ptx_mma(
             "m16n8k8",
             "row",
             "col",
@@ -53,8 +52,8 @@ def gemm_kernel(a: T.handle, b: T.handle, c: T.handle):
     )
     for mma_accum_c_id in range(4):
         C[
-            (tx%32)//4 + mma_accum_c_id // 2 * 8,
-            (tx%32)%4 * 2 + mma_accum_c_id % 2
+            (tx % 32) // 4 + mma_accum_c_id // 2 * 8,
+            (tx % 32) % 4 * 2 + mma_accum_c_id % 2,
         ] = T.load("float32", Accum, mma_accum_c_id)
 
 

@@ -27,8 +27,7 @@ def gemm_kernel(a: T.handle, b: T.handle, c: T.handle):
     for mma_multi_b_col in T.vectorized(8):
         MultiB[mma_multi_b_col] = B[(tx % 32) // 4, mma_multi_b_col + (tx % 32) % 4 * 8]
     T.evaluate(
-        T.call_extern(
-            "ptx_mma",
+        T.ptx_mma(
             "m8n8k32",
             "row",
             "col",

@@ -33,8 +33,7 @@ def gemm_kernel_16(a: T.handle, b: T.handle, c: T.handle):
             mma_multi_b_col + (4 * ((tx % 32) // 8)),
         ]
     T.evaluate(
-        T.call_extern(
-            "ptx_mma",
+        T.ptx_mma(
             "m8n8k4",
             "row",
             "row",
@@ -188,8 +187,7 @@ def gemm_kernel_1024(a: T.handle, b: T.handle, c: T.handle):
             for wp_row in range(4):
                 for wp_col in range(2):
                     T.evaluate(
-                        T.call_extern(
-                            "ptx_mma",
+                        T.ptx_mma(
                             "m8n8k4",
                             "row",
                             "row",
@@ -227,7 +225,7 @@ def gemm_kernel_1024(a: T.handle, b: T.handle, c: T.handle):
                 ] = T.load("float32", Accum, wp_row * 16 + wp_col * 8 + mma_accum_c_id)
 
 
-if __name__ == "__main__":
+def test_correctness():
     sch = tvm.tir.Schedule(gemm_kernel_1024)
     print(sch.mod.script())
     cuda_mod = tvm.build(sch.mod, target="cuda")
@@ -266,3 +264,33 @@ if __name__ == "__main__":
     from tvm import testing
 
     testing.assert_allclose(golden, C_numpy, atol=1e-3, rtol=1e-3)
+
+
+def test_perf():
+    sch = tvm.tir.Schedule(gemm_kernel_1024)
+    print(sch.mod.script())
+    cuda_mod = tvm.build(sch.mod, target="cuda")
+    print(cuda_mod.imported_modules[0].get_source())
+
+    A_np = np.random.uniform(-1, 1, [1024, 1024]).astype("float16")
+    B_np = np.random.uniform(-1, 1, [1024, 1024]).astype("float16")
+    C_np = np.random.uniform(-1, 1, [1024, 1024]).astype("float32")
+    # for i in range(16):
+    #     for j in range(4):
+    #         A_np[i, j] = i * 4 + j
+    # for i in range(16):
+    #     for j in range(4):
+    #         B_np[j, i] = j * 16 + i
+
+    ctx = tvm.cuda()
+    A_tvm = tvm.nd.array(A_np, ctx)
+    B_tvm = tvm.nd.array(B_np, ctx)
+    C_tvm = tvm.nd.array(C_np, ctx)
+
+    evaluator = cuda_mod.time_evaluator(cuda_mod.entry_name, ctx, min_repeat_ms=600)
+    cost = evaluator(A_tvm, B_tvm, C_tvm).mean * 1e3
+    print(f"Time cost is {cost} ms.")
+
+
+if __name__ == "__main__":
+    test_perf()

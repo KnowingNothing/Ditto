@@ -33,8 +33,7 @@ def gemm_kernel(a: T.handle, b: T.handle, c: T.handle):
             (tx % 32) % 4 * 32 + mma_multi_b_col % 32 + mma_multi_b_col // 32 * 128,
         ]
     T.evaluate(
-        T.call_extern(
-            "ptx_mma",
+        T.ptx_mma(
             "m16n8k256",
             "row",
             "col",
