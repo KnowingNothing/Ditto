@@ -1,9 +1,19 @@
+from typing import Callable
+from enum import Enum, auto
+
+import torch
+import torch.nn as nn
+
 from expr import *
 from state import *
+from translator import StateEinsum
+from utils import record_io_shapes, record_mod_qualnames, record_mod_parent, replace_module
 
 
+# TODO: generate subgraph from the original module automatically
 # TODO: support other basic operators such as add and concat
-class Subgraph:
+# Utility class for defining init state
+class InitStateBuilder:
     def __init__(self):
         self.tensors: list[Tensor] = list()
         self.weights: list[Tensor] = list()
@@ -62,7 +72,7 @@ class Subgraph:
             iters.append(new_iter)
         return iters
 
-    """ user interface """
+    """ user interface for construct initial subgraph """
     
     def new_input(self, shape: list, name):
         t = self._new_tensor(name, shape, morphable=False)
@@ -167,5 +177,108 @@ class Subgraph:
         return inputs
 
 
-class Graph:
-    pass
+class MorphBlock(nn.Module):
+    
+    class ForwardMode(Enum):
+        ORIGINAL = auto()
+        GENERATED = auto()
+        UNDEFINED = auto()
+
+    def __init__(self, orig_mod: nn.Module, init_stt_bldr: InitStateBuilder):
+        super().__init__()
+        self.orig_mod = orig_mod  # original PyTorch module that we replace
+        self.stt_bldr = init_stt_bldr  # initial state definition
+        self.gen_mod: "Optional[StateEinsum]" = None  # generated Pytorch module
+        self.fwd_mode = MorphBlock.ForwardMode.UNDEFINED 
+
+    @property
+    def init_state(self):
+        return self.stt_bldr.state
+
+    def set_forward_mode(self, mode: ForwardMode):
+        self.mode = mode
+    
+    def set_generated_mod(self, gen_mod: StateEinsum):
+        self.gen_mod = gen_mod
+
+    def forward(self, *args, **kwargs):
+        if self.mode is MorphBlock.ForwardMode.ORIGINAL:
+            return self.orig_mod(*args, **kwargs)
+        elif self.mode is MorphBlock.ForwardMode.GENERATED:
+            if self.gen_mod is None:
+                raise RuntimeError('You have not set the generated module.')
+            return self.gen_mod(*args, **kwargs)
+        else:
+            raise RuntimeError("You have not set a forward mode.")
+
+
+class ModelRewriter:
+    def __init__(self, model):
+        self.model = model
+
+    def insert_morph_blocks(self, mods_to_replace, input_shapes, init_state_fn: Callable):
+        sample_inputs = [torch.randn(shape) for shape in input_shapes]
+
+        with record_mod_parent(self.model):
+            with record_mod_qualnames(self.model):
+                with record_io_shapes(self.model, sample_inputs, mods_to_replace):
+                    for orig_mod in mods_to_replace:
+                        assert isinstance(orig_mod.parent, list)
+                        init_state_bldr = init_state_fn(
+                            orig_mod, orig_mod.parent[0], orig_mod.qualname, 
+                            orig_mod.input_shapes, orig_mod.output_shape
+                        )
+                        morph_block = MorphBlock(orig_mod, init_state_bldr)
+                        replace_module(orig_mod.parent[0], orig_mod, morph_block)
+
+    @property
+    def morph_blocks(self) -> "list[MorphBlock]":
+        morph_blocks = list()
+        for n, m in self.model.named_modules():
+            if isinstance(m, MorphBlock):
+                morph_blocks.append(MorphBlock)
+        return morph_blocks
+
+    def set_forward_mode(self, fwd_mode: MorphBlock.ForwardMode):
+        for mb in self.morph_blocks:
+            mb.set_forward_mode(fwd_mode)
+
+    def prune_morph_blocks(self):
+        for mb in self.morph_blocks:
+            self.prune_morph_block(mb)
+
+    def prune_morph_block(self, mod: MorphBlock):
+        assert mod in self.morph_blocks
+        assert mod.gen_mod is not None
+        with record_mod_parent(self.model):
+            assert isinstance(mod.parent, list)
+            replace_module(mod.parent[0], mod, mod.gen_mod)
+
+
+def test_model_rewriter():
+    from torchvision.models import resnet18
+    
+    model = resnet18(pretrained=False)
+    mods_to_replace = [model.layer1, model.layer2, model.layer3, model.layer4]
+    input_shapes = [[1, 3, 224, 224]]
+
+    def gen_resnet18_blocks(mod, parent, qualname, input_shapes, output_shape):        
+        assert len(input_shapes) == 1
+        bs, ic, ires, ires = input_shapes[0]
+        bs, oc, ores, ores = output_shape
+
+        graph = InitStateBuilder()
+        x = graph.new_input([ic, ires, ires], 'x')
+        x = graph.linear_map(x, [oc, ores, ores], 'conv1', 'conv1_W')[0]
+        x = graph.activation(x, act_key='relu')
+        x = graph.linear_map(x, [oc, ores, ores], 'conv2', 'conv2_W')[0]
+        x = graph.activation(x, act_key='relu')
+        return graph
+
+    rewriter = ModelRewriter(model)
+    rewriter.insert_morph_blocks(mods_to_replace, input_shapes, gen_resnet18_blocks)
+    print(model)
+
+
+if __name__ == '__main__':
+    test_model_rewriter()

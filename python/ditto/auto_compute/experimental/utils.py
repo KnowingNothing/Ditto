@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from typing import Any, Tuple, NamedTuple, Optional, Dict
 
 import torch
@@ -237,6 +238,101 @@ def test_shape_prop():
 
     for node in gm.graph.nodes:
         print(node.name, node.meta['tensor_meta'].dtype, node.meta['tensor_meta'].shape)
+
+
+""" Utils for Analyzing PyTorch Models """
+
+
+@contextmanager
+def set_model_eval(model):
+    is_training = model.training
+    model = model.eval()
+
+    try:
+        yield
+    finally:
+        model = model.train() if is_training else model.eval()
+
+
+@contextmanager
+def record_io_shapes(model, sample_inputs, mods=None):
+    io_shapes = dict()
+    
+    def _record_io_shapes(m, i, o):
+        io_shapes[m] = ([ii.shape for ii in i], o.shape)
+        m.input_shapes = [ii.shape for ii in i]
+        m.output_shape = o.shape
+    
+    hook_handles = list()
+    for mod in (mods or model.modules()):
+        handle = mod.register_forward_hook(_record_io_shapes)
+        hook_handles.append(handle)
+
+    with set_model_eval(model):
+        with torch.no_grad():
+            model(*sample_inputs)
+
+    try:
+        yield io_shapes.copy()
+    finally:
+        for handle in hook_handles:
+            handle.remove()
+
+        for mod in io_shapes.keys():
+            del mod.input_shapes, mod.output_shape
+
+
+@contextmanager
+def record_mod_qualnames(model):
+    qualnames = dict()
+
+    def _set_qualname(mod, prefix):
+        mod.qualname = prefix
+        qualnames[mod] = prefix
+        for name, submod in mod.named_children():
+            _set_qualname(submod, f'{prefix}.{name}')
+    
+    _set_qualname(model, prefix='')
+
+    try:
+        yield qualnames.copy()
+    finally:
+        for mod in qualnames.keys():
+            del mod.qualname
+
+
+@contextmanager
+def record_mod_parent(model):
+    parents = dict()
+
+    def _set_parent(mod):
+        for submod in mod.children():
+            parents[submod] = mod
+            assert not hasattr(submod, 'parent')  # only one parent
+            submod.parent = [mod]  # avoid submodule registeration
+            _set_parent(submod)
+    
+    parents[model] = None
+    model.parent = [None]
+    _set_parent(model)
+
+    try:
+        yield parents.copy()
+    finally:
+        for mod in parents.keys():
+            del mod.parent
+
+
+def replace_module(parent, mod, new_mod):
+    mod_name = None
+    for name, submod in parent.named_children():
+        if submod is mod:
+            mod_name = name
+    
+    if mod_name is None:
+        raise RuntimeError
+
+    setattr(parent, mod_name, new_mod)
 
 
 if __name__ == "__main__":
