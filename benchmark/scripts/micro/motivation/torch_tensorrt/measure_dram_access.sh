@@ -1,0 +1,2 @@
+# you will need sudo priviledge to profile
+ncu --metrics "dram__bytes_read.sum,dram__bytes_write.sum,sm__cycles_active.sum,smsp__pipe_tensor_cycles_active.sum" --print-summary per-gpu --csv python bmm_softmax_bmm.py --profile |& tee bmm_softmax_bmm_profile.csv

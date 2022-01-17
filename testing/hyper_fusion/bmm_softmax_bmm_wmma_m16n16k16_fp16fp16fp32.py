@@ -401,7 +401,7 @@ def schedule_cuda(batch, M, N, K, L, in_dtype="float16", acc_dtype="float32"):
     sch[F].bind(bx, tvm.te.thread_axis("blockIdx.x"))
     sch[F].bind(tx, tvm.te.thread_axis("threadIdx.x"))
 
-    TZ_SIZE = 4
+    TZ_SIZE = 2
     TY_SIZE = 4
     UNROLL_STEP = 128
     UNROLL_EXPLICIT = 1
@@ -635,8 +635,8 @@ def test_cuda():
     # but currently I can't locate the cause of this error.
 
     evaluator = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=600)
-    cost = evaluator(*inputs_tvm, *outputs_tvm).mean
-    print(f"Our code uses {cost} s")
+    cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
+    print(f"Our code uses {cost} ms")
 
 
 def test_relay():
