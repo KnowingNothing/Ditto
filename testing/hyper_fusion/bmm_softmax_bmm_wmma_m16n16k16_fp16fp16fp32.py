@@ -2,13 +2,13 @@ import torch
 import tvm
 import numpy as np
 import math
-from tvm import relay
+import argparse
 
 MI = 16
 NI = 16
 KI = 16
 WARP_SIZE = 32
-IN_VEC = 8
+IN_VEC = 4
 OUT_VEC = 4
 
 
@@ -403,12 +403,12 @@ def schedule_cuda(batch, M, N, K, L, in_dtype="float16", acc_dtype="float32"):
 
     TZ_SIZE = 2
     TY_SIZE = 4
-    UNROLL_STEP = 128
+    UNROLL_STEP = 1500
     UNROLL_EXPLICIT = 1
     M_factors = [-1, TZ_SIZE, 1]
     N_factors = [-1, TY_SIZE, 2]
     L_K_factors = [-1, 1, TY_SIZE]
-    K_factors = [-1, 4, 2]
+    K_factors = [-1, 16, 4]
 
     b, m, n, mi, ni = sch[E].op.axis
     m1, m2, m3 = tile_axes(sch, E, m, M_factors)
@@ -552,34 +552,6 @@ def torch_bmm_softmax_bmm(A, B, C):
     return F
 
 
-def relay_bmm_softmax_bmm(
-    batch, M, N, K, L, in_dtype="float16", acc_dtype="float32", target="cuda"
-):
-    A = relay.var("A", shape=[batch, M, K], dtype=in_dtype)
-    B = relay.var("B", shape=[batch, K, L], dtype=in_dtype)
-    C = relay.var("C", shape=[batch, L, N], dtype=in_dtype)
-    B = relay.transpose(B, axes=(0, 2, 1))
-    D = relay.nn.batch_matmul(A, B, in_dtype)
-    E = relay.nn.softmax(data=D)
-    C = relay.transpose(C, axes=(0, 2, 1))
-    F = relay.nn.batch_matmul(E, C, in_dtype)
-    args = relay.analysis.free_vars(F)
-    func = relay.Function(args, F)
-
-    mod = tvm.IRModule.from_expr(func)
-    mod = relay.transform.InferType()(mod)
-    params = {}
-    import tvm.contrib.graph_executor as runtime
-
-    with tvm.transform.PassContext(opt_level=3):
-        lib = relay.build_module.build(mod, target=target, params=params)
-
-        # load parameters
-        dev = tvm.device(str(target), 0)
-        module = runtime.GraphModule(lib["default"](dev))
-    return [[batch, M, K], [batch, K, L], [batch, L, N]], [[batch, M, N]], module
-
-
 def test_llvm():
     in_dtype = "float32"
     acc_dtype = "float32"
@@ -610,7 +582,7 @@ def test_llvm():
     )
 
 
-def test_cuda():
+def test_cuda(profile):
     in_dtype = "float16"
     acc_dtype = "float32"
     ins, outs, func = schedule_cuda(
@@ -629,35 +601,26 @@ def test_cuda():
     ctx = tvm.cuda()
     inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
     outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
-    func(*inputs_tvm, *outputs_tvm)
+    if profile:
+        func(*inputs_tvm, *outputs_tvm)
+    else:
+        # (TODO: size) I have checked the results, nan errors occurs
+        # but currently I can't locate the cause of this error.
 
-    # (TODO: size) I have checked the results, nan errors occurs
-    # but currently I can't locate the cause of this error.
-
-    evaluator = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=600)
-    cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
-    print(f"Our code uses {cost} ms")
-
-
-def test_relay():
-    in_dtype = "float16"
-    acc_dtype = "float32"
-    target = "cuda -libs=cublas,cudnn"
-    ins, outs, module = relay_bmm_softmax_bmm(
-        12, 512, 64, 64, 512, in_dtype=in_dtype, acc_dtype=acc_dtype, target=target
-    )
-
-    inputs_np = [
-        np.random.uniform(-1, 1, [int(x) for x in y]).astype(in_dtype) for y in ins
-    ]
-
-    outputs_np = [
-        np.random.uniform(-1, 1, [int(x) for x in y]).astype(in_dtype) for y in outs
-    ]
-    ctx = tvm.cuda()
-    dev = tvm.device(str(target), 0)
-    print(module.benchmark(dev, min_repeat_ms=600))
+        evaluator = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=600)
+        cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
+        print(f"Our code uses {cost} ms")
 
 
 if __name__ == "__main__":
-    test_cuda()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--mode", choices=["correctness", "perf"])
+
+    args = parser.parse_args()
+    if args.mode == "correctness":
+        test_llvm()
+    elif args.mode == "perf":
+        test_cuda(args.profile)
+    else:
+        raise ValueError()
