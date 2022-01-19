@@ -96,7 +96,7 @@ class AccessFunc(object):
             range_map[k] = tvm.ir.Range(0, bounds[v])
         for indices in self.indices_list:
             ranges = utils.infer_range(indices, range_map)
-            shape = [r.min.value + r.extent.value for r in ranges]
+            shape = [r.min.value + r.extent.value for r in ranges] # why?
             size = utils.product(shape)
             ret.append(size)
         return ret
@@ -120,7 +120,7 @@ class IterGraph(object):
         # so don't worry that these values will be changed
         self._initial_first_op_iters = first_op_iters
         self._initial_second_op_iters = second_op_iters
-        self._initial_share_iter_paris = share_iter_pairs
+        self._initial_share_iter_pairs = share_iter_pairs
         self._initial_first_op_access_funcs = first_op_read_access_funcs
         self._initial_second_op_access_funcs = second_op_read_access_funcs
         self._initial_first_write_access_func = first_write_access_func
@@ -193,7 +193,7 @@ class IterGraph(object):
         """Get another IterGraph that is the same as the initial one."""
         return IterGraph(self._initial_first_op_iters,
                          self._initial_second_op_iters,
-                         self._initial_share_iter_paris,
+                         self._initial_share_iter_pairs,
                          self._initial_first_op_access_funcs,
                          self._initial_second_op_access_funcs,
                          self._initial_first_write_access_func,
@@ -207,7 +207,7 @@ class IterGraph(object):
         return [x for x in self._initial_second_op_iters]
 
     def getInitialShareIterPairs(self):
-        return [x for x in self._initial_share_iter_paris]
+        return [x for x in self._initial_share_iter_pairs]
 
     def getInitialFirstOpReadAccessFuncs(self):
         return [x for x in self._initial_first_op_access_funcs]
@@ -329,6 +329,7 @@ class IterGraph(object):
         new_first_op_access_funcs = []
         for func in self.first_op_read_access_funcs:
             new_mapping = {}
+            # var 2 iterVar
             for k, v in func.iters_mapping.items():
                 if (f"{v.name}.outer" in first_op_iters_map and
                         f"{v.name}.inner" in first_op_iters_map):

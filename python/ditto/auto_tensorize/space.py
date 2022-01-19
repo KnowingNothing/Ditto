@@ -57,7 +57,7 @@ class FusionTileSpace(BaseCartSpace):
 
         # reorder
         self.subspaces["reorder"] = PermuteSpace(
-            num_elems=len(self.second_op_iters), hit_mask=attach_pos_list)
+            num_elems=len(self.second_op_iters), hit_mask=attach_pos_list) # why?
     
     @property
     def all_iter_graphs(self):

@@ -16,7 +16,7 @@ std::pair<bool, std::string> validate(SerialFusionState state) {
     return std::make_pair(false, "the given layer is not in linear topology.");
   }
   int num_cubic_ops = state->CountOp(OpPattern::PATTERN_CUBIC);
-  if (num_cubic_ops != 1 || num_cubic_ops != 2) {
+  if (num_cubic_ops != 1 && num_cubic_ops != 2) {
     return std::make_pair(false,
                           "Ditto expect 1 or 2 cubic operators in the layer.");
   }

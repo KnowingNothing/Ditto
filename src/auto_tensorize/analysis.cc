@@ -1,8 +1,8 @@
-#include <auto_tensorize/analysis.h>
-
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#include <auto_tensorize/analysis.h>
 
 using namespace tvm;
 namespace ditto {
@@ -19,6 +19,8 @@ PrimExpr flatten_indices(const Array<PrimExpr> shape,
   }
   return flatten;
 }
+
+
 
 Array<Array<tir::IterVar>> share_axis_analysis(te::Operation op1,
                                                te::Operation op2) {
@@ -138,10 +140,67 @@ Array<Array<tir::IterVar>> share_axis_analysis(te::Operation op1,
 
   return ret;
 }
+TVM_REGISTER_NODE_TYPE(FeatureLogNode);
+
+FeatureLog::FeatureLog(
+                      Map<tir::Var, IntImm> bounds,\
+                      int op1MemVisit,\
+                      int op1WorkLoad,\
+                      int op1Buffer,\
+                      int op2MemVisit,\
+                      int op2WorkLoad,\
+                      int op2Buffer,\
+                      int parallelism,\
+                      hardware::HardwareParam hp
+                      ){
+  auto n = make_object<FeatureLogNode>();
+  n->bounds = bounds;
+  n->op1.memVisit = op1MemVisit;
+  n->op1.workLoad = op1WorkLoad;
+  n->op1.bufferSize = op1Buffer;
+  n->op2.memVisit = op2MemVisit;
+  n->op2.workLoad = op2WorkLoad;
+  n->op2.bufferSize = op2Buffer;
+  n->parallelism = parallelism;
+  n->hardwareParam = hp;
+  data_ = n;
+}
+
+TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
+        .set_dispatch<FeatureLogNode>([](const ObjectRef& node, ReprPrinter* p) {
+            auto* op = static_cast<const FeatureLogNode*>(node.get());
+            p->PrintIndent();
+            p->stream << "Features(\n";
+            p->stream << "bounds: ";
+            p->Print(op->bounds);
+            p->stream << ", ";
+            p->stream << "op1MemVisit: " << op->op1.memVisit << ", ";
+            p->stream << "op1WorkLoad: " << op->op1.workLoad << ", ";
+            p->stream << "op1BufferSize: " << op->op1.bufferSize << ",\n"; 
+            p->stream << "op2MemVisit: " << op->op2.memVisit << ", ";
+            p->stream << "op2WorkLoad: " << op->op2.workLoad << ", ";
+            p->stream << "op2BufferSize: " << op->op2.bufferSize << ",\n"; 
+            p->stream << "parallelism: " << op->parallelism << ")\n";
+        });
+
+FeatureLog buildFeatureLog(IterGraph ig, hardware::HardwareParam hp){
+  return FeatureLog(
+    ig->inferBound(),\
+    ig->getFirstOpFp(),\
+    ig->getFirstOpWorkload(),\
+    ig->getFirstOpBlockSize(),\
+    ig->getSecondOpFp(),\
+    ig->getSecondOpWorkload(),\
+    ig->getSecondOpBlockSize(),\
+    ig->getParallelism(),\
+    hp
+  );
+}
 
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.ShareAxisAnalysis")
     .set_body_typed(share_axis_analysis);
-
+TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildFeatureLog")
+    .set_body_typed(buildFeatureLog);
 } // namespace auto_tensorize
 
 } // namespace ditto

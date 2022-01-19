@@ -71,7 +71,7 @@ class BaseCartSpace(object):
                 item[k] = self.subspaces[k].all_items[outer]
                 v = inner
             return item
-        return utils.parallel_map(_inner, ids)
+        return utils.parallel_map(_inner, ids, True)
 
     def __getitem__(self, items):
         return self.subspaces[items]

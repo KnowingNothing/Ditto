@@ -43,12 +43,6 @@ public:
 };
 
 /*!
- * \brief The function to validate if a layer is applicable.
- * \param state The fusion state
- */
-std::pair<bool, std::string> validate(SerialFusionState state);
-
-/*!
  * \brief The entry function of auto_schedule that uses auto_tensorize.
  * \param layer The layer to schedule
  * \param hw The hardware to schedule for

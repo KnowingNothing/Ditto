@@ -2,6 +2,7 @@
 The fusion state implementation of hyper fusion
 """
 import tvm
+from . import _ffi_api
 from typing import *
 from .pattern import *
 from .analysis import share_axis_analysis, calculate_metrics, AnalyticalResult
@@ -29,20 +30,20 @@ class OpHyperState(object):
         """Get all IterVars for the op"""
         iters = []
         for i, iv in enumerate(self.op.axis):
-            iters.append(IterVar(f"op({hash(self.op)}).S{i}", i, ext=int(
+            iters.append(IterVar(f"op({self.op.name},{hash(self.op)}).S{i}", i, ext=int(
                 iv.dom.extent), iv_type=IV_TYPE_SPATIAL))
         for i, iv in enumerate(self.op.reduce_axis):
-            iters.append(IterVar(f"op({hash(self.op)}).R{i}", i, ext=int(
+            iters.append(IterVar(f"op({self.op.name},{hash(self.op)}).R{i}", i, ext=int(
                 iv.dom.extent), iv_type=IV_TYPE_REDUCE))
         return iters
 
     def get_all_iters_dict(self):
         iters_dict = {}
         for i, iv in enumerate(self.op.axis):
-            iters_dict[iv] = (IterVar(f"op({hash(self.op)}).S{i}", i, ext=int(
+            iters_dict[iv] = (IterVar(f"op({self.op.name},{hash(self.op)}).S{i}", i, ext=int(
                 iv.dom.extent), iv_type=IV_TYPE_SPATIAL))
         for i, iv in enumerate(self.op.reduce_axis):
-            iters_dict[iv] = (IterVar(f"op({hash(self.op)}).R{i}", i, ext=int(
+            iters_dict[iv] = (IterVar(f"op({self.op.name},{hash(self.op)}).R{i}", i, ext=int(
                 iv.dom.extent), iv_type=IV_TYPE_REDUCE))
         return iters_dict
 
@@ -164,7 +165,9 @@ class SerialHyperState(object):
 
     def build_iter_graph(self):
         """Build the IterGraph object."""
+        # 0, 2
         first_op_id, second_op_id = self.get_cubic_op_ids()
+        
         first_op_state = self.op_states[first_op_id]
         second_op_state = self.op_states[second_op_id]
         first_iters = first_op_state.get_all_iters()
@@ -265,3 +268,5 @@ def evaluate_iter_graph(iter_graph: IterGraph,
         hw_param,  # hw_param: hw.HardwareParam
     )
     return metric
+
+tvm._ffi._init_api("state", __name__)
