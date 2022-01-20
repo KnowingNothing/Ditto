@@ -403,24 +403,25 @@ def schedule_cuda(batch, M, N, K, L, in_dtype="float16", acc_dtype="float32"):
 
     TZ_SIZE = 2
     TY_SIZE = 4
-    UNROLL_STEP = 1500
+    UNROLL_STEP = 512
     UNROLL_EXPLICIT = 1
     M_factors = [-1, TZ_SIZE, 1]
     N_factors = [-1, TY_SIZE, 2]
     L_K_factors = [-1, 1, TY_SIZE]
-    K_factors = [-1, 16, 4]
+    K_factors = [-1, 8, 4]
 
     b, m, n, mi, ni = sch[E].op.axis
     m1, m2, m3 = tile_axes(sch, E, m, M_factors)
     n1, n2, n3 = tile_axes(sch, E, n, N_factors)
+    kernel_scope, b = sch[E].split(b, nparts=1)
+    sch[E].pragma(kernel_scope, "auto_unroll_max_step", UNROLL_STEP)
+    sch[E].pragma(kernel_scope, "unroll_explicit", UNROLL_EXPLICIT)
     sch[E].reorder(b, m1, n1, m2, n2, m3, n3, mi, ni)
     sch[E].bind(b, tvm.te.thread_axis("blockIdx.z"))
     sch[E].bind(m1, tvm.te.thread_axis("blockIdx.y"))
     sch[E].bind(n1, tvm.te.thread_axis("blockIdx.x"))
     sch[E].bind(m2, tvm.te.thread_axis("threadIdx.z"))
     sch[E].bind(n2, tvm.te.thread_axis("threadIdx.y"))
-    sch[E].pragma(b, "auto_unroll_max_step", UNROLL_STEP)
-    sch[E].pragma(b, "unroll_explicit", UNROLL_EXPLICIT)
     # tensorize mi
     sch[E].tensorize(mi, intrin_wmma_store_matrix("global", acc_dtype))
     E_frag_attach_tensor = E
@@ -463,6 +464,10 @@ def schedule_cuda(batch, M, N, K, L, in_dtype="float16", acc_dtype="float32"):
     sch[exp_shared].reorder(b, m1, l1, m2, l2, mi, li)
     sch[exp_shared].bind(m1, tvm.te.thread_axis("threadIdx.z"))
     sch[exp_shared].bind(l1, tvm.te.thread_axis("threadIdx.y"))
+    fused = sch[exp_shared].fuse(m2, l2, mi, li)
+    fused, tx, vec = tile_axes(sch, exp_shared, fused, [-1, WARP_SIZE, 4])
+    sch[exp_shared].bind(tx, tvm.te.thread_axis("threadIdx.x"))
+    sch[exp_shared].vectorize(vec)
 
     sch[D_shared].compute_at(sch[D_shared_attach_tensor], D_shared_attach_axis)
     b, mo, lo, mi, li = sch[D_shared].op.axis
