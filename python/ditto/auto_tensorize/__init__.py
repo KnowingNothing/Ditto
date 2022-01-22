@@ -1,4 +1,6 @@
 from .analysis import calculate_metrics, AnalyticalResult
+from .hyper_fusion import *
+from .intrinsic import *
 from .iter_graph import IterVar, IterGraph
 from .pattern import *
 from .space import FusionTileSpace
