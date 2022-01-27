@@ -33,11 +33,20 @@ public:
   Intrinsic compute_intrinsic;
   /*! \brief The store intrinsic */
   Intrinsic store_intrinsic;
+  /*! \brief The scopes of input data */
+  Array<String> load_scopes;
+  /*! \brief The scope of compute result */
+  String compute_scope;
+  /*! \brief The scope of output */
+  String store_scope;
 
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("load_intrinsics", &load_intrinsics);
     v->Visit("compute_intrinsic", &compute_intrinsic);
     v->Visit("store_intrinsic", &store_intrinsic);
+    v->Visit("load_scopes", &load_scopes);
+    v->Visit("compute_scope", &compute_scope);
+    v->Visit("store_scope", &store_scope);
   }
 
   static constexpr const char *_type_key =
@@ -52,10 +61,14 @@ public:
    * \param load_intrinsics Load intrinsics
    * \param compute_intrinsic Compute intrinsic
    * \param store_intrinsic Store intrinsic
+   * \param load_scopes Load scope
+   * \param compute_scope Compute scope
+   * \param store_scope Store scope
    */
   TVM_DLL PackedIntrinsic(Array<Intrinsic> load_intrinsics,
                           Intrinsic compute_intrinsic,
-                          Intrinsic store_intrinsic);
+                          Intrinsic store_intrinsic, Array<String> load_scopes,
+                          String compute_scope, String store_scope);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(PackedIntrinsic, ObjectRef,
                                         PackedIntrinsicNode);

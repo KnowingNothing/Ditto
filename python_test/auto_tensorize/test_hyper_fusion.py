@@ -2,6 +2,7 @@ import pytest
 import tvm
 from ditto import auto_compute as ac
 from ditto import auto_tensorize as at
+from ditto import hardware as hw
 import math
 
 MI = 16
@@ -325,7 +326,14 @@ def test_build_match_info():
 
     store = intrin_wmma_store_matrix("shared", "float32")
 
-    first_packed = at.packed_intrinsic(loads, compute, store)
+    first_packed = at.packed_intrinsic(
+        loads,
+        compute,
+        store,
+        ["wmma.matrix_a", "wmma.matrix_b"],
+        "wmma.accumulator",
+        "wmma.accumulator",
+    )
 
     b, m, l, mi, li = D_frag.op.axis
     rko, rki = D_frag.op.reduce_axis
@@ -337,7 +345,14 @@ def test_build_match_info():
 
     store = intrin_wmma_store_matrix("global", "float32")
 
-    second_packed = at.packed_intrinsic(loads, compute, store)
+    second_packed = at.packed_intrinsic(
+        loads,
+        compute,
+        store,
+        ["wmma.matrix_a", "wmma.matrix_b"],
+        "wmma.accumulator",
+        "wmma.accumulator",
+    )
 
     b, m, n, mi, ni = E_frag.op.axis
     rlo, rli = E_frag.op.reduce_axis
@@ -367,7 +382,14 @@ def test_build_tensorize_hyper_fusion_state():
 
     store = intrin_wmma_store_matrix("shared", "float32")
 
-    first_packed = at.packed_intrinsic(loads, compute, store)
+    first_packed = at.packed_intrinsic(
+        loads,
+        compute,
+        store,
+        ["wmma.matrix_a", "wmma.matrix_b"],
+        "wmma.accumulator",
+        "wmma.accumulator",
+    )
 
     b, m, l, mi, li = D_frag.op.axis
     rko, rki = D_frag.op.reduce_axis
@@ -379,7 +401,14 @@ def test_build_tensorize_hyper_fusion_state():
 
     store = intrin_wmma_store_matrix("global", "float32")
 
-    second_packed = at.packed_intrinsic(loads, compute, store)
+    second_packed = at.packed_intrinsic(
+        loads,
+        compute,
+        store,
+        ["wmma.matrix_a", "wmma.matrix_b"],
+        "wmma.accumulator",
+        "wmma.accumulator",
+    )
 
     b, m, n, mi, ni = E_frag.op.axis
     rlo, rli = E_frag.op.reduce_axis
@@ -393,7 +422,74 @@ def test_build_tensorize_hyper_fusion_state():
     print(tensorize_state.summary(verbose=True))
 
 
+def test_tensorize_cuda():
+    ins, outs = BatchGemmSoftmaxGemm()
+    A, B, C = ins
+    (F,) = outs
+
+    E_frag = F.op.input_tensors[0]
+    exp, C_ext = E_frag.op.input_tensors
+    D_frag = exp.op.input_tensors[0]
+    A_shared, B_shared = D_frag.op.input_tensors
+
+    b, m, n, mi, ni = E_frag.op.axis
+    rlo, rli = E_frag.op.reduce_axis
+    fuse_choice = at.fusion_choice(D_frag.op, E_frag.op, [b, m, n, rlo, mi, ni, rli], 3)
+
+    loads = [intrin_wmma_load_matrix_a("float16"), intrin_wmma_load_matrix_b("float16")]
+
+    compute = intrin_wmma_gemm("float16", "float32")
+
+    store = intrin_wmma_store_matrix("shared", "float32")
+
+    first_packed = at.packed_intrinsic(
+        loads,
+        compute,
+        store,
+        ["wmma.matrix_a", "wmma.matrix_b"],
+        "wmma.accumulator",
+        "wmma.accumulator",
+    )
+
+    b, m, l, mi, li = D_frag.op.axis
+    rko, rki = D_frag.op.reduce_axis
+    first_match_info = at.match_info([mi, li, rki], first_packed)
+
+    loads = [intrin_wmma_load_matrix_a("float16"), intrin_wmma_load_matrix_b("float16")]
+
+    compute = intrin_wmma_gemm("float16", "float32")
+
+    store = intrin_wmma_store_matrix("global", "float32")
+
+    second_packed = at.packed_intrinsic(
+        loads,
+        compute,
+        store,
+        ["wmma.matrix_a", "wmma.matrix_b"],
+        "wmma.accumulator",
+        "wmma.accumulator",
+    )
+
+    b, m, n, mi, ni = E_frag.op.axis
+    rlo, rli = E_frag.op.reduce_axis
+    second_match_info = at.match_info([mi, ni, rli], second_packed)
+
+    layer = ac.layer([F.op], inputs=[A, B, C])
+    tensorize_state = at.tensorize_hyper_fusion_state(
+        layer, fuse_choice, {D_frag.op: first_match_info, E_frag.op: second_match_info}
+    )
+
+    V100 = hw.query_hw_param("gpu.cuda.V100")
+    tensorize_param = at.cuda_tensorize_param(
+        warp_size=32, ty_size=4, tz_size=2, input_vector_len=4, serial_y=2, serial_z=1
+    )
+
+    sch = at.tensorize_cuda(layer, tensorize_state, V100, tensorize_param)
+    print(tvm.lower(sch, layer.schedule_tensors, simple_mode=True))
+
+
 if __name__ == "__main__":
     test_build_fusion_choice()
     test_build_match_info()
     test_build_tensorize_hyper_fusion_state()
+    test_tensorize_cuda()

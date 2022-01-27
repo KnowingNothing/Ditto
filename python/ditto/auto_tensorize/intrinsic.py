@@ -24,5 +24,10 @@ def packed_intrinsic(
     loads: List[tvm.te.tensor_intrin.TensorIntrin],
     compute: tvm.te.tensor_intrin.TensorIntrin,
     store: tvm.te.tensor_intrin.TensorIntrin,
+    load_scopes: List[str],
+    compute_scope: str,
+    store_scope: str,
 ):
-    return _ffi_api.PackedIntrinsic(loads, compute, store)
+    return _ffi_api.PackedIntrinsic(
+        loads, compute, store, load_scopes, compute_scope, store_scope
+    )
