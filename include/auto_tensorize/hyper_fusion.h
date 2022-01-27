@@ -171,8 +171,32 @@ public:
   hardware::HardwareParam cuda_param;
   /*! \brief The second op's fragment */
   te::Tensor second_frag;
-  /*! \brief The second op compute_at pos */
-  tir::IterVar second_op_compute_pos;
+  /*! \brief The second op compute_at axis */
+  tir::IterVar second_op_compute_axis;
+  /*! \brief The inter path compute_at tensor */
+  te::Tensor path_attach_tensor;
+  /*! \brief The inter path compute_at axis */
+  tir::IterVar path_attach_axis;
+  /*! \brief The first prologue shared compute_at tensor */
+  te::Tensor first_prologue_shared_attach_tensor;
+  /*! \brief The first prologue shared compute_at axis */
+  tir::IterVar first_prologue_shared_attach_axis;
+  /*! \brief The second prologue frag compute_at tensor */
+  te::Tensor first_frag_attach_tensor;
+  /*! \brief The second prologue frag compute_at axis */
+  tir::IterVar first_frag_attach_axis;
+  /*! \brief The second prologue shared compute_at tensor */
+  te::Tensor second_prologue_shared_attach_tensor;
+  /*! \brief The second prologue shared compute_at axis */
+  tir::IterVar second_prologue_shared_attach_axis;
+  /*! \brief The second prologue frag compute_at tensor */
+  te::Tensor second_frag_attach_tensor;
+  /*! \brief The second prologue frag compute_at axis */
+  tir::IterVar second_frag_attach_axis;
+  /*! \brief ThreadIdx.z is used */
+  bool tz_used{false};
+  /*! \brief ThreadIdx.y is used */
+  bool ty_used{false};
 
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("layer", &layer);
@@ -191,6 +215,18 @@ public:
    * \brief Get the non-root epilogue ops.
    */
   Array<te::Operation> EpilogueNonRootOps();
+  /*!
+   * \brief Check if has inter path.
+   */
+  bool HasInterPath();
+  /*!
+   * \brief Get the inter path root op.
+   */
+  te::Operation InterPathRootOp();
+  /*!
+   * \brief Get the non-root inter path ops.
+   */
+  Array<te::Operation> InterPathNonRootOps();
   /*!
    * \brief Split a dim into multi-parts from inner to outer.
    */
@@ -222,13 +258,13 @@ public:
    */
   std::pair<std::vector<int>, std::vector<int>> SecondOpOuterInnerReduceAxis();
   /*!
-   * \brief Get the tensorized spatial axis index of the second op.
+   * \brief Get the tensorized spatial axis index.
    */
-  std::vector<int> SecondOpTensorizeSpatialAxis();
+  std::vector<int> TensorizeSpatialAxis(const te::Operation &op);
   /*!
-   * \brief Get the tensorized reduce axis index of the second op.
+   * \brief Get the tensorized reduce axis index.
    */
-  std::vector<int> SecondOpTensorizeReduceAxis();
+  std::vector<int> TensorizeReduceAxis(const te::Operation &op);
   /*!
    * \brief Check if the fusion and tensorize choices are valide.
    */
@@ -244,6 +280,20 @@ public:
    */
   std::vector<int> GetReduceExtentsByIndex(const te::Operation &op,
                                            const std::vector<int> &index);
+  /*!
+   * \brief Check if the op is in inter path.
+   */
+  bool IsInInterPath(const te::Operation &op);
+  /*!
+   * \brief Get the spatial extents of first op.
+   */
+  std::vector<int> GetSpatialExtentsByInferBound(te::Schedule sch,
+                                                 const te::Operation &op);
+  /*!
+   * \brief Get the reduce extents of first op.
+   */
+  std::vector<int> GetReduceExtentsByInferBound(te::Schedule sch,
+                                                const te::Operation &op);
 
   static constexpr const char *_type_key =
       "ditto.auto_tensorize.CUDATensorizeContext";
@@ -295,6 +345,8 @@ public:
   int warp_ry;
   /*! \brief The warp reduce z dim (for future) */
   int warp_rz;
+  /*! \brief The unroll steps */
+  int unroll_steps;
 
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("warp_size", &warp_size);
@@ -309,6 +361,7 @@ public:
     v->Visit("warp_rx", &warp_rx);
     v->Visit("warp_ry", &warp_ry);
     v->Visit("warp_rz", &warp_rz);
+    v->Visit("unroll_steps", &unroll_steps);
   }
 
   static constexpr const char *_type_key =
@@ -332,11 +385,13 @@ public:
    * \param warp_rx The warp x reduce trip count
    * \param warp_ry The warp y reduce trip count
    * \param warp_rz The warp z reduce trip count
+   * \param unroll_steps The unroll steps
    */
   TVM_DLL CUDATensorizeParam(int warp_size, int ty_size, int tz_size,
                              int input_vector_len, int serial_y, int serial_z,
                              int block_rx, int block_ry, int block_rz,
-                             int warp_rx, int warp_ry, int warp_rz);
+                             int warp_rx, int warp_ry, int warp_rz,
+                             int unroll_steps);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(CUDATensorizeParam, ObjectRef,
                                         CUDATensorizeParamNode);

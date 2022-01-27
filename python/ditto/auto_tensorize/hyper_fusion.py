@@ -157,11 +157,12 @@ def cuda_tensorize_param(
     serial_y: int = 2,
     serial_z: int = 1,
     block_rx: int = 4,
-    block_ry: int = 4,
+    block_ry: int = 1,
     block_rz: int = 4,
     warp_rx: int = 1,
-    warp_ry: int = 1,
+    warp_ry: int = 4,
     warp_rz: int = 1,
+    unroll_steps: int = 1500,
 ):
     return _ffi_api.CUDATensorizeParam(
         warp_size,
@@ -176,6 +177,7 @@ def cuda_tensorize_param(
         warp_rx,
         warp_ry,
         warp_rz,
+        unroll_steps,
     )
 
 
