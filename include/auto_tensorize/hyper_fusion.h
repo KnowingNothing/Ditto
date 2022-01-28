@@ -10,6 +10,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <auto_compute/state.h>
@@ -294,6 +295,10 @@ public:
    */
   std::vector<int> GetReduceExtentsByInferBound(te::Schedule sch,
                                                 const te::Operation &op);
+  /*!
+   * \brief Get the batch-like dimension index.
+   */
+  std::vector<int> GetBatchLikeDim(const te::Operation& op);
 
   static constexpr const char *_type_key =
       "ditto.auto_tensorize.CUDATensorizeContext";

@@ -482,8 +482,17 @@ def test_tensorize_cuda():
 
     V100 = hw.query_hw_param("gpu.cuda.V100")
     tensorize_param = at.cuda_tensorize_param(
-        warp_size=32, ty_size=4, tz_size=2, input_vector_len=4, serial_y=2, serial_z=1,
-        block_rx=8, warp_rx=4, block_ry=1, warp_ry=4, unroll_steps=512
+        warp_size=32,
+        ty_size=4,
+        tz_size=2,
+        input_vector_len=4,
+        serial_y=2,
+        serial_z=1,
+        block_rx=8,
+        warp_rx=4,
+        block_ry=1,
+        warp_ry=4,
+        unroll_steps=512,
     )
 
     sch = at.tensorize_cuda(layer, tensorize_state, V100, tensorize_param)

@@ -1,3 +1,4 @@
+#include <auto_tensorize/analysis.h>
 #include <auto_tensorize/hyper_fusion.h>
 #include <tvm/te/schedule_pass.h>
 
@@ -428,6 +429,23 @@ std::vector<int> CUDATensorizeContextNode::GetReduceExtentsByInferBound(
   return ret;
 }
 
+std::vector<int>
+CUDATensorizeContextNode::GetBatchLikeDim(const te::Operation &op) {
+  int count_axis = 0;
+  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+  CHECK(cop);
+  CHECK(cop->body.size() == 1) << "Only expect one body.\n";
+  IsBatchLikeDim checker;
+  std::vector<int> ret;
+  for (auto iv : cop->axis) {
+    if (checker.is_batch(cop->body[0], iv->var)) {
+      ret.push_back(count_axis);
+    }
+    count_axis += 1;
+  }
+  return ret;
+}
+
 CUDATensorizeContext::CUDATensorizeContext(Layer layer,
                                            TensorizeHyperFusionState state,
                                            hardware::HardwareParam cuda_param) {
@@ -524,8 +542,17 @@ void ScheduleSecondOpParallelism(te::Schedule sch, CUDATensorizeContext ctx,
    * 2. One outer axis large enough for y or z dim;
    * 3. No outer axis is large enough
    */
+  std::vector<int> batch_index = ctx->GetBatchLikeDim(ctx->state->second_op);
+  std::unordered_set<int> batch_index_set;
+  for (auto ind : batch_index) {
+    batch_index_set.insert(ind);
+  }
   int z_block_index{-1}, y_block_index{-1};
   for (int i = 0; i < (int)outer_extents.size(); ++i) {
+    if (batch_index_set.count(i)) {
+      // leave batch-like dims to blockIdx.z
+      continue;
+    }
     if ((outer_extents[i] >= tensorize_param->tz_size) && z_block_index < 0) {
       z_block_index = i;
     } else if ((outer_extents[i] >= tensorize_param->ty_size) &&

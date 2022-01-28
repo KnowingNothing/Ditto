@@ -105,6 +105,38 @@ private:
   int counter_{0};
 };
 
+class IsBatchLikeDim : public tir::ExprVisitor {
+public:
+  using tir::ExprVisitor::VisitExpr;
+  IsBatchLikeDim() {}
+
+  bool is_batch(const PrimExpr &expr, const tir::Var &var) {
+    var_ = var;
+    is_batch_ = true;
+    VisitExpr(expr);
+    return is_batch_;
+  }
+
+protected:
+  using tir::ExprVisitor::VisitExpr_;
+  void VisitExpr_(const tir::ProducerLoadNode *op) override {
+    te::Tensor t = runtime::Downcast<te::Tensor>(op->producer);
+    bool pure_in{false};
+    for (auto index : op->indices) {
+      if (index.get() == var_.get()) {
+        pure_in = true;
+      }
+    }
+    if (!pure_in) {
+      is_batch_ = false;
+    }
+  }
+
+private:
+  tir::Var var_;
+  bool is_batch_{false};
+};
+
 PrimExpr flatten_indices(const Array<PrimExpr> shape,
                          const Array<PrimExpr> indices);
 
