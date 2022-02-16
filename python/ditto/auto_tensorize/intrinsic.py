@@ -32,6 +32,12 @@ def packed_intrinsic(
         loads, compute, store, load_scopes, compute_scope, store_scope
     )
 
+def intrinsic_match(
+    target: tvm.te.Tensor, 
+    packed_intrin: PackedIntrinsic
+):
+    return _ffi_api.MatchIntrinsic(target, packed_intrin.compute_intrinsic.op)
+
 
 # CUDA WMMA Intrinsic
 
