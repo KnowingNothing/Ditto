@@ -12,6 +12,11 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <stdio.h>
+
+#include <auto_tensorize/IterGraph.h>
+#include <hardware/base/hw_param.h>
+
 
 using namespace tvm;
 namespace ditto {
@@ -46,7 +51,7 @@ private:
   tir::Var var_;
   int counter_{0};
 };
-
+// check whether an expr has input op_ && whether op_ has attr var
 class IndexIn : public tir::ExprVisitor {
 public:
   using tir::ExprVisitor::VisitExpr;
@@ -168,6 +173,51 @@ private:
 
 Array<Array<tir::IterVar>> share_axis_analysis(te::Operation op1,
                                                te::Operation op2);
+
+class FeatureLogNode: public Object{
+public:
+  struct opFeat{
+    int memVisit;
+    int workLoad;
+    int bufferSize;
+  };
+  Map<tir::Var, IntImm> bounds;
+  opFeat op1, op2;
+  int parallelism;
+  hardware::HardwareParam hardwareParam;
+
+  void VisitAttrs(tvm::AttrVisitor *v) {
+    v->Visit("bounds", &bounds);
+    v->Visit("op1MemVisit", &op1.memVisit);
+    v->Visit("op1WorkLoad",  &op1.workLoad);
+    v->Visit("op1BufferSize", &op1.bufferSize);
+    v->Visit("op2MemVisit", &op2.memVisit);
+    v->Visit("op2WorkLoad",  &op2.workLoad);
+    v->Visit("op2BufferSize", &op2.bufferSize);
+    v->Visit("parallelism", &parallelism);
+    v->Visit("hardWareParams", &hardwareParam);
+  }
+  static constexpr const char * _type_key = "ditto.auto_tensorize.FeatureLog";
+  TVM_DECLARE_FINAL_OBJECT_INFO(FeatureLogNode, Object);
+};
+
+class FeatureLog: public ObjectRef{
+public:
+  TVM_DLL FeatureLog( Map<tir::Var, IntImm> bounds,\
+                      int op1MemVisit,\
+                      int op1WorkLoad,\
+                      int op1Buffer,\
+                      int op2MemVisit,\
+                      int op2WorkLoad,\
+                      int op2Buffer,\
+                      int parallelism,\
+                      hardware::HardwareParam hp
+                      );
+  TVM_DEFINE_OBJECT_REF_METHODS(FeatureLog, ObjectRef, FeatureLogNode);
+  TVM_DEFINE_OBJECT_REF_COW_METHOD(FeatureLogNode);
+};
+
+FeatureLog buildFeatureLog(IterGraph ig, hardware::HardwareParam hp);
 
 } // namespace auto_tensorize
 

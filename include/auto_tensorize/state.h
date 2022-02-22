@@ -14,44 +14,16 @@
 
 #include <auto_compute/state.h>
 #include <auto_tensorize/pattern.h>
+#include <auto_tensorize/IterGraph.h>
 
 using namespace tvm;
 namespace ditto {
 using namespace ditto::auto_compute;
 namespace auto_tensorize {
-
 /*!
- * \brief A class for access function.
+ *  \brief container for SerialFusionState
  */
-class AccessFunctionNode : public Object {
-public:
-  /*! \brief The tensor op to access */
-  te::Operation op;
-  /*! \brief The indices for one tensor */
-  Array<Array<PrimExpr>> access_indices;
-
-  void VisitAttrs(tvm::AttrVisitor *v) {
-    v->Visit("op", &op);
-    v->Visit("access_indices", &access_indices);
-  }
-
-  static constexpr const char *_type_key = "ditto.auto_tensorize.AccessFunction";
-  TVM_DECLARE_BASE_OBJECT_INFO(AccessFunctionNode, Object);
-};
-
-class AccessFunction : public ObjectRef {
-public:
-  /*!
-   * \brief The constructor.
-   * \param op The operation
-   */
-  TVM_DLL AccessFunction(te::Operation op,
-                         Array<Array<PrimExpr>> access_indices);
-
-  TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(AccessFunction, ObjectRef,
-                                        AccessFunctionNode);
-  TVM_DEFINE_OBJECT_REF_COW_METHOD(AccessFunctionNode);
-};
+class SerialFusionStateNode;
 
 /*!
  * \brief A class for op state.
@@ -62,11 +34,24 @@ public:
   te::Operation op;
   /*! \brief The pattern of the layer */
   OpPattern pattern;
-
+  /*! \brief The index in the layer*/
+  size_t index;
+  /*! \brief The iterVar map*/
+  std::unordered_map<tir::IterVar, IterVar> IterMap;
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("op", &op);
     v->Visit("pattern", &pattern);
   }
+  /*!
+   *  \brief get all the iters.
+   *  \return  the IterVar Array. 
+   */
+  Array<IterVar> getAllIters();
+  /*!
+   *  \brief get all the iters.
+   *  \return the map from tir::IterVar to IterVar; 
+   */
+  std::unordered_map<tir::IterVar, IterVar> getIterMap() {return IterMap;}
   /*!
    * \brief Get the spatial iterators.
    */
@@ -85,6 +70,20 @@ public:
    * We only assume one output.
    */
   AccessFunction WriteAccessFunctions();
+  /*!
+   * \brief Get the first computeOp pos in input tensors.
+   */
+  int getFirstProducerPos(){
+    int idx = 0;
+    for (auto it: op->InputTensors()){
+      std::cout << "idx" << idx <<std::endl;
+      std::cout << it->op << std::endl;
+      if(it->op.as<te::ComputeOpNode>())
+        return idx;
+      idx++;
+    }
+    return -1;
+  }
 
   static constexpr const char *_type_key = "ditto.auto_tensorize.OpHyperState";
   TVM_DECLARE_BASE_OBJECT_INFO(OpHyperStateNode, Object);
@@ -96,12 +95,13 @@ public:
    * \brief The constructor.
    * \param op The operation
    */
-  TVM_DLL OpHyperState(te::Operation op);
+  TVM_DLL OpHyperState(te::Operation op, size_t idx);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(OpHyperState, ObjectRef,
                                         OpHyperStateNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(OpHyperStateNode);
 };
+
 
 /*!
  * \brief A class for fusion of linear topo.
@@ -112,7 +112,9 @@ public:
   LayerState layer_state;
   /*! \brief The compute ops */
   Array<te::Operation> ops;
-  /*! \brief The states for ops */
+  /*! 
+   *  \brief The states for ops
+   */
   std::unordered_map<te::Operation, OpHyperState> op_hyper_states;
 
   void VisitAttrs(tvm::AttrVisitor *v) {
@@ -120,9 +122,14 @@ public:
     v->Visit("ops", &ops);
   }
 
+  
   bool IsLinearTopo();
   int CountOp(OpPattern pattern);
-
+  /*!
+   * \brief get the cubic state pairs
+   * \return <op1, op2>, op2 takes op1 as input (may be indirect) 
+   */
+  std::pair<OpHyperState, OpHyperState> getCubicOpPair();
   static constexpr const char *_type_key =
       "ditto.auto_tensorize.SerialFusionState";
   TVM_DECLARE_BASE_OBJECT_INFO(SerialFusionStateNode, Object);
@@ -140,6 +147,36 @@ public:
                                         SerialFusionStateNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(SerialFusionStateNode);
 };
+
+/*!
+ * \brief The function to validate if a layer is applicable.
+ * \param state The fusion state
+ */
+std::pair<bool, std::string> validate(SerialFusionState state);
+
+
+/*!
+ * \brief The SerialFusionState builder
+ * \param layer The layer to schedule
+ */
+inline SerialFusionState buildSerialFusionState(Layer layer)
+{
+  SerialFusionState rv = SerialFusionState(layer);
+  bool valid = false;
+  std::string reason = ""; 
+  std::tie(valid, reason) = validate(rv);
+  CHECK(valid)  << "The given layer is not suitable for auto tensorize because "
+                << reason << "The layer is: " << std::endl
+                << layer << "\n";
+  return rv;
+}
+
+/*!
+ * \brief The SerialFusionState builder
+ * \param layer The layer to schedule
+ */
+inline IterGraph buildIterGraph(SerialFusionState sfState);
+
 
 } // namespace auto_tensorize
 

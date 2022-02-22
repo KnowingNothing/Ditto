@@ -134,6 +134,6 @@ def test_space_iter_graph():
 
 
 if __name__ == "__main__":
-    test_space_size()
+    #test_space_size()
     test_space_item()
-    test_space_iter_graph()
+    #test_space_iter_graph()
