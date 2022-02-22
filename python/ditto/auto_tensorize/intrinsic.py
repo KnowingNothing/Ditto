@@ -34,9 +34,17 @@ def packed_intrinsic(
 
 def intrinsic_match(
     target: tvm.te.Tensor, 
-    packed_intrin: PackedIntrinsic
+    packed_intrin: PackedIntrinsic,
+    restrictions: List[str] = []
 ):
-    return _ffi_api.MatchIntrinsic(target, packed_intrin.compute_intrinsic.op)
+    innermost = False
+    if "InnerMost" in restrictions:
+        innermost = True
+    samerange = False
+    if "SameRange" in restrictions:
+        samerange = True
+    return _ffi_api.MatchIntrinsic(target, packed_intrin.compute_intrinsic.op, 
+                                   innermost, samerange)
 
 
 # CUDA WMMA Intrinsic

@@ -7,32 +7,42 @@ Array<IterVar> IntrinMatcher::_extract_axes_from_op(
     const ComputeOpNode* op,
     bool include_reduce
 ) {
-  Array<IterVar> axes;
-  for (IterVar axis : op->axis) axes.push_back(axis);
-  for (IterVar axis : op->reduce_axis) axes.push_back(axis);
-  return std::move(axes);
+    Array<IterVar> axes;
+    for (IterVar axis : op->axis) axes.push_back(axis);
+    if(include_reduce){
+        for (IterVar axis : op->reduce_axis) axes.push_back(axis);
+    }
+    return std::move(axes);
 }
 
 Map<IterVar, Range> IntrinMatcher::_infer_bounds(Operation out) {
-  Array<Operation> out_ops{out};
-  Schedule sch = create_schedule(out_ops);
-  sch = sch.normalize();
-  Map<IterVar, Range> bounds = InferBound(sch);
-  return bounds;
+    Array<Operation> out_ops{out};
+    Schedule sch = create_schedule(out_ops);
+    sch = sch.normalize();
+    Map<IterVar, Range> bounds = InferBound(sch);
+    return bounds;
 }
 
-Array<Array<IterVar> > IntrinMatcher::match(Tensor target, Operation capsule) {
-  auto target_bounds = _infer_bounds(target->op);
-  auto intrin_bounds = _infer_bounds(capsule);
-  bool success = _match(target, capsule, target_bounds, intrin_bounds);
-  return success ? this->results : Array<Array<IterVar> >();
+Array<Array<IterVar> > IntrinMatcher::match(
+    Tensor target, 
+    Operation capsule, 
+    bool innermost, 
+    bool samerange
+) {
+    auto target_bounds = _infer_bounds(target->op);
+    auto intrin_bounds = _infer_bounds(capsule);
+    bool success = _match(target, capsule, target_bounds, 
+                          intrin_bounds, innermost, samerange);
+    return success ? this->results : Array<Array<IterVar> >();
 }
 
 bool IntrinMatcher::_match(
     Tensor target,
     Operation capsule,
     Map<IterVar, Range> target_bounds,
-    Map<IterVar, Range> intrin_bounds
+    Map<IterVar, Range> intrin_bounds, 
+    bool innermost, 
+    bool samerange
 ) {
     size_t ivd = 0;
     // assume intrin->value_index is 0
@@ -71,6 +81,39 @@ bool IntrinMatcher::_match(
         }
         for(auto it : intrin_axes){
             res.push_back(index_mapping_rev[it]);
+        }
+        if(innermost){
+            bool innermost_failed = false;
+            Array<IterVar> intrin_axes_ = _extract_axes_from_op(intrin_op, false);
+            Array<IterVar> target_axes_ = _extract_axes_from_op(target_op, false);
+            for(size_t i = 0; i < intrin_axes_.size(); i++){
+                if(pim.count(target_axes_[target_axes_.size() - i - 1]) == 0){
+                    innermost_failed = true;
+                }
+            }
+            if(innermost_failed) continue;
+        }
+        if(samerange){
+            bool samerange_failed = false;
+            for(auto it : index_mapping_rev){
+                // TODO: only support ImmInt for now
+                Range target_range = target_bounds[it.second];
+                Range intrin_range = intrin_bounds[it.first];
+                const IntImmNode* target_min = target_range->min.as<IntImmNode>();
+                const IntImmNode* target_extent = target_range->extent.as<IntImmNode>();
+                const IntImmNode* intrin_min = intrin_range->min.as<IntImmNode>();
+                const IntImmNode* intrin_extent = intrin_range->extent.as<IntImmNode>();
+                ICHECK(target_min != nullptr) << "only support ImmInt range for now";
+                ICHECK(target_extent != nullptr) << "only support ImmInt range for now";
+                ICHECK(intrin_min != nullptr) << "only support ImmInt range for now";
+                ICHECK(intrin_extent != nullptr) << "only support ImmInt range for now";
+                if(target_min->value != intrin_min->value
+                   || target_extent->value != intrin_extent->value){
+                    samerange_failed = true;
+                    break;
+                }
+            }
+            if(samerange_failed) continue;
         }
         results.push_back(res);
     }
@@ -272,8 +315,8 @@ Array<IterVarMap> IndexExprMatcher::match(
 }
 
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.MatchIntrinsic")
-    .set_body_typed([](Tensor target, Operation capsule) {
-        return IntrinMatcher().match(target, capsule);
+    .set_body_typed([](Tensor target, Operation capsule, bool innermost, bool samerange) {
+        return IntrinMatcher().match(target, capsule, innermost, samerange);
     });
 
 } // namespace auto_tensorize

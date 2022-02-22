@@ -223,6 +223,112 @@ def test_tensorize_cuda():
     print(f"Our code uses {cost} ms")
 
 
+def test_build_match_info_with_restrictions():
+    ins, outs = BatchGemmSoftmaxGemm()
+    A, B, C = ins
+    (F,) = outs
+
+    E_frag = F.op.input_tensors[0]
+    exp, C_ext = E_frag.op.input_tensors
+    D_frag = exp.op.input_tensors[0]
+    A_shared, B_shared = D_frag.op.input_tensors
+
+    first_packed = at.cuda_wmma(scope="shared")
+
+    first_match_info_choices = at.intrinsic_match(D_frag, first_packed, ["InnerMost", "SameRange"])
+
+    choice = first_match_info_choices[0]
+
+    first_match_info = at.match_info(choice, first_packed)
+
+    second_packed = at.cuda_wmma(scope="global")
+
+    second_match_info_choices = at.intrinsic_match(E_frag, second_packed, ["InnerMost", "SameRange"])
+
+    choice = second_match_info_choices[0]
+
+    second_match_info = at.match_info(choice, second_packed)
+
+    print(first_match_info_choices)
+    print(second_match_info_choices)
+    print(first_match_info)
+    print(second_match_info)
+
+
+def test_tensorize_cuda_with_restrictions():
+    ins, outs = BatchGemmSoftmaxGemm()
+    A, B, C = ins
+    (F,) = outs
+
+    E_frag = F.op.input_tensors[0]
+    exp, C_ext = E_frag.op.input_tensors
+    D_frag = exp.op.input_tensors[0]
+    A_shared, B_shared = D_frag.op.input_tensors
+
+    b, m, n, mi, ni = E_frag.op.axis
+    rlo, rli = E_frag.op.reduce_axis
+    fuse_choice = at.fusion_choice(D_frag.op, E_frag.op, [b, m, n, rlo, mi, ni, rli], 3)
+
+    first_packed = at.cuda_wmma(scope="shared")
+
+    first_match_info_choices = at.intrinsic_match(D_frag, first_packed, ["InnerMost", "SameRange"])
+
+    choice = first_match_info_choices[0]
+
+    first_match_info = at.match_info(choice, first_packed)
+
+    second_packed = at.cuda_wmma(scope="global")
+
+    second_match_info_choices = at.intrinsic_match(E_frag, second_packed, ["InnerMost", "SameRange"])
+
+    choice = second_match_info_choices[0]
+
+    second_match_info = at.match_info(choice, second_packed)
+
+    layer = ac.layer([F.op], inputs=[A, B, C])
+    tensorize_state = at.tensorize_hyper_fusion_state(
+        layer, fuse_choice, {D_frag.op: first_match_info, E_frag.op: second_match_info}
+    )
+
+    V100 = hw.query_hw_param("gpu.cuda.V100")
+    tensorize_param = at.cuda_tensorize_param(
+        warp_size=32,
+        ty_size=4,
+        tz_size=2,
+        input_vector_len=4,
+        serial_y=2,
+        serial_z=1,
+        block_rx=8,
+        warp_rx=4,
+        block_ry=1,
+        warp_ry=4,
+        unroll_steps=512,
+    )
+
+    sch = at.tensorize_cuda(layer, tensorize_state, V100, tensorize_param)
+    print(tvm.lower(sch, layer.schedule_tensors, simple_mode=True))
+    func = tvm.build(sch, layer.schedule_tensors, "cuda")
+    inputs_np = [
+        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype("float16")
+        for y in ins
+    ]
+
+    outputs_np = [
+        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype("float16")
+        for y in outs
+    ]
+
+    ctx = tvm.cuda()
+    inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
+    outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
+
+    evaluator = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=600)
+    cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
+    print(f"Our code uses {cost} ms")
+
+
 if __name__ == "__main__":
     test_build_match_info()
     test_tensorize_cuda()
+    test_build_match_info_with_restrictions()
+    test_tensorize_cuda_with_restrictions()

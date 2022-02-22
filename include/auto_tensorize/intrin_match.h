@@ -26,13 +26,15 @@ typedef Map<DataProducer, DataProducer> BufferMap;
 
 class IntrinMatcher : public Object {
   public:
-    Array<Array<IterVar> > match(Tensor target, Operation capsule);
+    Array<Array<IterVar> > match(Tensor target, Operation capsule, 
+                                 bool innermost = false, bool samerange = false);
 
   private:
     Array<Array<IterVar> > results;
     BufferMap buffer_map; // used for DAG match, useless here
     bool _match(Tensor target, Operation capsule,
-                Map<IterVar, Range> target_bounds, Map<IterVar, Range> intrin_bounds);
+                Map<IterVar, Range> target_bounds, Map<IterVar, Range> intrin_bounds,
+                bool innermost = false, bool samerange = false);
     Map<IterVar, Range> _infer_bounds(Operation out);
     Array<IterVar> _extract_axes_from_op(const ComputeOpNode* op, bool include_reduce = true);
     // bool _check_elemwise(const ComputeOpNode* op, Array<Array<PrimExpr>>& indices);
