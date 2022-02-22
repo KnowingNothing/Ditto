@@ -239,7 +239,7 @@ configs = [
 if __name__ == "__main__":
     batch_size = 1
     print("Use PyTorch Tensor Core:", TENSOR_CORE)
-    print("Ratio,Time,AI,Perf")
+    print("Ratio,Time,AI,FusedAI,Perf,OrgDRAM,FuseDRAM")
     for config in configs:
         seq_len = config["seq_len"]
         hidden = config["hidden"]
@@ -247,14 +247,31 @@ if __name__ == "__main__":
         net_cost = perf_whole_net(config, batch_size, seq_len)
         chain_cost = perf_gemm_chain(config, batch_size, seq_len)
         ratio = chain_cost / net_cost * 100
-        gflop = batch_size * ((seq_len * hidden * seq_len + seq_len * seq_len * hidden) * 2 + (seq_len * seq_len * heads) * 3) / 1e9
-        first_gemm_dram = batch_size * (seq_len * hidden + hidden * seq_len + seq_len * seq_len * heads)
+        gflop = (
+            batch_size
+            * (
+                (seq_len * hidden * seq_len + seq_len * seq_len * hidden) * 2
+                + (seq_len * seq_len * heads) * 3
+            )
+            / 1e9
+        )
+        first_gemm_dram = batch_size * (
+            seq_len * hidden + hidden * seq_len + seq_len * seq_len * heads
+        )
         softmax_dram = batch_size * (seq_len * seq_len * heads * 2)
-        second_gemm_dram = batch_size * (seq_len * seq_len * heads + seq_len * hidden + seq_len * hidden)
+        second_gemm_dram = batch_size * (
+            seq_len * seq_len * heads + seq_len * hidden + seq_len * hidden
+        )
+        fuse_dram = batch_size * (
+            seq_len * hidden + hidden * seq_len + seq_len * hidden + seq_len * hidden
+        )
         if TENSOR_CORE:
             dram = (first_gemm_dram + softmax_dram + second_gemm_dram) * 2 / 1e9
+            fuse_dram *= 2 / 1e9
         else:
             dram = (first_gemm_dram + softmax_dram + second_gemm_dram) * 4 / 1e9
+            fuse_dram *= 4 / 1e9
         ai = gflop / dram
+        fuse_ai = gflop / fuse_dram
         perf = gflop / chain_cost * 1e3
-        print(f"{ratio},{chain_cost},{ai},{perf}")
+        print(f"{ratio},{chain_cost},{ai},{fuse_ai},{perf},{dram},{fuse_dram}")
