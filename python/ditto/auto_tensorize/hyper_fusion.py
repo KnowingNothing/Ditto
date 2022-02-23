@@ -188,3 +188,76 @@ def tensorize_cuda(
     tensorize_param: CUDATensorizeParam,
 ):
     return _ffi_api.TensorizeCUDA(layer, state, cuda_param, tensorize_param)
+
+
+@tvm._ffi.register_object("ditto.auto_tensorize.CPUTensorizeContext")
+class CPUTensorizeContext(Object):
+    """CPUTensorizeContext object"""
+
+
+def cpu_tensorize_context(
+    layer: auto_compute.Layer,
+    state: TensorizeHyperFusionState,
+    cpu_param: hardware.HardwareParam,
+):
+    return _ffi_api.CPUTensorizeContext(layer, state, cpu_param)
+
+
+@tvm._ffi.register_object("ditto.auto_tensorize.CPUTensorizeParam")
+class CPUTensorizeParam(Object):
+    """CPUTensorizeParam object"""
+
+    def __str__(self):
+        ret = "CPUTensorizeParam("
+        ret += f"    warp_size={self.warp_size}\n"
+        ret += f"    ty_size={self.ty_size}\n"
+        ret += f"    tz_size={self.tz_size}\n"
+        ret += f"    input_vector_len={self.input_vector_len}\n"
+        ret += f"    serial_y={self.serial_y}\n"
+        ret += f"    serial_z={self.serial_z}\n"
+        ret += ")\n"
+        return ret
+
+    def __repr__(self) -> str:
+        return str(self)
+
+
+def cpu_tensorize_param(
+    warp_size: int = 32,
+    ty_size: int = 4,
+    tz_size: int = 2,
+    input_vector_len: int = 4,
+    serial_y: int = 2,
+    serial_z: int = 1,
+    block_rx: int = 4,
+    block_ry: int = 1,
+    block_rz: int = 4,
+    warp_rx: int = 1,
+    warp_ry: int = 4,
+    warp_rz: int = 1,
+    unroll_steps: int = 1500,
+):
+    return _ffi_api.CPUTensorizeParam(
+        warp_size,
+        ty_size,
+        tz_size,
+        input_vector_len,
+        serial_y,
+        serial_z,
+        block_rx,
+        block_ry,
+        block_rz,
+        warp_rx,
+        warp_ry,
+        warp_rz,
+        unroll_steps,
+    )
+
+
+def tensorize_cpu(
+    layer: auto_compute.Layer,
+    state: TensorizeHyperFusionState,
+    cpu_param: hardware.HardwareParam,
+    tensorize_param: CPUTensorizeParam,
+):
+    return _ffi_api.TensorizeCPU(layer, state, cpu_param, tensorize_param)
