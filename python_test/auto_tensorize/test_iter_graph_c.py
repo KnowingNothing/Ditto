@@ -52,21 +52,21 @@ def test_iter_graph(path=""):
     # print(ig)
     return ig
 
-# test workflow
-# ig = test_iter_graph()
-# ig.set_first_op_permute([2,1,0])
-# ig.set_first_op_tiling([8,16,32])
-# ig.set_second_op_tiling([4,5,6])
-# ig.set_second_op_permute([0,2,1])
-# ig.set_fusion(2)
-# ig.apply_all()
-# # test reschedule and reapply_all
-# ig.set_first_op_permute([0,1,2])
-# ig.set_first_op_tiling([8,16,32])
-# ig.set_second_op_tiling([32, 16, 4])
-# ig.set_second_op_permute([0,1,2])
-# ig.set_fusion(2)
-# ig.apply_all()
+def test_workflow():
+    ig = test_iter_graph()
+    ig.set_first_op_permute([2,1,0])
+    ig.set_first_op_tiling([8,16,32])
+    ig.set_second_op_tiling([4,5,6])
+    ig.set_second_op_permute([0,2,1])
+    ig.set_attach(2)
+    ig.apply_all()
+    # test reschedule and reapply_all
+    ig.set_first_op_permute([0,1,2])
+    ig.set_first_op_tiling([8,16,32])
+    ig.set_second_op_tiling([32, 16, 4])
+    ig.set_second_op_permute([0,1,2])
+    ig.set_attach(2)
+    ig.apply_all()
 
 # test schedule independency
 def test_schedule_independency():
@@ -120,20 +120,21 @@ def test_search():
     # print(ig)
     # print(featureLog)
 
-    searchDriver = at.build_search_driver(ig, ["time", "static analysis"], "bruteForce", hp, "float32")
+    searchDriver = at.build_search_driver(ig, ["time", "static analysis"], "bruteForce", hp, "float16")
     print(searchDriver)
     fusionSpace = searchDriver.get_fusion_space()
     print(fusionSpace)
-    fusionSpace.set_first_op_tiling_mandatory([[4,8,12], [8,64,64]])
-    fusionSpace.set_second_op_tiling_mandatory([[28,8,12], [8,64,64]])
+    fusionSpace.set_first_op_tiling_mandatory([16,16,4])
+    fusionSpace.set_second_op_tiling_mandatory([16,4,4])
     print(fusionSpace)
-    print(searchDriver)
     # the fusionItem
     it = searchDriver.search()
     print(it)
-    ig.set_fusion(it)
-    res = ig.analyse(hp, 4, 1)
-    print(res.getLog())
+    if it:
+        ig.set_fusion(it)
+        res = ig.analyse(hp, 4, 1)
+        ig.display()
+        print(res.getLog())
 def test_templates():
     ig = test_iter_graph()
     hp = hardware_param(
@@ -166,7 +167,7 @@ def test_templates():
         'F7': ([2,0,1],1,[1,1,-1])
     }
     res = {}
-    for name, template in [('F1', templates['F1'])]:  
+    for name, template in [('F5', templates['F5'])]:  
         fusionSpace.set_second_op_permute_mandatory([template[0]])
         fusionSpace.set_attach_mandatory([template[1]])
         fusionSpace.set_second_op_tiling_mandatory(template[2])
@@ -197,8 +198,8 @@ def test_write_file():
 if __name__ == '__main__':
     # test_iter_graph()
     # test_schedule_independency()
-    # test_analysis()
+    # test_workflow()
     # test_analyse()
-    #test_search()
-    test_templates()
-    #test_write_file()
+    test_search()
+    # test_templates()
+    # test_write_file()

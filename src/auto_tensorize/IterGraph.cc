@@ -445,12 +445,14 @@ int IterGraphNode::getFirstOpDataVolume() const {
   //   fp += fp_;
   return fp * n_block;
 }
+
 /*! \brief get the first Op's workload*/
 int IterGraphNode::getFirstOpWorkload() const {
   int n_block = getNumOfBlocks();
   int fp = firstOpWriteAccessFunc->getWorkload(bounds);
   return fp * n_block;
 }
+
 /*! \brief get the first Op's blockSize*/
 int IterGraphNode::getFirstOpBufferSize() const {
   int fp = 0;
@@ -461,6 +463,7 @@ int IterGraphNode::getFirstOpBufferSize() const {
     fp += fp_;
   return fp;
 }
+
 /*! \brief get the second Op's memvisit*/
 int IterGraphNode::getSecondOpDataVolume() const {
   int n_block = getNumOfBlocks();
@@ -550,6 +553,7 @@ IterGraphNode::getAnalyticalResult(hardware::HardwareParam hw_param,
   writeResult(res);
   return res;
 }
+
 /*! \brief looplike lightweight visualize */
 void IterGraphNode::visualize() {
   std::cout << "-----IterGraph Visualization------\n";
@@ -583,6 +587,7 @@ void IterGraphNode::visualize() {
   }
   std::cout << "---------------------------------\n";
 }
+
 inline IterGraph buildIterGraph(SerialFusionState sfState, String path) {
   OpHyperState ops1, ops2;
   std::tie(ops1, ops2) = sfState->getCubicOpPair();

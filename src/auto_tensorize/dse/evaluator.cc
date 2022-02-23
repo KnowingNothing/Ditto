@@ -70,6 +70,7 @@ Map<String, FloatImm> FusionResultNode::getLog() const {
   m.Set("redundancy", FloatImm(DataType::Float(64), (double)redundancy));
   m.Set("parallelism", FloatImm(DataType::Float(64), (double)parallelism));
   m.Set("AI", FloatImm(DataType::Float(64), getArithmeticIntensity()));
+  m.Set("valid", FloatImm(DataType::Float(64), (double)valid));
   return m;
 }
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
