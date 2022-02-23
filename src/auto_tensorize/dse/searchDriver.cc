@@ -38,11 +38,12 @@ namespace ditto{
                 }
             }
             CHECK(has_staticAnalysis) << "no staticAnalysis evaluator";
-            loss_t best_l = INFINITY;
+            cost_t best_l = INFINITY;
             Item best_i;
             for (size_t i = 0; i < searchSpace->cardinal; i++){
                 Item item =  searchSpace->idxToItem(i);
-                loss_t tmp_loss = eval->loss(item);
+                
+                cost_t tmp_loss = eval->cost(item);
                 if(tmp_loss < best_l)
                 {   
                     best_l = tmp_loss;
@@ -58,10 +59,10 @@ namespace ditto{
             n->evals = evals;
             data_ = std::move(n);
         }
-        SearchDriver buildSearchDriver(IterGraph ig, Array<String> evaltypes, String searcher){
+        SearchDriver buildSearchDriver(IterGraph ig, Array<String> evaltypes, String searcher, hardware::HardwareParam hw_param, String dtype){
             SearchSpace searchSpace = ig->getSearchSpace();
             Array<Evaluator> evals;
-            evals.push_back(StaticAnalysis(ig));
+            evals.push_back(StaticAnalysis(ig, hw_param, dtype));
             SearchAlg alg;
             if (searcher == "bruteForce" || searcher == "BruteForce" || searcher == "brute"){
                 alg = BruteForce(searchSpace, evals);

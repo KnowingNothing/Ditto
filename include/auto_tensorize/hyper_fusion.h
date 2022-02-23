@@ -403,10 +403,257 @@ public:
   TVM_DEFINE_OBJECT_REF_COW_METHOD(CUDATensorizeParamNode);
 };
 
-te::Schedule tensorize_cuda(Layer layer, TensorizeHyperFusionState state,
+/*!
+ * \brief A class for cpu tensorize context.
+ */
+class CPUTensorizeContextNode : public Object {
+public:
+  /*! \brief The layer to schedule */
+  Layer layer;
+  /*! \brief The tensorize and fusion state */
+  TensorizeHyperFusionState state;
+  /*! \brief The parameters of GPU */
+  hardware::HardwareParam cpu_param;
+  /*! \brief The second op's fragment */
+  te::Tensor second_frag;
+  /*! \brief The second op compute_at axis */
+  tir::IterVar second_op_compute_axis;
+  /*! \brief The inter path compute_at tensor */
+  te::Tensor path_attach_tensor;
+  /*! \brief The inter path compute_at axis */
+  tir::IterVar path_attach_axis;
+  /*! \brief The first prologue shared compute_at tensor */
+  te::Tensor first_prologue_shared_attach_tensor;
+  /*! \brief The first prologue shared compute_at axis */
+  tir::IterVar first_prologue_shared_attach_axis;
+  /*! \brief The second prologue frag compute_at tensor */
+  te::Tensor first_frag_attach_tensor;
+  /*! \brief The second prologue frag compute_at axis */
+  tir::IterVar first_frag_attach_axis;
+  /*! \brief The second prologue shared compute_at tensor */
+  te::Tensor second_prologue_shared_attach_tensor;
+  /*! \brief The second prologue shared compute_at axis */
+  tir::IterVar second_prologue_shared_attach_axis;
+  /*! \brief The second prologue frag compute_at tensor */
+  te::Tensor second_frag_attach_tensor;
+  /*! \brief The second prologue frag compute_at axis */
+  tir::IterVar second_frag_attach_axis;
+  /*! \brief ThreadIdx.z is used */
+  bool tz_used{false};
+  /*! \brief ThreadIdx.y is used */
+  bool ty_used{false};
+
+  void VisitAttrs(tvm::AttrVisitor *v) {
+    v->Visit("layer", &layer);
+    v->Visit("state", &state);
+    v->Visit("cpu_param", &cpu_param);
+  }
+  /*!
+   * \brief Check if has epilogue.
+   */
+  bool HasEpilogue();
+  /*!
+   * \brief Get the epilogue root op.
+   */
+  te::Operation EpilogueRootOp();
+  /*!
+   * \brief Get the non-root epilogue ops.
+   */
+  Array<te::Operation> EpilogueNonRootOps();
+  /*!
+   * \brief Check if has inter path.
+   */
+  bool HasInterPath();
+  /*!
+   * \brief Get the inter path root op.
+   */
+  te::Operation InterPathRootOp();
+  /*!
+   * \brief Get the non-root inter path ops.
+   */
+  Array<te::Operation> InterPathNonRootOps();
+  /*!
+   * \brief Split a dim into multi-parts from inner to outer.
+   */
+  Array<tir::IterVar> Split(te::Schedule sch, te::Operation op, tir::IterVar iv,
+                            Array<PrimExpr> factors);
+  /*!
+   * \brief Fuse all the iter vars.
+   */
+  tir::IterVar FuseAll(te::Schedule sch, te::Operation op);
+  /*!
+   * \brief Fuse all the iter vars and split into multi-parts.
+   */
+  Array<tir::IterVar> FuseAllAndSplit(te::Schedule sch, te::Operation op,
+                                      Array<PrimExpr> factors);
+  /*!
+   * \brief Compute inline the operation.
+   */
+  void Inline(te::Schedule sch, te::Operation op);
+  /*!
+   * \brief Check if an operation can be inlined.
+   */
+  bool CanInline(te::Operation op);
+  /*!
+   * \brief Get the outer and inner spatial axis index of the second op.
+   */
+  std::pair<std::vector<int>, std::vector<int>> SecondOpOuterInnerSpatialAxis();
+  /*!
+   * \brief Get the outer and inner reduce axis index of the second op.
+   */
+  std::pair<std::vector<int>, std::vector<int>> SecondOpOuterInnerReduceAxis();
+  /*!
+   * \brief Get the tensorized spatial axis index.
+   */
+  std::vector<int> TensorizeSpatialAxis(const te::Operation &op);
+  /*!
+   * \brief Get the tensorized reduce axis index.
+   */
+  std::vector<int> TensorizeReduceAxis(const te::Operation &op);
+  /*!
+   * \brief Check if the fusion and tensorize choices are valide.
+   */
+  bool ValidTensorizeFusion(const std::vector<int> &inner_index,
+                            const std::vector<int> &tensorize_index);
+  /*!
+   * \brief Get the extents.
+   */
+  std::vector<int> GetSpatialExtentsByIndex(const te::Operation &op,
+                                            const std::vector<int> &index);
+  /*!
+   * \brief Get the extents.
+   */
+  std::vector<int> GetReduceExtentsByIndex(const te::Operation &op,
+                                           const std::vector<int> &index);
+  /*!
+   * \brief Check if the op is in inter path.
+   */
+  bool IsInInterPath(const te::Operation &op);
+  /*!
+   * \brief Get the spatial extents of first op.
+   */
+  std::vector<int> GetSpatialExtentsByInferBound(te::Schedule sch,
+                                                 const te::Operation &op);
+  /*!
+   * \brief Get the reduce extents of first op.
+   */
+  std::vector<int> GetReduceExtentsByInferBound(te::Schedule sch,
+                                                const te::Operation &op);
+  /*!
+   * \brief Get the batch-like dimension index.
+   */
+  std::vector<int> GetBatchLikeDim(const te::Operation& op);
+
+  static constexpr const char *_type_key =
+      "ditto.auto_tensorize.CPUTensorizeContext";
+  TVM_DECLARE_BASE_OBJECT_INFO(CPUTensorizeContextNode, Object);
+};
+
+class CPUTensorizeContext : public ObjectRef {
+public:
+  /*!
+   * \brief The constructor.
+   * \param layer The layer to schedule
+   * \param state The tensorize hyper fusion state
+   * \param cpu_param The parameters of CPU
+   */
+  TVM_DLL CPUTensorizeContext(Layer layer, TensorizeHyperFusionState state,
+                               hardware::HardwareParam cpu_param);
+
+  TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(CPUTensorizeContext, ObjectRef,
+                                        CPUTensorizeContextNode);
+  TVM_DEFINE_OBJECT_REF_COW_METHOD(CPUTensorizeContextNode);
+};
+
+/*!
+ * \brief A class for cpu schedule param.
+ */
+class CPUTensorizeParamNode : public Object {
+public:
+  /*! \brief The warp size */
+  int warp_size;
+  /*! \brief The threadIdx.y size */
+  int ty_size;
+  /*! \brief The threadIdx.z size */
+  int tz_size;
+  /*! \brief The input vector load length */
+  int input_vector_len;
+  /*! \brief The serial inner loop for y */
+  int serial_y;
+  /*! \brief The serial inner loop for z */
+  int serial_z;
+  /*! \brief The block reduce x dim */
+  int block_rx;
+  /*! \brief The block reduce y dim */
+  int block_ry;
+  /*! \brief The block reduce z dim (for future) */
+  int block_rz;
+  /*! \brief The warp reduce x dim */
+  int warp_rx;
+  /*! \brief The warp reduce y dim */
+  int warp_ry;
+  /*! \brief The warp reduce z dim (for future) */
+  int warp_rz;
+  /*! \brief The unroll steps */
+  int unroll_steps;
+
+  void VisitAttrs(tvm::AttrVisitor *v) {
+    v->Visit("warp_size", &warp_size);
+    v->Visit("ty_size", &ty_size);
+    v->Visit("tz_size", &tz_size);
+    v->Visit("input_vector_len", &input_vector_len);
+    v->Visit("serial_y", &serial_y);
+    v->Visit("serial_z", &serial_z);
+    v->Visit("block_rx", &block_rx);
+    v->Visit("block_ry", &block_ry);
+    v->Visit("block_rz", &block_rz);
+    v->Visit("warp_rx", &warp_rx);
+    v->Visit("warp_ry", &warp_ry);
+    v->Visit("warp_rz", &warp_rz);
+    v->Visit("unroll_steps", &unroll_steps);
+  }
+
+  static constexpr const char *_type_key =
+      "ditto.auto_tensorize.CPUTensorizeParam";
+  TVM_DECLARE_BASE_OBJECT_INFO(CPUTensorizeParamNode, Object);
+};
+
+class CPUTensorizeParam : public ObjectRef {
+public:
+  /*!
+   * \brief The constructor.
+   * \param warp_size The warp size
+   * \param ty_size The threadIdx.y size
+   * \param tz_size The threadIdx.z size
+   * \param input_vector_len The input vector length
+   * \param serial_y The y dim serial trip count
+   * \param serial_z The z dim serial trip count
+   * \param block_rx The block x reduce trip count
+   * \param block_ry The block y reduce trip count
+   * \param block_rz The block z reduce trip count
+   * \param warp_rx The warp x reduce trip count
+   * \param warp_ry The warp y reduce trip count
+   * \param warp_rz The warp z reduce trip count
+   * \param unroll_steps The unroll steps
+   */
+  TVM_DLL CPUTensorizeParam(int warp_size, int ty_size, int tz_size,
+                             int input_vector_len, int serial_y, int serial_z,
+                             int block_rx, int block_ry, int block_rz,
+                             int warp_rx, int warp_ry, int warp_rz,
+                             int unroll_steps);
+
+  TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(CPUTensorizeParam, ObjectRef,
+                                        CPUTensorizeParamNode);
+  TVM_DEFINE_OBJECT_REF_COW_METHOD(CPUTensorizeParamNode);
+};
+
+
+te::Schedule TensorizeCUDA(Layer layer, TensorizeHyperFusionState state,
                             hardware::HardwareParam cuda_param,
                             CUDATensorizeParam tensorize_param);
-
+te::Schedule TensorizeCPU(Layer layer, TensorizeHyperFusionState state,
+                            hardware::HardwareParam cpu_param,
+                            CPUTensorizeParam tensorize_param);
 } // namespace auto_tensorize
 
 } // namespace ditto

@@ -12,7 +12,7 @@
 #include <vector>
 #include <stdio.h>
 
-#include <auto_tensorize/IterGraph.h>
+#include <auto_tensorize/iter_graph.h>
 #include <hardware/base/hw_param.h>
 
 using namespace tvm;
@@ -126,6 +126,7 @@ public:
     size_t index;
     // whether the paramter is given by the user
     bool mandatory;
+    
     void VisitAttrs(AttrVisitor * v){
       v->Visit("name", &name);
       v->Visit("cardinal", &cardinal);
@@ -143,9 +144,9 @@ public:
 
   class TilingSpaceNode: public SearchSpaceNode{
   public:
-    Array<Array<IntImm>> mandatories;
+    Array<IntImm> mandatories;
     Array<IntImm> extents;
-    void setMandatory(Array<Array<IntImm>>);
+    void setMandatory(Array<IntImm>);
     void VisitAttrs(AttrVisitor* v){
       v->Visit("extents", &extents);
     }
@@ -162,7 +163,9 @@ public:
 
   class AttachSpaceNode: public SearchSpaceNode{
 public:
+    Array<IntImm> mandatories;
     size_t numOfLoops;
+    void setMandatory(Array<IntImm>);
     Item idxToItem(size_t id) const override;
     TVM_DECLARE_FINAL_OBJECT_INFO(AttachSpaceNode, SearchSpaceNode);
   };
@@ -176,8 +179,10 @@ public:
 
   class PermuteSpaceNode: public SearchSpaceNode{
 public:
+    Array<Array<IntImm>> mandatories;
     size_t numOfLoops;
     size_t perm[10];
+    void setMandatory(Array<Array<IntImm>>);
     Item idxToItem(size_t index) const override;
     TVM_DECLARE_FINAL_OBJECT_INFO(PermuteSpaceNode, SearchSpaceNode);
   };
@@ -205,14 +210,31 @@ public:
     void updateCardinal(){
       cardinal = firstOpTiling->cardinal * secondOpTiling->cardinal * \
       firstOpPermute->cardinal * secondOpPermute->cardinal * attach->cardinal;
+      std::cout << "cardinals: " << firstOpTiling->cardinal << " " <<  secondOpTiling->cardinal << " " << \
+      firstOpPermute->cardinal << " " << secondOpPermute->cardinal << " " <<  attach->cardinal << std::endl;
     }
-    void setFirstOpTilingMandatories(Array<Array<IntImm>> mand){
+    void setFirstOpTilingMandatory(Array<IntImm> mand){
       firstOpTiling->setMandatory(mand);
       updateCardinal();
       reset();
     }
-    void setsecondOpTilingMandatories(Array<Array<IntImm>> mand){
+    void setSecondOpTilingMandatory(Array<IntImm> mand){
       secondOpTiling->setMandatory(mand);
+      updateCardinal();
+      reset();
+    }
+    void setFirstOpPermuteMandatory(Array<Array<IntImm>> mand){
+      firstOpPermute->setMandatory(mand);
+      updateCardinal();
+      reset();
+    }
+    void setSecondOpPermuteMandatory(Array<Array<IntImm>> mand){
+      secondOpPermute->setMandatory(mand);
+      updateCardinal();
+      reset();
+    }
+    void setAttacchMandatory(Array<IntImm> mand){
+      attach->setMandatory(mand);
       updateCardinal();
       reset();
     }

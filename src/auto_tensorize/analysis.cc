@@ -186,12 +186,12 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
 FeatureLog buildFeatureLog(IterGraph ig, hardware::HardwareParam hp){
   return FeatureLog(
     ig->inferBound(),\
-    ig->getFirstOpFp(),\
+    ig->getFirstOpDataVolume(),\
     ig->getFirstOpWorkload(),\
-    ig->getFirstOpBlockSize(),\
-    ig->getSecondOpFp(),\
+    ig->getFirstOpBufferSize(),\
+    ig->getSecondOpDataVolume(),\
     ig->getSecondOpWorkload(),\
-    ig->getSecondOpBlockSize(),\
+    ig->getSecondOpBufferSize(),\
     ig->getParallelism(),\
     hp
   );

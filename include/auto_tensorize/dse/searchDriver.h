@@ -12,10 +12,11 @@
 #include <vector>
 #include <stdio.h>
 
-#include <auto_tensorize/IterGraph.h>
+#include <auto_tensorize/iter_graph.h>
 #include <hardware/base/hw_param.h>
 #include <auto_tensorize/dse/searchSpace.h>
 #include <auto_tensorize/dse/evaluator.h>
+#include <hardware/base/hw_param.h>
 
 using namespace tvm;
 namespace ditto {
@@ -86,7 +87,7 @@ public:
   TVM_DEFINE_OBJECT_REF_COW_METHOD(SearchDriverNode);
   };
 
-inline SearchDriver buildSearchDriver(IterGraph ig, Array<String> evals, String searcherType);
+inline SearchDriver buildSearchDriver(IterGraph ig, Array<String> evaltypes, String searcher, hardware::HardwareParam hw_param, String dtype);
 } // namespace auto_tensorize
 
 } // namespace ditto

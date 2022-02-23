@@ -12,14 +12,14 @@
 #include <vector>
 #include <stdio.h>
 
-#include <auto_tensorize/IterGraph.h>
+#include <auto_tensorize/iter_graph.h>
 #include <auto_tensorize/dse/searchSpace.h>
 #include <hardware/base/hw_param.h>
 
 using namespace tvm;
 namespace ditto {
 namespace auto_tensorize {
-#define loss_t double 
+#define cost_t double 
 
   class ResultNode: public Object{
 public:
@@ -38,14 +38,23 @@ public:
   class FusionResultNode: public ResultNode{
 public:
     struct opFeat{
-      int memVisit;
+      int dataMovementVolume;
       int workLoad;
       int bufferSize;
     };
     Map<tir::Var, IntImm> bounds;
     opFeat op1, op2;
     int parallelism;
-    loss_t loss() const;
+    int redundancy;
+    double locality;
+    int n_block;
+    bool valid;
+
+    double getArithmeticIntensity() const;
+    double getLocality(hardware::HardwareParam) const;
+    double getRedundancy() const;
+    double getParallelism() const;
+    Map<String, FloatImm> getLog()const;
     static constexpr const char * _type_key = "ditto.auto_tensorize.FusionResult";
     TVM_DECLARE_FINAL_OBJECT_INFO(FusionResultNode, ResultNode);
   };
@@ -60,7 +69,11 @@ public:
                       int op2MemVisit,\
                       int op2WorkLoad,\
                       int op2Buffer,\
-                      int parallelism);
+                      double locality,\
+                      int parallelism,\
+                      int redundancy,\
+                      int n_block,\
+                      bool valid);
     TVM_DEFINE_OBJECT_REF_METHODS(FusionResult, Result, FusionResultNode);
     TVM_DEFINE_OBJECT_REF_COW_METHOD(FusionResultNode);
   };
@@ -83,7 +96,7 @@ public:
 public:
   std::string tag;
   virtual Result eval(Item it) const {return Result();}
-  virtual loss_t loss(Item it) const {return loss_t(INFINITY);}
+  virtual cost_t cost(Item it) const {return cost_t(INFINITY);}
   static constexpr const char * _type_key = "ditto.auto_tensorize.Evaluator";
   TVM_DECLARE_BASE_OBJECT_INFO(EvaluatorNode, Object);
   };
@@ -97,14 +110,16 @@ public:
   class StaticAnalysisNode: public EvaluatorNode{
 public:    
   IterGraph iterGraph;
+  hardware::HardwareParam hw_param;
+  int bytePerEle;
   Result eval(Item it) const;
-  loss_t loss(Item it) const;
+  cost_t cost(Item it) const;
   TVM_DECLARE_FINAL_OBJECT_INFO(StaticAnalysisNode, EvaluatorNode);
   };
 
   class StaticAnalysis: public Evaluator{
 public:
-  TVM_DLL StaticAnalysis(IterGraph ig);
+  TVM_DLL StaticAnalysis(IterGraph ig, hardware::HardwareParam hw_param, String dtype);
   TVM_DEFINE_OBJECT_REF_METHODS(StaticAnalysis, Evaluator, StaticAnalysisNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(StaticAnalysisNode);
   };

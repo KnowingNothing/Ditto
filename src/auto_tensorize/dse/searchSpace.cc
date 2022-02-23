@@ -12,14 +12,6 @@
 using namespace tvm;
 namespace ditto{
     namespace auto_tensorize{
-        Array<IntImm> getSubIndices(size_t index, Array<IntImm> extents){
-            Array<IntImm> ret;
-            for(auto i: extents){
-                ret.push_back(IntImm(DataType::Int(32), index % i->value));
-                index /= i->value;
-            }
-            return ret;
-        }
         
         size_t product(Array<IntImm> nums){
             size_t ret = 1;
@@ -38,15 +30,28 @@ namespace ditto{
             data_ = n;
         }
         Item TilingSpaceNode::idxToItem(size_t idx) const{
-            if (mandatory)
-                return TilingItem(mandatories[idx]);
-            Array<IntImm> indices = getSubIndices(idx, extents);
-            return TilingItem(indices);
+            Array<IntImm> ret;
+            for (size_t i = 0; i < extents.size(); i++){
+                if (mandatory && mandatories[i]->value > 0){
+                    ret.push_back(IntImm(DataType::Int(32), mandatories[i]->value));
+                }
+                else{
+                    ret.push_back(IntImm(DataType::Int(32), idx % extents[i]->value + 1));
+                    idx /= extents[i]->value;
+                }
+            }
+            CHECK(idx == 0) << "Tiling cardinal error";
+            return TilingItem(ret);
         }
-        void TilingSpaceNode::setMandatory(Array<Array<IntImm>> mandatories_){
+        void TilingSpaceNode::setMandatory(Array<IntImm> mandatories_){
             mandatory = true;
             mandatories = mandatories_;
-            cardinal = mandatories.size();
+            cardinal = 1;
+            for (size_t i = 0; i < mandatories.size(); i++)
+                if (mandatories[i]->value < 0){
+                    cardinal *= extents[i]->value;
+                }
+            reset();
         }
         PermuteSpace::PermuteSpace(size_t numOfLoops){
             auto n = make_object<PermuteSpaceNode>();
@@ -59,6 +64,8 @@ namespace ditto{
             data_ = n;
         }
         Item PermuteSpaceNode::idxToItem(size_t idx) const{
+            if (mandatory)
+                return PermuteItem(mandatories[idx]);
             std::vector<size_t> partial_rank;
             size_t product = 1;
             for(size_t i = 0; i < numOfLoops; i++){
@@ -75,6 +82,12 @@ namespace ditto{
             }
             return PermuteItem(ret);
         }
+        void PermuteSpaceNode::setMandatory(Array<Array<IntImm>> mands){
+            mandatories = mands;
+            mandatory = true;
+            cardinal = mandatories.size();
+            reset();
+        }
         AttachSpace::AttachSpace(size_t numOfLoops){
             auto n = make_object<AttachSpaceNode>();
             n->numOfLoops = numOfLoops;
@@ -82,9 +95,17 @@ namespace ditto{
             n->name = "Attach";
             data_ = n;
         }
-        Item AttachSpaceNode::idxToItem(size_t idx) const{
+        Item AttachSpaceNode::idxToItem(size_t idx) const{\
+            if (mandatory)
+                return AttachItem((mandatories[idx])->value);
             CHECK(idx <= numOfLoops) << "attach range exceeded";
             return AttachItem(idx);
+        }
+        void AttachSpaceNode::setMandatory(Array<IntImm> mands){
+            mandatories = mands;
+            mandatory = true;
+            cardinal = mandatories.size();
+            reset();
         }
         FusionSpace::FusionSpace(PermuteSpace firstOpPermute, PermuteSpace secondOpPermute,\
                                 TilingSpace firstOpTiling, TilingSpace secondOpTiling,\
@@ -215,9 +236,15 @@ namespace ditto{
         TVM_REGISTER_GLOBAL("ditto.auto_tensorize.setMandatory").\
         set_body_method<TilingSpace>(&TilingSpaceNode::setMandatory);
         TVM_REGISTER_GLOBAL("ditto.auto_tensorize.setFirstOpTilingMandatory").\
-        set_body_method<FusionSpace>(&FusionSpaceNode::setFirstOpTilingMandatories);
+        set_body_method<FusionSpace>(&FusionSpaceNode::setFirstOpTilingMandatory);
         TVM_REGISTER_GLOBAL("ditto.auto_tensorize.setSecondOpTilingMandatory").\
-        set_body_method<FusionSpace>(&FusionSpaceNode::setsecondOpTilingMandatories);
+        set_body_method<FusionSpace>(&FusionSpaceNode::setSecondOpTilingMandatory);
+        TVM_REGISTER_GLOBAL("ditto.auto_tensorize.setFirstOpPermuteMandatory").\
+        set_body_method<FusionSpace>(&FusionSpaceNode::setFirstOpPermuteMandatory);
+        TVM_REGISTER_GLOBAL("ditto.auto_tensorize.setSecondOpPermuteMandatory").\
+        set_body_method<FusionSpace>(&FusionSpaceNode::setSecondOpPermuteMandatory);
+        TVM_REGISTER_GLOBAL("ditto.auto_tensorize.setAttachMandatory").\
+        set_body_method<FusionSpace>(&FusionSpaceNode::setAttacchMandatory);
         TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildFusionItem").
         set_body_typed(buildFusionItem);
     }// auto_tensorize

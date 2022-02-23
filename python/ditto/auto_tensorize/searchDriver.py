@@ -37,6 +37,6 @@ class SearchDriver(Object):
     def get_fusion_space(self):
         return _ffi_api.getFusionSpace(self)
 
-def build_search_driver(ig: IterGraph, evals: Sequence[str], searcherType: str):
-    return _ffi_api.buildSearchDriver(ig, evals, searcherType)
+def build_search_driver(ig: IterGraph, evals: Sequence[str], searcherType: str, hw_param, dtype):
+    return _ffi_api.buildSearchDriver(ig, evals, searcherType, hw_param, dtype)
 

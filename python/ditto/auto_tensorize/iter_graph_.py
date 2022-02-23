@@ -18,17 +18,15 @@ class IterGraph(Object):
         _ffi_api.setFirstOpPermute(self, factors)
     def set_second_op_permute(self, factors: Sequence[int]):
         _ffi_api.setSecondOpPermute(self, factors)
-    def synchronize(self):
-        _ffi_api.synchronize(self)
-    def set_schedule(self, fusionItem: FusionItem):
-        _ffi_api.setSchedule(self, fusionItem)
-    def analyse(self):
-        return _ffi_api.getAnalyticalResult(self)
-    def set_schedule(self, it: FusionItem):
-        _ffi_api.setSchedule(self, it)
+    def apply_all(self):
+        _ffi_api.applyAll(self)
+    def set_fusion(self, fusionItem: FusionItem):
+        _ffi_api.setFusion(self, fusionItem)
+    def analyse(self, hw_param, bytePerEle, writeThrough):
+        return _ffi_api.getAnalyticalResult(self, hw_param, bytePerEle, writeThrough)
     def display(self):
         return _ffi_api.display(self)
 
 
-def build_iter_graph(sfstate: SerialFusionState):
-    return _ffi_api.build_iter_graph(sfstate)
+def build_iter_graph(sfstate: SerialFusionState, path: str):
+    return _ffi_api.build_iter_graph(sfstate, path)

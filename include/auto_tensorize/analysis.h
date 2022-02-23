@@ -14,7 +14,7 @@
 #include <vector>
 #include <stdio.h>
 
-#include <auto_tensorize/IterGraph.h>
+#include <auto_tensorize/iter_graph.h>
 #include <hardware/base/hw_param.h>
 
 

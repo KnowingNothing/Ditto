@@ -14,7 +14,7 @@
 
 #include <auto_compute/state.h>
 #include <auto_tensorize/pattern.h>
-#include <auto_tensorize/IterGraph.h>
+#include <auto_tensorize/iter_graph.h>
 
 using namespace tvm;
 namespace ditto {
@@ -175,7 +175,7 @@ inline SerialFusionState buildSerialFusionState(Layer layer)
  * \brief The SerialFusionState builder
  * \param layer The layer to schedule
  */
-inline IterGraph buildIterGraph(SerialFusionState sfState);
+inline IterGraph buildIterGraph(SerialFusionState sfState, String path);
 
 
 } // namespace auto_tensorize
