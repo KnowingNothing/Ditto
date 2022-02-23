@@ -7,122 +7,112 @@
 #include <tvm/te/tensor.h>
 #include <tvm/tir/expr.h>
 
+#include <stdio.h>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <stdio.h>
 
-#include <auto_tensorize/iter_graph.h>
 #include <auto_tensorize/dse/searchSpace.h>
+#include <auto_tensorize/iter_graph.h>
 #include <hardware/base/hw_param.h>
 
 using namespace tvm;
 namespace ditto {
 namespace auto_tensorize {
-#define cost_t double 
+#define cost_t double
 
-  class ResultNode: public Object{
+class ResultNode : public Object {
 public:
-   void VisitAttrs(AttrVisitor * v){}
-   static constexpr const char * _type_key = "ditto.auto_tensorize.Result";
-   TVM_DECLARE_BASE_OBJECT_INFO(ResultNode, Object); 
-  };
+  void VisitAttrs(AttrVisitor *v) {}
+  static constexpr const char *_type_key = "ditto.auto_tensorize.Result";
+  TVM_DECLARE_BASE_OBJECT_INFO(ResultNode, Object);
+};
 
-  class Result: public ObjectRef{
+class Result : public ObjectRef {
 public:
-    TVM_DEFINE_OBJECT_REF_METHODS(Result, ObjectRef, ResultNode);
-    TVM_DEFINE_OBJECT_REF_COW_METHOD(ResultNode);
-  };
+  TVM_DEFINE_OBJECT_REF_METHODS(Result, ObjectRef, ResultNode);
+  TVM_DEFINE_OBJECT_REF_COW_METHOD(ResultNode);
+};
 
-
-  class FusionResultNode: public ResultNode{
+class FusionResultNode : public ResultNode {
 public:
-    struct opFeat{
-      int dataMovementVolume;
-      int workLoad;
-      int bufferSize;
-    };
-    Map<tir::Var, IntImm> bounds;
-    opFeat op1, op2;
-    int parallelism;
-    int redundancy;
-    double locality;
-    int n_block;
-    bool valid;
-
-    double getArithmeticIntensity() const;
-    double getLocality(hardware::HardwareParam) const;
-    double getRedundancy() const;
-    double getParallelism() const;
-    Map<String, FloatImm> getLog()const;
-    static constexpr const char * _type_key = "ditto.auto_tensorize.FusionResult";
-    TVM_DECLARE_FINAL_OBJECT_INFO(FusionResultNode, ResultNode);
+  struct opFeat {
+    int dataMovementVolume;
+    int workLoad;
+    int bufferSize;
   };
+  Map<tir::Var, IntImm> bounds;
+  opFeat op1, op2;
+  int parallelism;
+  int redundancy;
+  double locality;
+  int n_block;
+  bool valid;
 
+  double getArithmeticIntensity() const;
+  double getLocality(hardware::HardwareParam) const;
+  double getRedundancy() const;
+  double getParallelism() const;
+  Map<String, FloatImm> getLog() const;
+  static constexpr const char *_type_key = "ditto.auto_tensorize.FusionResult";
+  TVM_DECLARE_FINAL_OBJECT_INFO(FusionResultNode, ResultNode);
+};
 
-  class FusionResult: public Result{
+class FusionResult : public Result {
 public:
-    TVM_DLL FusionResult(Map<tir::Var, IntImm> bounds,\
-                      int op1MemVisit,\
-                      int op1WorkLoad,\
-                      int op1Buffer,\
-                      int op2MemVisit,\
-                      int op2WorkLoad,\
-                      int op2Buffer,\
-                      double locality,\
-                      int parallelism,\
-                      int redundancy,\
-                      int n_block,\
-                      bool valid);
-    TVM_DEFINE_OBJECT_REF_METHODS(FusionResult, Result, FusionResultNode);
-    TVM_DEFINE_OBJECT_REF_COW_METHOD(FusionResultNode);
-  };
+  TVM_DLL FusionResult(Map<tir::Var, IntImm> bounds, int op1MemVisit,
+                       int op1WorkLoad, int op1Buffer, int op2MemVisit,
+                       int op2WorkLoad, int op2Buffer, double locality,
+                       int parallelism, int redundancy, int n_block,
+                       bool valid);
+  TVM_DEFINE_OBJECT_REF_METHODS(FusionResult, Result, FusionResultNode);
+  TVM_DEFINE_OBJECT_REF_COW_METHOD(FusionResultNode);
+};
 
-
-  class PerformanceResultNode: public ResultNode{
+class PerformanceResultNode : public ResultNode {
 public:
-    TVM_DECLARE_FINAL_OBJECT_INFO(PerformanceResultNode, ResultNode);
-  };
+  TVM_DECLARE_FINAL_OBJECT_INFO(PerformanceResultNode, ResultNode);
+};
 
-
-  class PerformanceResult: public Result{
+class PerformanceResult : public Result {
 public:
-    TVM_DEFINE_OBJECT_REF_METHODS(PerformanceResult, Result, PerformanceResultNode);
-    TVM_DEFINE_OBJECT_REF_COW_METHOD(PerformanceResultNode);
-  };
+  TVM_DEFINE_OBJECT_REF_METHODS(PerformanceResult, Result,
+                                PerformanceResultNode);
+  TVM_DEFINE_OBJECT_REF_COW_METHOD(PerformanceResultNode);
+};
 
-
-  class EvaluatorNode: public Object{
+class EvaluatorNode : public Object {
 public:
   std::string tag;
-  virtual Result eval(Item it) const {return Result();}
-  virtual cost_t cost(Item it) const {return cost_t(INFINITY);}
-  static constexpr const char * _type_key = "ditto.auto_tensorize.Evaluator";
+  virtual Result eval(Item it) const { return Result(); }
+  virtual cost_t cost(Item it) const { return cost_t(INFINITY); }
+  static constexpr const char *_type_key = "ditto.auto_tensorize.Evaluator";
   TVM_DECLARE_BASE_OBJECT_INFO(EvaluatorNode, Object);
-  };
+};
 
-  class Evaluator: public ObjectRef{
+class Evaluator : public ObjectRef {
 public:
-    TVM_DEFINE_OBJECT_REF_METHODS(Evaluator, ObjectRef, EvaluatorNode);
-    TVM_DEFINE_OBJECT_REF_COW_METHOD(EvaluatorNode);
-  }; 
+  TVM_DEFINE_OBJECT_REF_METHODS(Evaluator, ObjectRef, EvaluatorNode);
+  TVM_DEFINE_OBJECT_REF_COW_METHOD(EvaluatorNode);
+};
 
-  class StaticAnalysisNode: public EvaluatorNode{
-public:    
+class StaticAnalysisNode : public EvaluatorNode {
+public:
   IterGraph iterGraph;
   hardware::HardwareParam hw_param;
   int bytePerEle;
   Result eval(Item it) const;
   cost_t cost(Item it) const;
   TVM_DECLARE_FINAL_OBJECT_INFO(StaticAnalysisNode, EvaluatorNode);
-  };
+};
 
-  class StaticAnalysis: public Evaluator{
+class StaticAnalysis : public Evaluator {
 public:
-  TVM_DLL StaticAnalysis(IterGraph ig, hardware::HardwareParam hw_param, String dtype);
+  TVM_DLL StaticAnalysis(IterGraph ig, hardware::HardwareParam hw_param,
+                         String dtype);
   TVM_DEFINE_OBJECT_REF_METHODS(StaticAnalysis, Evaluator, StaticAnalysisNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(StaticAnalysisNode);
-  };
+};
 
 } // namespace auto_tensorize
 

@@ -3,9 +3,9 @@
 #include <auto_tensorize/iter_graph.h>
 #include <auto_tensorize/pattern.h>
 #include <auto_tensorize/state.h>
-#include <utils/iter_domain.h>
-#include <sys/stat.h>
 #include <fstream>
+#include <sys/stat.h>
+#include <utils/iter_domain.h>
 namespace ditto {
 
 namespace auto_tensorize {
@@ -120,8 +120,8 @@ IterGraph::IterGraph(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters,
                      Array<AccessFunction> secondOpReadAccessFuncs,
                      AccessFunction firstOpWriteAccessFunc,
                      AccessFunction secondOpWriteAccessFunc,
-                     int readProducerPos, te::Operation op1,
-                     te::Operation op2, String path) {
+                     int readProducerPos, te::Operation op1, te::Operation op2,
+                     String path) {
   auto n = make_object<IterGraphNode>();
   n->_firstOpIters = firstOpIters;
   n->_secondOpIters = secondOpIters;
@@ -144,7 +144,7 @@ IterGraph::IterGraph(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters,
   n->op2 = op2;
   n->resultPath = path;
   struct stat buffer;
-  if (stat (path.c_str(), &buffer) == 0){
+  if (stat(path.c_str(), &buffer) == 0) {
     LOG(WARNING) << path << "exists. Results will not be written to any file.";
     n->resultPath = "";
   }
@@ -427,8 +427,8 @@ int IterGraphNode::getParallelism() const {
 
 int IterGraphNode::getRedundancy() const {
   int ret = 1;
-  for (auto iv: commonIters)
-    if(!iv->shared)
+  for (auto iv : commonIters)
+    if (!iv->shared)
       ret *= iv->ext;
   return ret;
 }
@@ -471,7 +471,7 @@ int IterGraphNode::getSecondOpDataVolume() const {
   for (auto fp_ : secondOpWriteAccessFunc->getFootprint(bounds))
     fp += fp_;
   // the read of first op's output does not cause data move
-  for (auto fp_: firstOpWriteAccessFunc->getFootprint(bounds))
+  for (auto fp_ : firstOpWriteAccessFunc->getFootprint(bounds))
     fp -= fp_;
   return fp * n_block;
 }
@@ -487,23 +487,25 @@ int IterGraphNode::getSecondOpBufferSize(bool writeThrough) const {
   for (auto acf : secondOpReadAccessFuncs)
     for (auto fp_ : acf->getFootprint(bounds))
       fp += fp_;
-  if(!writeThrough)
+  if (!writeThrough)
     for (auto fp_ : secondOpWriteAccessFunc->getFootprint(bounds))
       fp += fp_;
   return fp;
 }
 
-void IterGraphNode::writeResult(FusionResult res){
-  if(!resultPath->size) return;
+void IterGraphNode::writeResult(FusionResult res) {
+  if (!resultPath->size)
+    return;
   std::ofstream outfile;
-  outfile.open(std::string(resultPath), std::ios_base::app); // append instead of overwrite
+  outfile.open(std::string(resultPath),
+               std::ios_base::app); // append instead of overwrite
   outfile << "{";
-    outfile << "outerIter:";
+  outfile << "outerIter:";
   outfile << "[";
-  for (auto iter: commonIters){
+  for (auto iter : commonIters) {
     outfile << "{";
-    for (auto split: splitRelations)
-      if (split->outer == iter){
+    for (auto split : splitRelations)
+      if (split->outer == iter) {
         outfile << "name: " << split->parent->name << ", ";
         outfile << "factor: " << split->inner->ext;
       }
@@ -515,11 +517,13 @@ void IterGraphNode::writeResult(FusionResult res){
   outfile << "redundancy: " << res->redundancy << ", ";
   outfile << "valid: " << res->valid << ", ";
   outfile << "}\n";
-  outfile.close(); 
+  outfile.close();
 }
 
 /*! \brief get the analytical result */
-FusionResult IterGraphNode::getAnalyticalResult(hardware::HardwareParam hw_param, int bytePerEle, bool writeThrough) {
+FusionResult
+IterGraphNode::getAnalyticalResult(hardware::HardwareParam hw_param,
+                                   int bytePerEle, bool writeThrough) {
   applyAll();
   bounds = inferBound();
   int n_blocks = getNumOfBlocks();
@@ -531,14 +535,18 @@ FusionResult IterGraphNode::getAnalyticalResult(hardware::HardwareParam hw_param
   int secondOpWorkload = getSecondOpWorkload();
   int memUse = (firstOpBufferSize + secondOpBufferSize);
   bool valid = (memUse) <= (hw_param->shared_memory_per_group_kb * 1000);
-  double locality = valid? 1 / (double)(firstOpDataVolume + secondOpDataVolume) : -INFINITY;
-  int parallelism = std::min(std::min(getParallelism(), hw_param->num_groups * hw_param -> num_processors_per_group),\
-        hw_param->num_groups * ((int)hw_param->shared_memory_per_group_kb * 1000 / memUse));
+  double locality =
+      valid ? 1 / (double)(firstOpDataVolume + secondOpDataVolume) : -INFINITY;
+  int parallelism = std::min(
+      std::min(getParallelism(),
+               hw_param->num_groups * hw_param->num_processors_per_group),
+      hw_param->num_groups *
+          ((int)hw_param->shared_memory_per_group_kb * 1000 / memUse));
   int redundancy = getRedundancy();
-  FusionResult res = FusionResult(bounds, firstOpDataVolume, firstOpWorkload,
-                      firstOpBufferSize, secondOpDataVolume,
-                      secondOpWorkload, secondOpBufferSize,
-                      locality, parallelism, redundancy, n_blocks, valid);
+  FusionResult res = FusionResult(
+      bounds, firstOpDataVolume, firstOpWorkload, firstOpBufferSize,
+      secondOpDataVolume, secondOpWorkload, secondOpBufferSize, locality,
+      parallelism, redundancy, n_blocks, valid);
   writeResult(res);
   return res;
 }

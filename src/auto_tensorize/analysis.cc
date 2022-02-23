@@ -20,8 +20,6 @@ PrimExpr flatten_indices(const Array<PrimExpr> shape,
   return flatten;
 }
 
-
-
 Array<Array<tir::IterVar>> share_axis_analysis(te::Operation op1,
                                                te::Operation op2) {
   // consumer_op -> axis -> producer_op -> set(axis)
@@ -142,17 +140,10 @@ Array<Array<tir::IterVar>> share_axis_analysis(te::Operation op1,
 }
 TVM_REGISTER_NODE_TYPE(FeatureLogNode);
 
-FeatureLog::FeatureLog(
-                      Map<tir::Var, IntImm> bounds,\
-                      int op1MemVisit,\
-                      int op1WorkLoad,\
-                      int op1Buffer,\
-                      int op2MemVisit,\
-                      int op2WorkLoad,\
-                      int op2Buffer,\
-                      int parallelism,\
-                      hardware::HardwareParam hp
-                      ){
+FeatureLog::FeatureLog(Map<tir::Var, IntImm> bounds, int op1MemVisit,
+                       int op1WorkLoad, int op1Buffer, int op2MemVisit,
+                       int op2WorkLoad, int op2Buffer, int parallelism,
+                       hardware::HardwareParam hp) {
   auto n = make_object<FeatureLogNode>();
   n->bounds = bounds;
   n->op1.memVisit = op1MemVisit;
@@ -167,34 +158,27 @@ FeatureLog::FeatureLog(
 }
 
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
-        .set_dispatch<FeatureLogNode>([](const ObjectRef& node, ReprPrinter* p) {
-            auto* op = static_cast<const FeatureLogNode*>(node.get());
-            p->PrintIndent();
-            p->stream << "Features(\n";
-            p->stream << "bounds: ";
-            p->Print(op->bounds);
-            p->stream << ", ";
-            p->stream << "op1MemVisit: " << op->op1.memVisit << ", ";
-            p->stream << "op1WorkLoad: " << op->op1.workLoad << ", ";
-            p->stream << "op1BufferSize: " << op->op1.bufferSize << ",\n"; 
-            p->stream << "op2MemVisit: " << op->op2.memVisit << ", ";
-            p->stream << "op2WorkLoad: " << op->op2.workLoad << ", ";
-            p->stream << "op2BufferSize: " << op->op2.bufferSize << ",\n"; 
-            p->stream << "parallelism: " << op->parallelism << ")\n";
-        });
+    .set_dispatch<FeatureLogNode>([](const ObjectRef &node, ReprPrinter *p) {
+      auto *op = static_cast<const FeatureLogNode *>(node.get());
+      p->PrintIndent();
+      p->stream << "Features(\n";
+      p->stream << "bounds: ";
+      p->Print(op->bounds);
+      p->stream << ", ";
+      p->stream << "op1MemVisit: " << op->op1.memVisit << ", ";
+      p->stream << "op1WorkLoad: " << op->op1.workLoad << ", ";
+      p->stream << "op1BufferSize: " << op->op1.bufferSize << ",\n";
+      p->stream << "op2MemVisit: " << op->op2.memVisit << ", ";
+      p->stream << "op2WorkLoad: " << op->op2.workLoad << ", ";
+      p->stream << "op2BufferSize: " << op->op2.bufferSize << ",\n";
+      p->stream << "parallelism: " << op->parallelism << ")\n";
+    });
 
-FeatureLog buildFeatureLog(IterGraph ig, hardware::HardwareParam hp){
-  return FeatureLog(
-    ig->inferBound(),\
-    ig->getFirstOpDataVolume(),\
-    ig->getFirstOpWorkload(),\
-    ig->getFirstOpBufferSize(),\
-    ig->getSecondOpDataVolume(),\
-    ig->getSecondOpWorkload(),\
-    ig->getSecondOpBufferSize(),\
-    ig->getParallelism(),\
-    hp
-  );
+FeatureLog buildFeatureLog(IterGraph ig, hardware::HardwareParam hp) {
+  return FeatureLog(ig->inferBound(), ig->getFirstOpDataVolume(),
+                    ig->getFirstOpWorkload(), ig->getFirstOpBufferSize(),
+                    ig->getSecondOpDataVolume(), ig->getSecondOpWorkload(),
+                    ig->getSecondOpBufferSize(), ig->getParallelism(), hp);
 }
 
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.ShareAxisAnalysis")

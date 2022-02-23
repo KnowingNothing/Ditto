@@ -57,8 +57,8 @@ class FusionTileSpace(BaseCartSpace):
 
         # reorder
         self.subspaces["reorder"] = PermuteSpace(
-            num_elems=len(self.second_op_iters), hit_mask=attach_pos_list) # why?
-    
+            num_elems=len(self.second_op_iters), hit_mask=attach_pos_list)  # why?
+
     @property
     def all_iter_graphs(self):
         ret = []
@@ -73,7 +73,7 @@ class FusionTileSpace(BaseCartSpace):
                 second_op_factors.append(split_item[1])
             order = item["reorder"].order
             attach_pos = item["fuse"].item
-            
+
             iter_graph = self.iter_graph.regenerate()
             iter_graph.setFirstOpTiling(first_op_factors)
             iter_graph.setSecondOpTiling(second_op_factors)
