@@ -76,8 +76,6 @@ public:
   int getFirstProducerPos(){
     int idx = 0;
     for (auto it: op->InputTensors()){
-      std::cout << "idx" << idx <<std::endl;
-      std::cout << it->op << std::endl;
       if(it->op.as<te::ComputeOpNode>())
         return idx;
       idx++;

@@ -609,10 +609,10 @@ inline IterGraph buildIterGraph(SerialFusionState sfState, String path) {
       ops2->ReadAccessFunctions();
   AccessFunction firstOpWriteAccessFunc = ops1->WriteAccessFunctions();
   AccessFunction secondOpWriteAccessFunc = ops2->WriteAccessFunctions();
-  std::cout << "op1" << std::endl;
-  std::cout << ops1->op << std::endl;
-  std::cout << "op2" << std::endl;
-  std::cout << ops2->op << std::endl;
+  // std::cout << "op1" << std::endl;
+  // std::cout << ops1->op << std::endl;
+  // std::cout << "op2" << std::endl;
+  // std::cout << ops2->op << std::endl;
   int readProducerPos = ops2->getFirstProducerPos();
   CHECK(readProducerPos >= 0)
       << readProducerPos << " Can't find a producer for the second op.";

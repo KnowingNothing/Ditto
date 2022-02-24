@@ -58,6 +58,7 @@ Result StaticAnalysisNode::eval(Item it) const {
 }
 cost_t StaticAnalysisNode::cost(Item it) const {
   auto fusionItem = Downcast<FusionItem, Item>(it);
+  CHECK(it.defined());
   iterGraph->setFusion(fusionItem);
   FusionResult result = iterGraph->getAnalyticalResult(hw_param, bytePerEle);
   if (!result->valid)

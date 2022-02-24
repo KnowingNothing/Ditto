@@ -40,8 +40,8 @@ Item BruteForceNode::search() const {
   }
   CHECK(has_staticAnalysis) << "no staticAnalysis evaluator";
   cost_t best_l = INFINITY;
-  size_t best_i = 0;
-  for (size_t i = 0; i < searchSpace->cardinal; i++) {
+  long long best_i = -1;
+  for (long long i = 0; i < (long long)searchSpace->cardinal; i++) {
     Item item = searchSpace->idxToItem(i);
 
     cost_t tmp_loss = eval->cost(item);
@@ -50,8 +50,12 @@ Item BruteForceNode::search() const {
       best_i = i;
     }
   }
-  std::cout << "best_loss: " << best_l << std::endl;
-  return searchSpace->idxToItem(best_i);
+  if (best_i < 0){
+    LOG(WARNING) << "no valid candidate in current searchspace";
+    return Item();
+  }
+  Item best_item = searchSpace->idxToItem(best_i);
+  return best_item;
 }
 BruteForce::BruteForce(SearchSpace searchSpace, Array<Evaluator> evals) {
   auto n = make_object<BruteForceNode>();

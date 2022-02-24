@@ -130,14 +130,13 @@ Item FusionSpaceNode::idxToItem(size_t idx) const {
   TilingItem firstOpTilingItem, secondOpTilingItem;
   PermuteItem firstOpPermuteItem, secondOpPermuteItem;
   AttachItem attachItem;
+
   firstOpPermuteItem = Downcast<PermuteItem, Item>(
       firstOpPermute->idxToItem(idx % firstOpPermute->cardinal));
   idx /= firstOpPermute->cardinal;
-
   secondOpPermuteItem = Downcast<PermuteItem, Item>(
       secondOpPermute->idxToItem(idx % secondOpPermute->cardinal));
   idx /= secondOpPermute->cardinal;
-
   firstOpTilingItem = Downcast<TilingItem, Item>(
       firstOpTiling->idxToItem(idx % firstOpTiling->cardinal));
   idx /= firstOpTiling->cardinal;
@@ -148,8 +147,9 @@ Item FusionSpaceNode::idxToItem(size_t idx) const {
 
   attachItem = Downcast<AttachItem, Item>(attach->idxToItem(idx));
 
-  return FusionItem(firstOpTilingItem, secondOpTilingItem, firstOpPermuteItem,
+  FusionItem item = FusionItem(firstOpTilingItem, secondOpTilingItem, firstOpPermuteItem,
                     secondOpPermuteItem, attachItem);
+  return item;
 }
 TilingItem::TilingItem(Array<IntImm> factors) {
   auto n = make_object<TilingItemNode>();
@@ -225,7 +225,7 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
       p->Print(op->firstOpPermute);
       p->stream << "\n";
       p->stream << "secondOpPermute:\t";
-      p->Print(op->firstOpPermute);
+      p->Print(op->secondOpPermute);
       p->stream << "\n";
       p->stream << "attachPos:\t";
       p->Print(op->attachPos);

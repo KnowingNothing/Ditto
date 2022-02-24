@@ -208,10 +208,10 @@ public:
     cardinal = firstOpTiling->cardinal * secondOpTiling->cardinal *
                firstOpPermute->cardinal * secondOpPermute->cardinal *
                attach->cardinal;
-    std::cout << "cardinals: " << firstOpTiling->cardinal << " "
-              << secondOpTiling->cardinal << " " << firstOpPermute->cardinal
-              << " " << secondOpPermute->cardinal << " " << attach->cardinal
-              << std::endl;
+    // std::cout << "cardinals: " << firstOpTiling->cardinal << " "
+    //           << secondOpTiling->cardinal << " " << firstOpPermute->cardinal
+    //           << " " << secondOpPermute->cardinal << " " << attach->cardinal
+    //           << std::endl;
   }
   void setFirstOpTilingMandatory(Array<IntImm> mand) {
     firstOpTiling->setMandatory(mand);
