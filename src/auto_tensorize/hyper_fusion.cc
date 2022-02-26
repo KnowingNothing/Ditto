@@ -1,10 +1,10 @@
-#include <auto_tensorize/analysis.h>
-#include <auto_tensorize/hyper_fusion.h>
-#include <auto_tensorize/state.h>
-#include <auto_tensorize/iter_graph.h>
 #include <auto_compute/graph.h>
-#include <tvm/te/schedule_pass.h>
+#include <auto_tensorize/analysis.h>
 #include <auto_tensorize/dse/searchDriver.h>
+#include <auto_tensorize/hyper_fusion.h>
+#include <auto_tensorize/iter_graph.h>
+#include <auto_tensorize/state.h>
+#include <tvm/te/schedule_pass.h>
 
 namespace ditto {
 
@@ -1336,26 +1336,90 @@ te::Schedule TensorizeCUDA(Layer layer, TensorizeHyperFusionState state,
   }
   return sch;
 }
+
 /*! build the fusion choice*/
-FusionChoice buildFusionChoice(std::string name, Array<te::Operation> ops,
-             Array<te::Tensor> inputs, Array<te::Tensor> weights,
-             Array<PrimExpr> const_scalars, Array<te::Tensor> const_tensors, 
-             hardware::HardwareParam hw_param,
-             Array<te::IterVar> tensorizeAxes, 
-             String dtype, 
-             String path){
+FusionChoice buildFusionChoice(
+    std::string name, Array<te::Operation> ops, Array<te::Tensor> inputs,
+    Array<te::Tensor> weights, Array<PrimExpr> const_scalars,
+    Array<te::Tensor> const_tensors, hardware::HardwareParam hw_param,
+    Array<te::IterVar> tensorizeAxes, String dtype, String path) {
   Layer layer = Layer(name, ops, inputs, weights, const_scalars, const_tensors);
   SerialFusionState sfs = buildSerialFusionState(layer);
   IterGraph ig = buildIterGraph(sfs, tensorizeAxes, path);
-  SearchDriver searchDriver = buildSearchDriver(ig, {"static analysis"}, "bruteForce", hw_param, dtype);
+  SearchDriver searchDriver =
+      buildSearchDriver(ig, {"static analysis"}, "bruteForce", hw_param, dtype);
   FusionSpace fusionSpace = searchDriver->getFusionSpace();
-  struct fusionTemplate{
-    std::string name;
-    Array<IntImm> secondOpPermute;
-    Array<IntImm> attachPos;
-    Array<IntImm> secondOpTiling;
-  };
 
+  Array<IntImm> firstOpPermute, firstOpTiling;
+  size_t idx = 0;
+  for (auto iv : ig->firstOpIters) {
+    firstOpPermute.push_back(IntImm(DataType::Int(32), ++idx));
+    firstOpTiling.push_back(IntImm(DataType::Int(32), 1));
+  }
+  fusionSpace->setFirstOpPermuteMandatory({firstOpPermute});
+  fusionSpace->setFirstOpTilingMandatory(firstOpTiling);
+  struct FusionTemplate {
+    std::string name;
+    std::string secondOpPermute[3];
+    size_t attachPos;
+  };
+  auto showVec = [](std::vector<int> v){
+    for(auto i : v)
+      std::cout << i << " ";
+    std::cout << std::endl;
+  };
+  FusionTemplate fusionTemplates[7] = {
+      {"F1", {"S1", "S2", "R"}, 3}, {"F2", {"S1", "S2", "R"}, 2},
+      {"F3", {"S1", "R", "S2"}, 2}, {"F4", {"S2", "R", "S1"}, 2},
+      {"F5", {"S1", "S2", "R"}, 1}, {"F6", {"S2", "S1", "R"}, 1},
+      {"F7", {"R", "S1", "S2"}, 1}};
+  std::vector<int> secondOpR, secondOpS1, secondOpS2;
+  
+  idx = 0;
+  for (auto iv : ig->secondOpIters) {
+    if (iv->iv_type == IV_Type::FIRSTSPATIAL)
+      secondOpS1.push_back(idx++);
+    else if (iv->iv_type == IV_Type::SECONDSPATIAL)
+      secondOpS2.push_back(idx++);
+    else
+      secondOpR.push_back(idx++);
+  }
+  std::unordered_map<std::string, std::vector<int>> str2Ivs = {
+      {"S1", secondOpS1}, {"S2", secondOpS2}, {"R", secondOpR}};
+  for (auto fusionTemplate : fusionTemplates) {
+    size_t cacheLevel = 0;
+    std::vector<int> secondOpPermute;
+    int secondOpTilingFactors[ig->secondOpIters.size()];
+    for (size_t i = 0; i < ig->secondOpIters.size();i++) 
+      secondOpTilingFactors[i] = 1;
+    for (auto ivType : fusionTemplate.secondOpPermute) {
+      std::cout << ivType << " ";
+      showVec(str2Ivs[ivType]);
+      secondOpPermute.insert(secondOpPermute.end(), str2Ivs[ivType].begin(),
+                             str2Ivs[ivType].end());
+      if(cacheLevel < fusionTemplate.attachPos){
+        for (auto idx: str2Ivs[ivType]){
+          secondOpTilingFactors[idx] = -1;
+        }
+      }
+      ++cacheLevel;
+    }
+    std::cout << fusionTemplate.name << " ";
+    showVec(secondOpPermute);
+    Array<IntImm> secondOpPermute_;
+    for (auto i : secondOpPermute) {
+      secondOpPermute_.push_back(IntImm(DataType::Int(32), i));
+    }
+    fusionSpace->setSecondOpPermuteMandatory({secondOpPermute_});
+    
+    Array<IntImm> secondOpTilingFactors_;
+    for(auto i: secondOpTilingFactors)
+      secondOpTilingFactors_.push_back(IntImm(DataType::Int(32), i));
+    
+    fusionSpace->setAttacchMandatory(
+        {IntImm(DataType::Int(32), fusionTemplate.attachPos)});
+  }
+  return FusionChoice();
 }
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.FusionChoice")
     .set_body_typed([](te::Operation first_op, te::Operation second_op,
@@ -1398,15 +1462,15 @@ TVM_REGISTER_GLOBAL("ditto.auto_tensorize.TensorizeCUDA")
       return TensorizeCUDA(layer, state, cuda_param, tensorize_param);
     });
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildFusionChoice")
-    .set_body_typed([](std::string name, Array<te::Operation> ops,
-             Array<te::Tensor> inputs, Array<te::Tensor> weights,
-             Array<PrimExpr> const_scalars, Array<te::Tensor> const_tensors, 
-             hardware::HardwareParam hw_param,
-             Array<te::IterVar> tensorizeAxes, 
-             String dtype, 
-             String path) {
-      return buildFusionChoice(name, ops, inputs, weights, const_scalars, const_tensors, hw_param, tensorizeAxes, dtype, path);
-    });
+    .set_body_typed(
+        [](std::string name, Array<te::Operation> ops, Array<te::Tensor> inputs,
+           Array<te::Tensor> weights, Array<PrimExpr> const_scalars,
+           Array<te::Tensor> const_tensors, hardware::HardwareParam hw_param,
+           Array<te::IterVar> tensorizeAxes, String dtype, String path) {
+          return buildFusionChoice(name, ops, inputs, weights, const_scalars,
+                                   const_tensors, hw_param, tensorizeAxes,
+                                   dtype, path);
+        });
 } // namespace auto_tensorize
 
 } // namespace ditto
