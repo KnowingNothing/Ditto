@@ -5,6 +5,7 @@ from ditto import auto_tensorize as at
 from ditto import hardware as hw
 import math
 import numpy as np
+from ditto.hardware.hw_param import hardware_param
 
 MI = NI = KI = 16
 
@@ -88,12 +89,108 @@ def BatchGemmSoftmaxGemm(
 
     return [A, B, C], [F], [D_frag.op.axis[-2], D_frag.op.axis[-1], rki, E_frag.op.axis[-1], E_frag.op.axis[-2], rli]
 
+def test_iter_graph(path=""):
+    M = 512
+    N = 64
+    K = 64
+    L = 512
+    # ins, outs = GemmReLUGemm(M, N, K, L)
+    ins, outs, tensorizeIters = BatchGemmSoftmaxGemm()
+    A, B, E = ins
+    F, = outs
+    layer = ac.layer(F.op, inputs=[A, B, E])
+    # print(layer)
+    sfs = at.build_serial_fusion_state(layer)
+    # print(sfs)
+    ig = at.build_iter_graph(sfs, tensorizeIters, path)
+    print(ig)
+    # print(ig)
+    return ig
+
 
 def test_fusion_choice_builder():
     V100 = hw.query_hw_param("gpu.cuda.V100")
     ins, outs, tensorizeAxes = BatchGemmSoftmaxGemm()
-    at.build_fusion_choice(outs[0].op,tensorizeAxes,hw_param=V100, inputs=ins, dtype="float32")
+    fusionChoice = at.build_fusion_choice(outs[0].op,tensorizeAxes,hw_param=V100, inputs=ins, dtype="float32")
+    print(fusionChoice)
+
+def test_fusion_choice_cuda():
+    # ins, outs = BatchGemmSoftmaxGemm()
+    # A, B, C = ins
+    # (F,) = outs
+
+    # E_frag = F.op.input_tensors[0]
+    # exp, C_ext = E_frag.op.input_tensors
+    # D_frag = exp.op.input_tensors[0]
+    # A_shared, B_shared = D_frag.op.input_tensors
+
+    # b, m, n, mi, ni = E_frag.op.axis
+    # rlo, rli = E_frag.op.reduce_axis
+    # fuse_choice = at.fusion_choice(D_frag.op, E_frag.op, [b, m, n, rlo, mi, ni, rli], 3)
+
+    V100 = hw.query_hw_param("gpu.cuda.V100")
+    ins, outs, tensorizeAxes = BatchGemmSoftmaxGemm()
+    fuse_choice = at.build_fusion_choice(outs[0].op,tensorizeAxes,hw_param=V100, inputs=ins, dtype="float32")
+    print(fuse_choice)
+    op1,op2 = fuse_choice.first_op, fuse_choice.second_op
+
+    first_packed = at.cuda_wmma(scope="shared")
+
+    first_match_info_choices = at.intrinsic_match(op1.output(0), first_packed, ["InnerMost", "SameRange"])
+
+    choice = first_match_info_choices[0]
+
+    first_match_info = at.match_info(choice, first_packed)
+
+    second_packed = at.cuda_wmma(scope="global")
+
+    second_match_info_choices = at.intrinsic_match(op2.output(0), second_packed, ["InnerMost", "SameRange"])
+
+    choice = second_match_info_choices[0]
+
+    second_match_info = at.match_info(choice, second_packed)
+
+    layer = ac.layer([outs[0].op], inputs=ins)
+    tensorize_state = at.tensorize_hyper_fusion_state(
+        layer, fuse_choice, {op1: first_match_info, op2: second_match_info}
+    )
+
+    tensorize_param = at.cuda_tensorize_param(
+        warp_size=32,
+        ty_size=4,
+        tz_size=2,
+        input_vector_len=4,
+        serial_y=2,
+        serial_z=1,
+        block_rx=8,
+        warp_rx=4,
+        block_ry=1,
+        warp_ry=4,
+        unroll_steps=512,
+    )
+
+    sch = at.tensorize_cuda(layer, tensorize_state, V100, tensorize_param)
+    print(tvm.lower(sch, layer.schedule_tensors, simple_mode=True))
+    func = tvm.build(sch, layer.schedule_tensors, "cuda")
+    inputs_np = [
+        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype("float16")
+        for y in ins
+    ]
+
+    outputs_np = [
+        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype("float16")
+        for y in outs
+    ]
+
+    ctx = tvm.cuda()
+    inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
+    outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
+
+    evaluator = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=600)
+    cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
+    print(f"Our code uses {cost} ms")
 
 
 if __name__ == "__main__":
-    test_fusion_choice_builder()
+    # test_iter_graph()
+    test_fusion_choice_cuda()

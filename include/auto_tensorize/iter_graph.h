@@ -201,7 +201,8 @@ public:
   int readProducerPos;
   Array<Split> splitRelations;
   Map<tir::Var, IntImm> bounds;
-  Array<IterVar> tensorizeIters;
+  Array<IterVar> firstOpTensorizeIters;
+  Array<IterVar> secondOpTensorizeIters;
 
   size_t attachPos = 0; // default: independent loops
 
@@ -305,7 +306,7 @@ public:
                     Array<AccessFunction> secondOpReadAccessFuncs,
                     AccessFunction firstOpWriteAccessFunc,
                     AccessFunction secondOpWriteAccessFunc, int readProducerPos,
-                    te::Operation op1, te::Operation op2, Array<IterVar> tensorizeIters, String path = "");
+                    te::Operation op1, te::Operation op2, Array<IterVar> firstOpTensorizeIters, Array<IterVar> secondOpTensorizeIters, String path = "");
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(IterGraph, ObjectRef, IterGraphNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(IterGraphNode);
 };

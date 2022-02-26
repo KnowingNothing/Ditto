@@ -19,6 +19,10 @@ SearchDriver::SearchDriver(Array<Evaluator> evals, SearchSpace searchSpace,
 }
 Item SearchDriverNode::search() {
   result = alg->search();
+  return result.second;
+}
+std::pair<cost_t, Item> SearchDriverNode::search_with_loss() {
+  result = alg->search();
   return result;
 }
 Array<Result> SearchDriverNode::eval(Item it) {
@@ -28,7 +32,7 @@ Array<Result> SearchDriverNode::eval(Item it) {
   return ret;
 }
 TVM_REGISTER_NODE_TYPE(ResultNode);
-Item BruteForceNode::search() const {
+std::pair<cost_t, Item> BruteForceNode::search() const {
   bool has_staticAnalysis = false;
   Evaluator eval;
   for (auto eval_ : evals) {
@@ -52,10 +56,10 @@ Item BruteForceNode::search() const {
   }
   if (best_i < 0){
     LOG(WARNING) << "no valid candidate in current searchspace";
-    return Item();
+    return {INFINITY, Item()};
   }
   Item best_item = searchSpace->idxToItem(best_i);
-  return best_item;
+  return {best_l, best_item};
 }
 BruteForce::BruteForce(SearchSpace searchSpace, Array<Evaluator> evals) {
   auto n = make_object<BruteForceNode>();

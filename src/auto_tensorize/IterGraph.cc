@@ -82,6 +82,7 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
         default:
         p->stream << "U";
       }
+      p->stream << " " << op->ext;
     });
 
 AccessFunction::AccessFunction(te::Operation op,
@@ -102,7 +103,7 @@ AccessFunctionNode::getFootprint(Map<tir::Var, IntImm> bounds) {
   for (auto access_index : access_indices) {
     Map<tir::Var, PrimExpr> vars_to_infer;
     for (auto index : access_index) {
-      vars_to_infer.Set(tvm::tir::Var("v" + std::to_string(idx)), index);
+      vars_to_infer.Set(tvm::tir::Var("v" + std::to_string(idx++)), index);
     }
     Map<tir::Var, Range> var_range_map =
         utils::InferRange(vars_to_infer, ori_ranges);
@@ -135,7 +136,8 @@ IterGraph::IterGraph(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters,
                      AccessFunction firstOpWriteAccessFunc,
                      AccessFunction secondOpWriteAccessFunc,
                      int readProducerPos, te::Operation op1, te::Operation op2,
-                     Array<IterVar> tensorizeIters,
+                     Array<IterVar> firstOpTensorizeIters,
+                     Array<IterVar> secondOpTensorizeIters,
                      String path) {
   auto n = make_object<IterGraphNode>();
   n->_firstOpIters = firstOpIters;
@@ -160,7 +162,8 @@ IterGraph::IterGraph(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters,
   n->resultPath = path;
   Map<tir::Var, IntImm> bounds;
   
-  n->tensorizeIters = tensorizeIters;
+  n->firstOpTensorizeIters = firstOpTensorizeIters;
+  n->secondOpTensorizeIters = secondOpTensorizeIters;
   struct stat buffer;
   if (stat(path.c_str(), &buffer) == 0) {
     LOG(WARNING) << path << "exists. Results will not be written to any file.";
@@ -243,7 +246,7 @@ void IterGraphNode::setSecondOpTiling(Array<IntImm> factors_) {
   Array<IterVar> outer, inner;
   for (size_t i = 0; i < factors.size(); i++) {
     IterVar parent = secondOpIters[i];
-    CHECK(factors[i] <= parent->ext) << "tiling factor larger than axis extent";
+    CHECK(factors[i] <= parent->ext) << "tiling factor larger than axis extent. iv: " << _secondOpIters[i] << " " << factors[i] << " > " << parent->ext;
     IterVar outer_, inner_;
     outer_ = IterVar(parent->index, -1, parent->iv_type,
                      parent->name.copy_with_suffix(".outer"), tir::Var());
@@ -270,10 +273,10 @@ void IterGraphNode::setFirstOpPermute(Array<IntImm> _permutation) {
   std::vector<size_t> permutation_ = permutation;
   std::sort(permutation_.begin(), permutation_.end());
   CHECK(permutation_.size() == _firstOpIters.size())
-      << "setPermute takes Sigma([len(firstOpIters)]) as input.";
+      << "setPermute takes sigma([len(firstOpIters)]) as input.";
   for (size_t i = 0; i < permutation_.size(); i++)
     CHECK(permutation_[i] == i)
-        << "setPermute takes Sigma([len(firstOpIters)]) as input.";
+        << "setPermute takes sigma([len(firstOpIters)]) as input. The permute given is " << _permutation;
   auto findIvInIters = [&](IterVar iv) {
     for (auto i : splitRelations)
       if (i->parent == iv)
@@ -401,7 +404,10 @@ void IterGraphNode::applyAll() {
 
 Map<tir::Var, IntImm> IterGraphNode::inferBound() const {
   Map<tir::Var, IntImm> bounds;
-  for (auto iv: tensorizeIters){
+  for (auto iv: firstOpTensorizeIters){
+    bounds.Set(iv->originVar, IntImm(DataType::Int(32), iv->ext));
+  }
+  for (auto iv: secondOpTensorizeIters){
     bounds.Set(iv->originVar, IntImm(DataType::Int(32), iv->ext));
   }
   auto is_common = [&](IterVar iv) {
@@ -557,7 +563,7 @@ IterGraphNode::getAnalyticalResult(hardware::HardwareParam hw_param,
   int secondOpDataVolume = getSecondOpDataVolume() * bytePerEle;
   int secondOpBufferSize = getSecondOpBufferSize(writeThrough) * bytePerEle;
   int secondOpWorkload = getSecondOpWorkload();
-  int memUse = (firstOpBufferSize + secondOpBufferSize);
+  int memUse = std::max(firstOpBufferSize, secondOpBufferSize);
   bool valid = (memUse) <= (hw_param->shared_memory_per_group_kb * 1000);
   double locality =
       valid ? 1 / (double)(firstOpDataVolume + secondOpDataVolume) : -INFINITY;
@@ -585,7 +591,9 @@ void IterGraphNode::visualize() {
       std::cout << "\t";
     std::cout << "for  " << common->name << " in [0, " << common->ext << "):";
     if (common->shared)
-      std::cout << "\"shared\"";
+      std::cout << "\"shared\" ";
+    if (common->iv_type != IV_Type::REDUCE)
+      std::cout << "\"parallel\"";
     std::cout << "\n";
     n_tab++;
   }
@@ -598,6 +606,12 @@ void IterGraphNode::visualize() {
     std::cout << "for  " << iv->name << " in [0, " << iv->ext << "):\n";
     n_tab_ += 1;
   }
+  for (auto iv : firstOpTensorizeIters) {
+    for (size_t i = 0; i < n_tab_; i++)
+      std::cout << "\t";
+    std::cout << "for  " << iv->name << " in [0, " << iv->ext << ") \"tensorize\":\n" ;
+    n_tab_ += 1;
+  }
   n_tab_ = n_tab;
   for (size_t _ = attachPos; _ < secondOpIters.size(); _++) {
     auto iv = secondOpIters[_];
@@ -605,6 +619,12 @@ void IterGraphNode::visualize() {
       std::cout << "\t";
     std::cout << "for  " << iv->name << " in [0, " << iv->ext << "):\n";
     n_tab_++;
+  }
+  for (auto iv : secondOpTensorizeIters) {
+    for (size_t i = 0; i < n_tab_; i++)
+      std::cout << "\t";
+    std::cout << "for  " << iv->name << " in [0, " << iv->ext << ") \"tensorize\":\n" ;
+    n_tab_ += 1;
   }
   std::cout << "---------------------------------\n";
 }
@@ -710,17 +730,17 @@ inline IterGraph buildIterGraph(SerialFusionState sfState, Array<te::IterVar> te
         return true;
     return false;
   };
-  Array<IterVar> firstOpIters, secondOpIters, tensorizeIters;
+  Array<IterVar> firstOpIters, secondOpIters, firsrOpTensorizeIters, secondOpTensorizeAxis;
   for (auto iv: firstOpIters_){
     if(!isTensorize(iv))
       firstOpIters.push_back(iv);
     else 
-      tensorizeIters.push_back(iv);
+      firsrOpTensorizeIters.push_back(iv);
   }
   for (auto iv: secondOpIters_){
     if(!isTensorize(iv))
       secondOpIters.push_back(iv);
-    else tensorizeIters.push_back(iv);
+    else secondOpTensorizeAxis.push_back(iv);
   }
   Array<AccessFunction> firstOpReadAccessFunction = ops1->ReadAccessFunctions();
   Array<AccessFunction> secondOpReadAccessFunction =
@@ -737,7 +757,7 @@ inline IterGraph buildIterGraph(SerialFusionState sfState, Array<te::IterVar> te
   return IterGraph(firstOpIters, secondOpIters, sharedIterPairs,
                    firstOpReadAccessFunction, secondOpReadAccessFunction,
                    firstOpWriteAccessFunc, secondOpWriteAccessFunc,
-                   readProducerPos, ops1->op, ops2->op, tensorizeIters, path);
+                   readProducerPos, ops1->op, ops2->op, firsrOpTensorizeIters, secondOpTensorizeAxis, path);
 }
 
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
@@ -754,8 +774,11 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
       p->stream << "_secondOpIters:\t";
       p->Print(op->_secondOpIters);
       p->stream << ",\n";
-      p->stream << "_tensorizeIters:\t";
-      p->Print(op->tensorizeIters);
+      p->stream << "_firstOpTensorizeIters:\t";
+      p->Print(op->firstOpTensorizeIters);
+      p->stream << ",\n";
+      p->stream << "_secondOpTensorizeIters:\t";
+      p->Print(op->secondOpTensorizeIters);
       p->stream << "\n------------------------------------------";
     });
 
