@@ -22,8 +22,9 @@ class FusionItem;
 class FusionSpace;
 class FusionResult;
 enum class IV_Type : int {
-  SPATIAL = 0,
-  REDUCE = 1,
+  FIRSTSPATIAL = 0,
+  SECONDSPATIAL = 1,
+  REDUCE = 2,
 };
 typedef int FACTOR;
 
@@ -81,7 +82,7 @@ public:
     v->Visit("originVar", &originVar);
   }
 
-  bool isSpatial() { return iv_type == IV_Type::SPATIAL; }
+  bool isSpatial() { return iv_type == IV_Type::FIRSTSPATIAL || iv_type == IV_Type::SECONDSPATIAL; }
   bool isReduce() { return iv_type == IV_Type::REDUCE; }
   void setExt(FACTOR ext_) { ext = ext_; }
   static constexpr const char *_type_key = "ditto.auto_tensorize.IterVar";
@@ -201,7 +202,7 @@ public:
   Array<Split> splitRelations;
   Map<tir::Var, IntImm> bounds;
   Array<IterVar> tensorizeIters;
-  
+
   size_t attachPos = 0; // default: independent loops
 
   String resultPath;

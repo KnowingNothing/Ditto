@@ -36,9 +36,6 @@ public:
   OpPattern pattern;
   /*! \brief The index in the layer*/
   size_t index;
-  Array<tir::Var> firstSpatialVars;
-  Array<tir::Var> reductionVars;
-  Array<tir::Var> secondSpatialVars;
   /*! \brief The iterVar map*/
   std::unordered_map<tir::IterVar, IterVar> IterMap;
   void VisitAttrs(tvm::AttrVisitor *v) {

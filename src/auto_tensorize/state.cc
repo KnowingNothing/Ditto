@@ -10,11 +10,26 @@ Array<IterVar> OpHyperStateNode::getAllIters() {
   Array<IterVar> ret;
 
   int index = 0;
+  CHECK(op->InputTensors().size() == 2);
+  te::Operation op1 = op->InputTensors()[0]->op, op2 = op->InputTensors()[1]->op;
+  Array<tir::Var> op1Vars = utils::GetAccessVars(op, op1);
+  Array<tir::Var> op2Vars = utils::GetAccessVars(op, op2);
+  auto in = [](tir::Var var_, Array<tir::Var> varList){
+    for (auto var: varList)
+      if(var.same_as(var_)) return true;
+    return false;
+  };
   for (auto iv : op.as<te::ComputeOpNode>()->axis) {
     if (IterMap.count(iv) == 0) {
       const tir::IntImmNode *as_int = iv->dom->extent.as<tir::IntImmNode>();
+      IV_Type iv_type = IV_Type::REDUCE;
+      if (in(iv->var, op1Vars)) 
+        iv_type = IV_Type::FIRSTSPATIAL;
+      else if(in(iv->var, op2Vars)) 
+        iv_type = IV_Type::SECONDSPATIAL;
+      CHECK(iv_type != IV_Type::REDUCE) << "neither first spatial nor second spatial";
       IterMap[iv] =
-          IterVar(index, as_int->value, IV_Type::SPATIAL,
+          IterVar(index, as_int->value, iv_type,
                   tir::Var(op->name + "." + iv->var->name_hint), iv->var);
     }
     ret.push_back(IterMap.at(iv));

@@ -110,6 +110,42 @@ Array<Array<PrimExpr>> GetAccessIndices(te::Operation op,
   return getter.get(cop->body[0], producer);
 }
 
+class VarsGetter : public tir::ExprVisitor {
+public:
+  using tir::ExprVisitor::VisitExpr;
+
+  Array<tir::Var> get(const PrimExpr &expr, const te::Operation &op) {
+    vars_.clear();
+    op_ = op;
+    VisitExpr(expr);
+    return vars_;
+  }
+
+protected:
+  using tir::ExprVisitor::VisitExpr_;
+
+  void VisitExpr_(const tir::ProducerLoadNode *op) override {
+    te::Tensor t = runtime::Downcast<te::Tensor>(op->producer);
+    if (t.defined() && t->op == op_) {
+      for (auto idx : op->indices)
+        this->VisitExpr(idx);
+    }
+  }
+  void VisitExpr_(const tir::VarNode * op) override{
+    this->vars_.push_back(GetRef<tir::Var>(op));
+  }
+
+private:
+  Array<tir::Var> vars_;
+  te::Operation op_{nullptr};
+};
+
+Array<tir::Var> GetAccessVars(te::Operation op, te::Operation producer){
+  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+  CHECK(cop && cop->body.size() == 1U);
+  VarsGetter getter;
+  return getter.get(cop->body[0], producer);
+}
 class FloatOpGetter : public tir::ExprVisitor {
 public:
   using tir::ExprVisitor::VisitExpr;

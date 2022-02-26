@@ -62,12 +62,26 @@ IterVar::IterVar(int idx_, FACTOR ext_, IV_Type iv_type_, tvm::tir::Var name_,
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
     .set_dispatch<IterVarNode>([](const ObjectRef &node, ReprPrinter *p) {
       auto *op = static_cast<const IterVarNode *>(node.get());
+      std::string classes[3] = {"S1", "S2", "R"};
       p->PrintIndent();
       // p->stream << "IterVar(";
       // p->stream << "ext: " << op->ext << ", ";
       // p->stream << "type: " << (op->iv_type == IV_Type::SPATIAL? "S":"R") <<
       // ", ";
-      p->stream << op->name;
+      p->stream << op->name << " ";
+      switch (op->iv_type){
+        case IV_Type::FIRSTSPATIAL: 
+        p->stream << "S1";
+        break;
+        case IV_Type::SECONDSPATIAL:
+        p->stream << "S2";
+        break;
+        case IV_Type::REDUCE:
+        p->stream << "R";
+        break;
+        default:
+        p->stream << "U";
+      }
     });
 
 AccessFunction::AccessFunction(te::Operation op,
@@ -144,7 +158,7 @@ IterGraph::IterGraph(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters,
   n->op1 = op1;
   n->op2 = op2;
   n->resultPath = path;
-  Map<te::Var, IntImm> bounds;
+  Map<tir::Var, IntImm> bounds;
   
   n->tensorizeIters = tensorizeIters;
   struct stat buffer;
@@ -425,7 +439,7 @@ int IterGraphNode::getNumOfBlocks() const {
 int IterGraphNode::getParallelism() const {
   int ret = 1;
   for (auto iv : commonIters) {
-    if (iv->iv_type != IV_Type::SPATIAL)
+    if (iv->iv_type == IV_Type::REDUCE)
       continue;
     ret *= iv->ext;
   }
@@ -594,12 +608,102 @@ void IterGraphNode::visualize() {
   }
   std::cout << "---------------------------------\n";
 }
+bool ivBindingAndValidate(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters, Array<Share> sharedPairs){
+  // op2.R bind to op1.S
+  auto isMapped = [&sharedPairs] (Array<IterVar> ivs1, Array<IterVar> ivs2) {
+    bool tmp[ivs2.size()];
+    if (! (ivs1.size() == ivs2.size())) return false;
+    for (size_t i = 0; i < ivs2.size(); i++) 
+      tmp[i] = 0;
+    for (auto iv1: ivs1)
+    {
+      bool matched = false;
+      for(auto share: sharedPairs){
+        if (share->upper == iv1){
+          for (size_t i = 0; i < ivs2.size(); i++){
+            if(!tmp[i] && ivs2[i] == share->lower){
+              tmp[i] = true;
+              matched = true;
+              break;
+            }
+          }
+          break;
+        }
+      }
+      if(!matched)
+        return false;
+    }
+    return true;
+  };
+  Array<IterVar> firstOpR, firstOpS1, firstOpS2, secondOpR, secondOpS1, secondOpS2;
+  for (auto iv: secondOpIters)
+    if(iv->iv_type == IV_Type::REDUCE) 
+      secondOpR.push_back(iv);
+    else if(iv->iv_type == IV_Type::FIRSTSPATIAL)
+      secondOpS1.push_back(iv);
+    else if(iv->iv_type == IV_Type::SECONDSPATIAL)
+      secondOpS2.push_back(iv);
+  for (auto iv: firstOpIters)
+    if(iv->iv_type == IV_Type::REDUCE) 
+      firstOpR.push_back(iv);
+    else if(iv->iv_type == IV_Type::FIRSTSPATIAL)
+      firstOpS1.push_back(iv);
+    else if(iv->iv_type == IV_Type::SECONDSPATIAL)
+      firstOpS2.push_back(iv);
+  
+  if (isMapped(firstOpS2, secondOpR)){
+    // nothing to do
+  }
+  else if (isMapped(firstOpS1, secondOpR)){
+    // switch firstOpS1 with firstOpS2
+    Array<IterVar> tmp = firstOpS1;
+    firstOpS1 = firstOpS2;
+    firstOpS2 = tmp;
+    for (auto iv: firstOpS1)
+      iv->iv_type = IV_Type::FIRSTSPATIAL;
+    for (auto iv: firstOpS2)
+      iv->iv_type = IV_Type::SECONDSPATIAL;
+  }
+  else{
+    CHECK(false) << "secondOpR cannot match firstOpS";
+  }
 
+  if (isMapped(firstOpS1, secondOpS1)){
+    // nothing to do
+  }
+  else if (isMapped(firstOpS1, secondOpS2)){
+    // switch secondOpS1 with secondOpS2
+    Array<IterVar> tmp = secondOpS1;
+    secondOpS1 = secondOpS2;
+    secondOpS2 = tmp;
+    for (auto iv: secondOpS1)
+      iv->iv_type = IV_Type::FIRSTSPATIAL;
+    for (auto iv: secondOpS2)
+      iv->iv_type = IV_Type::SECONDSPATIAL;
+  }
+  else{
+    CHECK(false) << "firstOpS1 cannot match secondOpS";
+  }
+  return true;
+}
 inline IterGraph buildIterGraph(SerialFusionState sfState, Array<te::IterVar> tensorizeAxes, String path) {
   OpHyperState ops1, ops2;
   std::tie(ops1, ops2) = sfState->getCubicOpPair();
   Array<IterVar> firstOpIters_ = ops1->getAllIters();
   Array<IterVar> secondOpIters_ = ops2->getAllIters();
+  Array<Array<tir::IterVar>> shared_axis =
+      share_axis_analysis(ops1->op, ops2->op);
+  std::unordered_map<tir::IterVar, IterVar> IterMap = ops1->getIterMap();
+  IterMap.insert(ops2->getIterMap().begin(), ops2->getIterMap().end());
+  Array<Share> sharedIterPairs;
+  for (auto sharePair : shared_axis) {
+    CHECK(IterMap.count(sharePair[0])) << sharePair[0] << " not in the IterMap";
+    CHECK(IterMap.count(sharePair[1])) << sharePair[1] << " not in the IterMap";
+    sharedIterPairs.push_back(
+        Share(IterMap.at(sharePair[0]), IterMap.at(sharePair[1])));
+  }
+  bool isBindingCorrect = ivBindingAndValidate(firstOpIters_, secondOpIters_, sharedIterPairs);
+  CHECK(isBindingCorrect) << "iv binding doesn't follow mlkn pattern";
   auto isTensorize = [&tensorizeAxes](IterVar iv){
     for (auto ax: tensorizeAxes)
       if (ax->var.same_as(iv->originVar))
@@ -617,17 +721,6 @@ inline IterGraph buildIterGraph(SerialFusionState sfState, Array<te::IterVar> te
     if(!isTensorize(iv))
       secondOpIters.push_back(iv);
     else tensorizeIters.push_back(iv);
-  }
-  Array<Array<tir::IterVar>> shared_axis =
-      share_axis_analysis(ops1->op, ops2->op);
-  std::unordered_map<tir::IterVar, IterVar> IterMap = ops1->getIterMap();
-  IterMap.insert(ops2->getIterMap().begin(), ops2->getIterMap().end());
-  Array<Share> sharedIterPairs;
-  for (auto sharePair : shared_axis) {
-    CHECK(IterMap.count(sharePair[0])) << sharePair[0] << " not in the IterMap";
-    CHECK(IterMap.count(sharePair[1])) << sharePair[1] << " not in the IterMap";
-    sharedIterPairs.push_back(
-        Share(IterMap.at(sharePair[0]), IterMap.at(sharePair[1])));
   }
   Array<AccessFunction> firstOpReadAccessFunction = ops1->ReadAccessFunctions();
   Array<AccessFunction> secondOpReadAccessFunction =
