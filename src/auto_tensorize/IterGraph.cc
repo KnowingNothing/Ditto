@@ -121,6 +121,7 @@ IterGraph::IterGraph(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters,
                      AccessFunction firstOpWriteAccessFunc,
                      AccessFunction secondOpWriteAccessFunc,
                      int readProducerPos, te::Operation op1, te::Operation op2,
+                     Array<IterVar> tensorizeIters,
                      String path) {
   auto n = make_object<IterGraphNode>();
   n->_firstOpIters = firstOpIters;
@@ -143,6 +144,9 @@ IterGraph::IterGraph(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters,
   n->op1 = op1;
   n->op2 = op2;
   n->resultPath = path;
+  Map<te::Var, IntImm> bounds;
+  
+  n->tensorizeIters = tensorizeIters;
   struct stat buffer;
   if (stat(path.c_str(), &buffer) == 0) {
     LOG(WARNING) << path << "exists. Results will not be written to any file.";
@@ -383,6 +387,9 @@ void IterGraphNode::applyAll() {
 
 Map<tir::Var, IntImm> IterGraphNode::inferBound() const {
   Map<tir::Var, IntImm> bounds;
+  for (auto iv: tensorizeIters){
+    bounds.Set(iv->originVar, IntImm(DataType::Int(32), iv->ext));
+  }
   auto is_common = [&](IterVar iv) {
     for (auto common : commonIters) {
       if (iv == common)
@@ -588,11 +595,29 @@ void IterGraphNode::visualize() {
   std::cout << "---------------------------------\n";
 }
 
-inline IterGraph buildIterGraph(SerialFusionState sfState, String path) {
+inline IterGraph buildIterGraph(SerialFusionState sfState, Array<te::IterVar> tensorizeAxes, String path) {
   OpHyperState ops1, ops2;
   std::tie(ops1, ops2) = sfState->getCubicOpPair();
-  Array<IterVar> firstOpIters = ops1->getAllIters();
-  Array<IterVar> secondOpIters = ops2->getAllIters();
+  Array<IterVar> firstOpIters_ = ops1->getAllIters();
+  Array<IterVar> secondOpIters_ = ops2->getAllIters();
+  auto isTensorize = [&tensorizeAxes](IterVar iv){
+    for (auto ax: tensorizeAxes)
+      if (ax->var.same_as(iv->originVar))
+        return true;
+    return false;
+  };
+  Array<IterVar> firstOpIters, secondOpIters, tensorizeIters;
+  for (auto iv: firstOpIters_){
+    if(!isTensorize(iv))
+      firstOpIters.push_back(iv);
+    else 
+      tensorizeIters.push_back(iv);
+  }
+  for (auto iv: secondOpIters_){
+    if(!isTensorize(iv))
+      secondOpIters.push_back(iv);
+    else tensorizeIters.push_back(iv);
+  }
   Array<Array<tir::IterVar>> shared_axis =
       share_axis_analysis(ops1->op, ops2->op);
   std::unordered_map<tir::IterVar, IterVar> IterMap = ops1->getIterMap();
@@ -619,7 +644,7 @@ inline IterGraph buildIterGraph(SerialFusionState sfState, String path) {
   return IterGraph(firstOpIters, secondOpIters, sharedIterPairs,
                    firstOpReadAccessFunction, secondOpReadAccessFunction,
                    firstOpWriteAccessFunc, secondOpWriteAccessFunc,
-                   readProducerPos, ops1->op, ops2->op, path);
+                   readProducerPos, ops1->op, ops2->op, tensorizeIters, path);
 }
 
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
@@ -635,6 +660,9 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
       p->stream << ",\n";
       p->stream << "_secondOpIters:\t";
       p->Print(op->_secondOpIters);
+      p->stream << ",\n";
+      p->stream << "_tensorizeIters:\t";
+      p->Print(op->tensorizeIters);
       p->stream << "\n------------------------------------------";
     });
 

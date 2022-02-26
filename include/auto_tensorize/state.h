@@ -36,12 +36,19 @@ public:
   OpPattern pattern;
   /*! \brief The index in the layer*/
   size_t index;
+  Array<tir::Var> firstSpatialVars;
+  Array<tir::Var> reductionVars;
+  Array<tir::Var> secondSpatialVars;
   /*! \brief The iterVar map*/
   std::unordered_map<tir::IterVar, IterVar> IterMap;
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("op", &op);
     v->Visit("pattern", &pattern);
   }
+  /*!
+  * \brief get the 
+  */
+  void classifyVars();
   /*!
    *  \brief get all the iters.
    *  \return  the IterVar Array. 
@@ -170,10 +177,10 @@ inline SerialFusionState buildSerialFusionState(Layer layer)
 }
 
 /*!
- * \brief The SerialFusionState builder
- * \param layer The layer to schedule
+ * \brief The IterGraph builder
+ * \param 
  */
-inline IterGraph buildIterGraph(SerialFusionState sfState, String path);
+IterGraph buildIterGraph(SerialFusionState sfState, Array<te::IterVar> tensorizeAxes, String path);
 
 
 } // namespace auto_tensorize

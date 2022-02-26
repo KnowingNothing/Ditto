@@ -654,6 +654,10 @@ te::Schedule TensorizeCUDA(Layer layer, TensorizeHyperFusionState state,
 te::Schedule TensorizeCPU(Layer layer, TensorizeHyperFusionState state,
                             hardware::HardwareParam cpu_param,
                             CPUTensorizeParam tensorize_param);
+/*! build the fusion choice*/
+/*! build the fusion choice*/
+FusionChoice buildFusionChoice(te::Operation op, Array<te::Tensor> inputs, Array<te::IterVar> tensorizeAxes);
+
 } // namespace auto_tensorize
 
 } // namespace ditto

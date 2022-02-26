@@ -1,6 +1,10 @@
 #include <auto_tensorize/analysis.h>
 #include <auto_tensorize/hyper_fusion.h>
+#include <auto_tensorize/state.h>
+#include <auto_tensorize/iter_graph.h>
+#include <auto_compute/graph.h>
 #include <tvm/te/schedule_pass.h>
+#include <auto_tensorize/dse/searchDriver.h>
 
 namespace ditto {
 
@@ -1332,7 +1336,27 @@ te::Schedule TensorizeCUDA(Layer layer, TensorizeHyperFusionState state,
   }
   return sch;
 }
+/*! build the fusion choice*/
+FusionChoice buildFusionChoice(std::string name, Array<te::Operation> ops,
+             Array<te::Tensor> inputs, Array<te::Tensor> weights,
+             Array<PrimExpr> const_scalars, Array<te::Tensor> const_tensors, 
+             hardware::HardwareParam hw_param,
+             Array<te::IterVar> tensorizeAxes, 
+             String dtype, 
+             String path){
+  Layer layer = Layer(name, ops, inputs, weights, const_scalars, const_tensors);
+  SerialFusionState sfs = buildSerialFusionState(layer);
+  IterGraph ig = buildIterGraph(sfs, tensorizeAxes, path);
+  SearchDriver searchDriver = buildSearchDriver(ig, {"static analysis"}, "bruteForce", hw_param, dtype);
+  FusionSpace fusionSpace = searchDriver->getFusionSpace();
+  struct fusionTemplate{
+    std::string name;
+    Array<IntImm> secondOpPermute;
+    Array<IntImm> attachPos;
+    Array<IntImm> secondOpTiling;
+  };
 
+}
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.FusionChoice")
     .set_body_typed([](te::Operation first_op, te::Operation second_op,
                        Array<tir::IterVar> ordered_iters, int attach_pos) {
@@ -1373,7 +1397,16 @@ TVM_REGISTER_GLOBAL("ditto.auto_tensorize.TensorizeCUDA")
                        CUDATensorizeParam tensorize_param) {
       return TensorizeCUDA(layer, state, cuda_param, tensorize_param);
     });
-
+TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildFusionChoice")
+    .set_body_typed([](std::string name, Array<te::Operation> ops,
+             Array<te::Tensor> inputs, Array<te::Tensor> weights,
+             Array<PrimExpr> const_scalars, Array<te::Tensor> const_tensors, 
+             hardware::HardwareParam hw_param,
+             Array<te::IterVar> tensorizeAxes, 
+             String dtype, 
+             String path) {
+      return buildFusionChoice(name, ops, inputs, weights, const_scalars, const_tensors, hw_param, tensorizeAxes, dtype, path);
+    });
 } // namespace auto_tensorize
 
 } // namespace ditto
