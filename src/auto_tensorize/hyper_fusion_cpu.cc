@@ -1,1222 +1,1365 @@
+#include <auto_compute/graph.h>
 #include <auto_tensorize/analysis.h>
+#include <auto_tensorize/dse/searchDriver.h>
 #include <auto_tensorize/hyper_fusion.h>
+#include <auto_tensorize/iter_graph.h>
+#include <auto_tensorize/state.h>
+#include <stack>
+#include <tvm/driver/driver_api.h>
 #include <tvm/te/schedule_pass.h>
+namespace ditto
+{
 
-namespace ditto {
+  namespace auto_tensorize
+  {
 
-namespace auto_tensorize {
-    
-TVM_REGISTER_NODE_TYPE(TensorizeHyperFusionStateNode);
-TVM_REGISTER_NODE_TYPE(CPUTensorizeContextNode);
-TVM_REGISTER_NODE_TYPE(CPUTensorizeParamNode);
+    TVM_REGISTER_NODE_TYPE(TensorizeHyperFusionStateNode);
+    TVM_REGISTER_NODE_TYPE(CPUTensorizeContextNode);
+    TVM_REGISTER_NODE_TYPE(CPUTensorizeParamNode);
+    TVM_REGISTER_NODE_TYPE(FusionContextNode);
 
-
-bool CPUTensorizeContextNode::HasEpilogue() {
-  return (state->epilogue.size() > 0U);
-}
-
-te::Operation CPUTensorizeContextNode::EpilogueRootOp() {
-  CHECK(this->HasEpilogue());
-  return this->state->epilogue[(int)this->state->epilogue.size() - 1];
-}
-
-Array<te::Operation> CPUTensorizeContextNode::EpilogueNonRootOps() {
-  Array<te::Operation> ret;
-  for (int i = 0; i < (int)this->state->epilogue.size() - 1; ++i) {
-    ret.push_back(this->state->epilogue[i]);
-  }
-  return ret;
-}
-
-bool CPUTensorizeContextNode::HasInterPath() {
-  return (state->inter_path.size() > 0U);
-}
-
-te::Operation CPUTensorizeContextNode::InterPathRootOp() {
-  CHECK(this->HasInterPath());
-  return this->state->inter_path[(int)this->state->inter_path.size() - 1];
-}
-
-Array<te::Operation> CPUTensorizeContextNode::InterPathNonRootOps() {
-  Array<te::Operation> ret;
-  for (int i = 0; i < (int)this->state->inter_path.size() - 1; ++i) {
-    ret.push_back(this->state->inter_path[i]);
-  }
-  return ret;
-}
-
-Array<tir::IterVar> CPUTensorizeContextNode::Split(te::Schedule sch,
-                                                    te::Operation op,
-                                                    tir::IterVar iv,
-                                                    Array<PrimExpr> factors) {
-  std::vector<tir::IterVar> ret;
-  int nparts = (int)factors.size();
-  CHECK(nparts > 0);
-  for (int i = nparts - 1; i > 0; --i) {
-    tir::IterVar outer, inner;
-    sch[op].split(iv, factors[i], &outer, &inner);
-    iv = outer;
-    ret.push_back(inner);
-  }
-  ret.push_back(iv);
-  std::reverse(ret.begin(), ret.end());
-  return Array<tir::IterVar>(ret);
-}
-
-tir::IterVar CPUTensorizeContextNode::FuseAll(te::Schedule sch,
-                                               te::Operation op) {
-  te::Operation sop = sch[op]->op;
-  const te::ComputeOpNode *cop = sop.as<te::ComputeOpNode>();
-  Array<tir::IterVar> axis = cop->axis;
-  tir::IterVar fused;
-  sch[op].fuse(axis, &fused);
-  return fused;
-}
-
-Array<tir::IterVar>
-CPUTensorizeContextNode::FuseAllAndSplit(te::Schedule sch, te::Operation op,
-                                          Array<PrimExpr> factors) {
-  tir::IterVar fused = this->FuseAll(sch, op);
-  Array<tir::IterVar> tiled = this->Split(sch, op, fused, factors);
-  return tiled;
-}
-
-void CPUTensorizeContextNode::Inline(te::Schedule sch, te::Operation op) {
-  sch[op].compute_inline();
-}
-
-bool CPUTensorizeContextNode::CanInline(te::Operation op) {
-  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
-  if (!cop) {
-    return false;
-  }
-  if (cop->reduce_axis.size() > 0U) {
-    return false;
-  }
-  for (auto out : this->layer->ops) {
-    if (out == op) {
-      // is output op
-      return false;
+    bool CPUTensorizeContextNode::HasEpilogue()
+    {
+      return (state->epilogue.size() > 0U);
     }
-  }
-  return true;
-}
 
-std::pair<std::vector<int>, std::vector<int>>
-CPUTensorizeContextNode::SecondOpOuterInnerSpatialAxis() {
-  std::vector<int> outer_index;
-  std::vector<int> inner_index;
-  std::unordered_map<tir::IterVar, int> spatial_axis2index;
-  std::unordered_set<int> outer_set;
-  const te::ComputeOpNode *second_cop =
-      this->state->second_op.as<te::ComputeOpNode>();
-  CHECK(second_cop);
-  int num_spatial_axis = (int)second_cop->axis.size();
-  for (int i = 0; i < num_spatial_axis; ++i) {
-    spatial_axis2index[second_cop->axis[i]] = i;
-  }
-  for (auto iv : this->state->fused_spatial_outer_iters) {
-    CHECK(spatial_axis2index.count(iv));
-    int idx = spatial_axis2index.at(iv);
-    outer_index.push_back(idx);
-    outer_set.insert(idx);
-  }
-  for (int i = 0; i < num_spatial_axis; ++i) {
-    if (!outer_set.count(i)) {
-      inner_index.push_back(i);
+    te::Operation CPUTensorizeContextNode::EpilogueRootOp()
+    {
+      CHECK(this->HasEpilogue());
+      return this->state->epilogue[(int)this->state->epilogue.size() - 1];
     }
-  }
-  return std::make_pair(outer_index, inner_index);
-}
 
-std::pair<std::vector<int>, std::vector<int>>
-CPUTensorizeContextNode::SecondOpOuterInnerReduceAxis() {
-  std::vector<int> outer_index;
-  std::vector<int> inner_index;
-  std::unordered_map<tir::IterVar, int> reduce_axis2index;
-  std::unordered_set<int> outer_set;
-  const te::ComputeOpNode *second_cop =
-      this->state->second_op.as<te::ComputeOpNode>();
-  CHECK(second_cop);
-  int num_reduce_axis = (int)second_cop->reduce_axis.size();
-  for (int i = 0; i < num_reduce_axis; ++i) {
-    reduce_axis2index[second_cop->reduce_axis[i]] = i;
-  }
-  for (auto iv : this->state->fused_reduce_outer_iters) {
-    CHECK(reduce_axis2index.count(iv));
-    int idx = reduce_axis2index.at(iv);
-    outer_index.push_back(idx);
-    outer_set.insert(idx);
-  }
-  for (int i = 0; i < num_reduce_axis; ++i) {
-    if (!outer_set.count(i)) {
-      inner_index.push_back(i);
+    Array<te::Operation> CPUTensorizeContextNode::EpilogueNonRootOps()
+    {
+      Array<te::Operation> ret;
+      for (int i = 0; i < (int)this->state->epilogue.size() - 1; ++i)
+      {
+        ret.push_back(this->state->epilogue[i]);
+      }
+      return ret;
     }
-  }
-  return std::make_pair(outer_index, inner_index);
-}
 
-std::vector<int>
-CPUTensorizeContextNode::TensorizeSpatialAxis(const te::Operation &op) {
-  CHECK(this->state->tensorize_iters.count(op));
-  Array<tir::IterVar> iters = this->state->tensorize_iters.at(op);
-  std::unordered_map<tir::IterVar, int> spatial_axis2index;
-  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
-  CHECK(cop);
-  int num_spatial_axis = (int)cop->axis.size();
-  for (int i = 0; i < num_spatial_axis; ++i) {
-    spatial_axis2index[cop->axis[i]] = i;
-  }
-  std::vector<int> ret;
-  for (auto iv : iters) {
-    if (spatial_axis2index.count(iv)) {
-      ret.push_back(spatial_axis2index.at(iv));
+    bool CPUTensorizeContextNode::HasInterPath()
+    {
+      return (state->inter_path.size() > 0U);
     }
-  }
-  return ret;
-}
 
-std::vector<int>
-CPUTensorizeContextNode::TensorizeReduceAxis(const te::Operation &op) {
-  CHECK(this->state->tensorize_iters.count(op));
-  Array<tir::IterVar> iters = this->state->tensorize_iters.at(op);
-  std::unordered_map<tir::IterVar, int> reduce_axis2index;
-  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
-  CHECK(cop);
-  int num_reduce_axis = (int)cop->reduce_axis.size();
-  for (int i = 0; i < num_reduce_axis; ++i) {
-    reduce_axis2index[cop->reduce_axis[i]] = i;
-  }
-  std::vector<int> ret;
-  for (auto iv : iters) {
-    if (reduce_axis2index.count(iv)) {
-      ret.push_back(reduce_axis2index.at(iv));
+    te::Operation CPUTensorizeContextNode::InterPathRootOp()
+    {
+      CHECK(this->HasInterPath());
+      return this->state->inter_path[(int)this->state->inter_path.size() - 1];
     }
-  }
-  return ret;
-}
 
-bool CPUTensorizeContextNode::ValidTensorizeFusion(
-    const std::vector<int> &inner_index,
-    const std::vector<int> &tensorize_index) {
-  int len1 = (int)inner_index.size();
-  int len2 = (int)tensorize_index.size();
-  if (len2 > len1) {
-    return false;
-  }
-  // the tensorized iters should be innermost loops
-  // e.g., inner: [i1, i2, i3, i4], tensorize: [i3, i4]
-  for (int i = 0; i < len2; ++i) {
-    if (inner_index[i + len1 - len2] != tensorize_index[i]) {
-      return false;
+    Array<te::Operation> CPUTensorizeContextNode::InterPathNonRootOps()
+    {
+      Array<te::Operation> ret;
+      for (int i = 0; i < (int)this->state->inter_path.size() - 1; ++i)
+      {
+        ret.push_back(this->state->inter_path[i]);
+      }
+      return ret;
     }
-  }
-  return true;
-}
 
-std::vector<int> CPUTensorizeContextNode::GetSpatialExtentsByIndex(
-    const te::Operation &op, const std::vector<int> &index) {
-  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
-  CHECK(cop);
-  int num_axis = (int)cop->axis.size();
-  std::vector<int> ret;
-  for (auto ind : index) {
-    CHECK(ind < num_axis);
-    tir::IterVar iv = cop->axis[ind];
-    PrimExpr ext = iv->dom->extent;
-    const IntImmNode *as_int = ext.as<IntImmNode>();
-    CHECK(as_int) << "Currently only static shape is supported.\n";
-    ret.push_back(as_int->value);
-  }
-  return ret;
-}
+    tir::IterVar CPUTensorizeContextNode::FuseAll(te::Schedule sch,
+                                                  te::Operation op)
+    {
+      te::Operation sop = sch[op]->op;
+      const te::ComputeOpNode *cop = sop.as<te::ComputeOpNode>();
+      Array<tir::IterVar> axis = cop->axis;
+      tir::IterVar fused;
+      sch[op].fuse(axis, &fused);
+      return fused;
+    }
 
-std::vector<int> CPUTensorizeContextNode::GetReduceExtentsByIndex(
-    const te::Operation &op, const std::vector<int> &index) {
-  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
-  CHECK(cop);
-  int num_axis = (int)cop->reduce_axis.size();
-  std::vector<int> ret;
-  for (auto ind : index) {
-    CHECK(ind < num_axis);
-    tir::IterVar iv = cop->reduce_axis[ind];
-    PrimExpr ext = iv->dom->extent;
-    const IntImmNode *as_int = ext.as<IntImmNode>();
-    CHECK(as_int) << "Currently only static shape is supported.\n";
-    ret.push_back(as_int->value);
-  }
-  return ret;
-}
+    void CPUTensorizeContextNode::Inline(te::Schedule sch, te::Operation op)
+    {
+      sch[op].compute_inline();
+    }
 
-bool CPUTensorizeContextNode::IsInInterPath(const te::Operation &op) {
-  for (auto x : this->state->inter_path) {
-    if (op == x) {
+    bool CPUTensorizeContextNode::CanInline(te::Operation op)
+    {
+      const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+      if (!cop)
+      {
+        return false;
+      }
+      if (cop->reduce_axis.size() > 0U)
+      {
+        return false;
+      }
+      for (auto out : this->layer->ops)
+      {
+        if (out == op)
+        {
+          // is output op
+          return false;
+        }
+      }
       return true;
     }
-  }
-  return false;
-}
 
-std::vector<int> CPUTensorizeContextNode::GetSpatialExtentsByInferBound(
-    te::Schedule sch, const te::Operation &op) {
-  te::Schedule norm_sch = sch.normalize();
-  Map<tir::IterVar, Range> bound = te::InferBound(norm_sch);
-  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
-  std::vector<int> ret;
-  for (auto iv : cop->axis) {
-    CHECK(bound.count(iv));
-    PrimExpr extent = bound.at(iv)->extent;
-    const IntImmNode *as_int = extent.as<IntImmNode>();
-    CHECK(as_int) << "Can't infer constant range during scheduling.\n";
-    ret.push_back(as_int->value);
-  }
-  return ret;
-}
+    bool CPUTensorizeContextNode::isBatchLikeDim(const te::Operation &op, const tir::IterVar iv)
+    {
+      const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+      CHECK(cop);
+      CHECK(cop->body.size() == 1) << "Only expect one body.\n";
+      IsBatchLikeDim checker;
+      std::vector<int> ret;
+      return checker.is_batch(cop->body[0], iv->var);
+    }
 
-std::vector<int> CPUTensorizeContextNode::GetReduceExtentsByInferBound(
-    te::Schedule sch, const te::Operation &op) {
-  te::Schedule norm_sch = sch.normalize();
-  Map<tir::IterVar, Range> bound = te::InferBound(norm_sch);
-  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
-  std::vector<int> ret;
-  for (auto iv : cop->reduce_axis) {
-    CHECK(bound.count(iv));
-    PrimExpr extent = bound.at(iv)->extent;
-    const IntImmNode *as_int = extent.as<IntImmNode>();
-    CHECK(as_int) << "Can't infer constant range during scheduling.\n";
-    ret.push_back(as_int->value);
-  }
-  return ret;
-}
+    bool CPUTensorizeContextNode::isSpatial(te::Operation op, tir::IterVar iv)
+    {
+      const te::ComputeOpNode *cur_op = op.as<te::ComputeOpNode>();
+      CHECK(cur_op);
+      for (auto iv_ : cur_op->axis)
+        if (iv.same_as(iv_))
+          return true;
+      return false;
+    }
 
-std::vector<int>
-CPUTensorizeContextNode::GetBatchLikeDim(const te::Operation &op) {
-  int count_axis = 0;
-  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
-  CHECK(cop);
-  CHECK(cop->body.size() == 1) << "Only expect one body.\n";
-  IsBatchLikeDim checker;
-  std::vector<int> ret;
-  for (auto iv : cop->axis) {
-    if (checker.is_batch(cop->body[0], iv->var)) {
-      ret.push_back(count_axis);
+    CPUTensorizeContext::CPUTensorizeContext(Layer layer,
+                                             TensorizeHyperFusionState state)
+    {
+      auto node = make_object<CPUTensorizeContextNode>();
+      node->layer = layer;
+      node->state = state;
+      data_ = node;
     }
-    count_axis += 1;
-  }
-  return ret;
-}
 
-CPUTensorizeContext::CPUTensorizeContext(Layer layer,
-                                           TensorizeHyperFusionState state,
-                                           hardware::HardwareParam cpu_param) {
-  auto node = make_object<CPUTensorizeContextNode>();
-  node->layer = layer;
-  node->state = state;
-  node->cpu_param = cpu_param;
-  data_ = node;
-}
+    /*!
+     * \brief Get the tensorize iters
+     */
+    Array<tir::IterVar>
+    CPUTensorizeContextNode::GetTensorizeIters(const te::Operation &op)
+    {
+      CHECK(this->state->tensorize_iters.count(op));
+      Array<tir::IterVar> iters = this->state->tensorize_iters.at(op);
+      return iters;
+    }
 
-CPUTensorizeParam::CPUTensorizeParam(int warp_size, int ty_size, int tz_size,
-                                       int input_vector_len, int serial_y,
-                                       int serial_z, int block_rx, int block_ry,
-                                       int block_rz, int warp_rx, int warp_ry,
-                                       int warp_rz, int unroll_steps) {
-  auto node = make_object<CPUTensorizeParamNode>();
-  node->warp_size = warp_size;
-  node->ty_size = ty_size;
-  node->tz_size = tz_size;
-  node->input_vector_len = input_vector_len;
-  node->serial_y = serial_y;
-  node->serial_z = serial_z;
-  node->block_rx = block_rx;
-  node->block_ry = block_ry;
-  node->block_rz = block_rz;
-  node->warp_rx = warp_rx;
-  node->warp_ry = warp_ry;
-  node->warp_rz = warp_rz;
-  node->unroll_steps = unroll_steps;
-  data_ = node;
-}
+    /*!
+     * \brief Get the tensorize iters
+     */
+    Array<te::IterVar>
+    CPUTensorizeContextNode::GetAllIters(const te::Operation &op)
+    {
+      const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+      CHECK(cop);
+      Array<te::IterVar> ret;
+      for (auto iv : cop->axis)
+        ret.push_back(iv);
+      for (auto iv : cop->reduce_axis)
+        ret.push_back(iv);
+      return ret;
+    }
+    /*!
+     * \brief Get the outer iter of the second op
+     */
+    std::pair<std::vector<int>, Array<IntImm>>
+    CPUTensorizeContextNode::GetSecondOpOuterIndexAndSplitFactor()
+    {
+      std::vector<int> indices;
+      for (auto i : state->secondOpOuterIndices)
+      {
+        indices.push_back(i->value);
+      }
+      return {indices, state->secondOpOuterTileFactors};
+    }
+    /*!
+     * \brief if the axis of op is spatial
+     */
+    std::pair<Array<tir::IterVar>, Array<tir::IterVar>>
+    CPUTensorizeContextNode::splitSpatialWithReduce(const te::Operation op,
+                                                    Array<tir::IterVar> ivs)
+    {
+      const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+      CHECK(cop);
+      Array<tir::IterVar> Spatial, Reduce;
+      for (auto iv : ivs)
+      {
+        bool isSpatial = false;
+        for (auto iv_s : cop->axis)
+          if (iv == iv_s)
+          {
+            Spatial.push_back(iv);
+            isSpatial = true;
+            break;
+          }
+        if (!isSpatial)
+          Reduce.push_back(iv);
+      }
+      return {Spatial, Reduce};
+    }
 
-void ScheduleEpilogue(te::Schedule sch, CPUTensorizeContext ctx,
-                      CPUTensorizeParam tensorize_param) {
-  te::Operation cur_op;
-  if (ctx->HasEpilogue()) {
-    cur_op = ctx->EpilogueRootOp();
-    Array<tir::IterVar> tiled =
-        ctx->FuseAllAndSplit(sch, cur_op, {-1, tensorize_param->warp_size});
-    sch[cur_op].bind(tiled[0], te::thread_axis(Range(), "blockIdx.x"));
-    sch[cur_op].bind(tiled[1], te::thread_axis(Range(), "threadIdx.x"));
-    Array<te::Operation> remain_ops = ctx->EpilogueNonRootOps();
-    // the remaining non-root ops should be inlined
-    for (auto op : remain_ops) {
-      CHECK(ctx->CanInline(op));
-      sch[op].compute_inline();
+    CPUTensorizeParam::CPUTensorizeParam(OpHyperState op1, OpHyperState op2, int parallelism,
+                                         std::vector<std::vector<int>> firstOpLoopOrder,
+                                         std::vector<std::vector<int>> secondOpLoopOrder,
+                                         std::vector<std::vector<int>> commonLoopOrder,
+                                         std::unordered_map<int, Array<IntImm>> firstOpTilingFactor,
+                                         std::unordered_map<int, Array<IntImm>> secondOpTilingFactor,
+                                         std::unordered_map<int, Array<IntImm>> commonTilingFactor,
+                                         FusionInfo fusionInfo,
+                                         std::vector<double> firstOpCosts,
+                                         std::vector<double> secondOpCosts,
+                                         std::vector<double> commCosts,
+                                         Array<FloatImm> cacheOccupancy)
+    {
+      auto node = make_object<CPUTensorizeParamNode>();
+      node->op1 = op1;
+      node->op2 = op2;
+      node->parallelism = parallelism;
+      node->firstOpLoopOrder = firstOpLoopOrder;
+      node->secondOpLoopOrder = secondOpLoopOrder;
+      node->firstOpTilingFactor = firstOpTilingFactor;
+      node->secondOpTilingFactor = secondOpTilingFactor;
+      node->commonLoopOrder = commonLoopOrder;
+      node->commonTilingFactor = commonTilingFactor;
+      node->fusionInfo = fusionInfo;
+      node->firstOpCosts = firstOpCosts;
+      node->secondOpCosts = secondOpCosts;
+      node->commCosts = commCosts,
+      node->cacheOccupancy = cacheOccupancy;
+      data_ = node;
     }
-  }
-}
 
-void ScheduleSecondOpParallelism(te::Schedule sch, CPUTensorizeContext ctx,
-                                 CPUTensorizeParam tensorize_param) {
-  te::Operation cur_op;
-  CHECK(ctx->state->second_op->num_outputs() == 1U);
-  te::Tensor second_tensor = ctx->state->second_op.output(0);
-  CHECK(ctx->state->tensorize_intrinsics.count(ctx->state->second_op));
-  PackedIntrinsic pintrin =
-      ctx->state->tensorize_intrinsics.at(ctx->state->second_op);
-  te::Tensor second_frag =
-      sch.cache_write(second_tensor, pintrin->compute_scope);
-  // find the spatial outer axis
-  std::vector<int> outer_index, inner_index, tensorize_index;
-  std::tie(outer_index, inner_index) = ctx->SecondOpOuterInnerSpatialAxis();
-  tensorize_index = ctx->TensorizeSpatialAxis(ctx->state->second_op);
-  CHECK(ctx->ValidTensorizeFusion(inner_index, tensorize_index))
-      << "The fusion and tensorize decisions are not valid.\n";
-  inner_index.erase(inner_index.begin() +
-                        (inner_index.size() - tensorize_index.size()),
-                    inner_index.end());
-  // outer_index should be split into 3 parts
-  // inner_index should be split into 2 parts
-  // tensorize_index shouldn't be split
-  std::vector<int> outer_extents, inner_extents;
-  outer_extents =
-      ctx->GetSpatialExtentsByIndex(ctx->state->second_op, outer_index);
-  inner_extents =
-      ctx->GetSpatialExtentsByIndex(ctx->state->second_op, inner_index);
-  /* The following conditions are considered:
-   * 1. Two inner axis large enough for y and z dim;
-   * 2. One inner axis large enough for y or z dim;
-   * 3. No inner axis is large enough
-   */
-  int z_dim_index{-1}, y_dim_index{-1};
-  for (int i = 0; i < (int)inner_extents.size(); ++i) {
-    if ((inner_extents[i] >= tensorize_param->tz_size) && z_dim_index < 0) {
-      z_dim_index = i;
-    } else if ((inner_extents[i] >= tensorize_param->ty_size) &&
-               y_dim_index < 0) {
-      y_dim_index = i;
+    ScheduleContext::ScheduleContext(std::vector<CostAndFactor> data, int parallelism)
+    {
+      auto node = make_object<ScheduleContextNode>();
+      node->data = data;
+      node->size = data.size();
+      node->parallelism = parallelism;
+      data_ = node;
     }
-  }
-  /* The following conditions are considered:
-   * 1. Two outer axis large enough for y and z dim;
-   * 2. One outer axis large enough for y or z dim;
-   * 3. No outer axis is large enough
-   */
-  std::vector<int> batch_index = ctx->GetBatchLikeDim(ctx->state->second_op);
-  std::unordered_set<int> batch_index_set;
-  for (auto ind : batch_index) {
-    batch_index_set.insert(ind);
-  }
-  int z_block_index{-1}, y_block_index{-1};
-  for (int i = 0; i < (int)outer_extents.size(); ++i) {
-    if (batch_index_set.count(i)) {
-      // leave batch-like dims to blockIdx.z
-      continue;
-    }
-    if ((outer_extents[i] >= tensorize_param->tz_size) && z_block_index < 0) {
-      z_block_index = i;
-    } else if ((outer_extents[i] >= tensorize_param->ty_size) &&
-               y_block_index < 0) {
-      y_block_index = i;
-    }
-  }
-  // use these vectors to store intermediate axis
-  std::vector<tir::IterVar> outer_outer(outer_index.size(), tir::IterVar()),
-      outer_inner(outer_index.size(), tir::IterVar()),
-      outer_inner_inner(outer_index.size(), tir::IterVar()),
-      inner_outer(inner_index.size(), tir::IterVar()),
-      inner_inner(inner_index.size(), tir::IterVar()), tensor_iters;
-  cur_op = sch[second_tensor]->op;
-  const te::ComputeOpNode *cur_cop = cur_op.as<te::ComputeOpNode>();
-  CHECK(cur_cop);
-  // iters for tensorize
-  for (auto ind : tensorize_index) {
-    CHECK((int)cur_cop->axis.size() > ind);
-    tensor_iters.push_back(cur_cop->axis[ind]);
-  }
-  bool ever_bind{false};
-  // first, bind thread y
-  if (y_dim_index >= 0) {
-    // use inner axis for thread y
-    CHECK((int)inner_index.size() > y_dim_index);
-    int ind = inner_index[y_dim_index];
-    CHECK((int)cur_cop->axis.size() > ind);
-    tir::IterVar axis = cur_cop->axis[ind];
-    tir::IterVar outer, inner;
-    sch[second_tensor].split_by_nparts(axis, tensorize_param->ty_size, &outer,
-                                       &inner);
-    sch[second_tensor].bind(outer, te::thread_axis(Range(), "threadIdx.y"));
-    ctx->ty_used = true;
-    ever_bind = true; // form a valid CPU kernel
-    inner_outer[y_dim_index] = outer;
-    inner_inner[y_dim_index] = inner;
-  }
-  if (y_block_index >= 0) {
-    CHECK((int)outer_index.size() > y_block_index);
-    int ind = outer_index[y_block_index];
-    CHECK((int)cur_cop->axis.size() > ind);
-    tir::IterVar axis = cur_cop->axis[ind];
-    if (y_dim_index < 0) {
-      // use outer axis for block x and thread y
-      Array<tir::IterVar> tiled =
-          ctx->Split(sch, second_tensor->op, axis,
-                     {-1, tensorize_param->ty_size, tensorize_param->serial_y});
-      sch[second_tensor].bind(tiled[0], te::thread_axis(Range(), "blockIdx.x"));
-      sch[second_tensor].bind(tiled[1],
-                              te::thread_axis(Range(), "threadIdx.y"));
-      ctx->ty_used = true;
-      ever_bind = true; // form a valid CPU kernel
-      outer_outer[y_block_index] = tiled[0];
-      outer_inner[y_block_index] = tiled[1];
-      outer_inner_inner[y_block_index] = tiled[2];
-    } else {
-      sch[second_tensor].bind(axis, te::thread_axis(Range(), "blockIdx.x"));
-    }
-  }
-  // then, bind thread z
-  if (z_dim_index >= 0) {
-    // use inner axis for thread z
-    CHECK((int)inner_index.size() > z_dim_index);
-    int ind = inner_index[z_dim_index];
-    CHECK((int)cur_cop->axis.size() > ind);
-    tir::IterVar axis = cur_cop->axis[ind];
-    tir::IterVar outer, inner;
-    sch[second_tensor].split_by_nparts(axis, tensorize_param->tz_size, &outer,
-                                       &inner);
-    sch[second_tensor].bind(outer, te::thread_axis(Range(), "threadIdx.z"));
-    ctx->tz_used = true;
-    ever_bind = true; // form a valid CPU kernel
-    inner_outer[z_dim_index] = outer;
-    inner_inner[z_dim_index] = inner;
-  }
-  if (z_block_index >= 0) {
-    CHECK((int)outer_index.size() > z_block_index);
-    int ind = outer_index[z_block_index];
-    CHECK((int)cur_cop->axis.size() > ind);
-    tir::IterVar axis = cur_cop->axis[ind];
-    if (z_dim_index < 0) {
-      // use outer axis for block y and thread z
-      Array<tir::IterVar> tiled =
-          ctx->Split(sch, second_tensor->op, axis,
-                     {-1, tensorize_param->tz_size, tensorize_param->serial_z});
-      sch[second_tensor].bind(tiled[0], te::thread_axis(Range(), "blockIdx.y"));
-      sch[second_tensor].bind(tiled[1],
-                              te::thread_axis(Range(), "threadIdx.z"));
-      ctx->tz_used = true;
-      ever_bind = true; // form a valid CPU kernel
-      outer_outer[z_block_index] = tiled[0];
-      outer_inner[z_block_index] = tiled[1];
-      outer_inner_inner[z_block_index] = tiled[2];
-    } else {
-      sch[second_tensor].bind(axis, te::thread_axis(Range(), "blockIdx.y"));
-    }
-  }
-  // finally, bind block z
-  std::vector<tir::IterVar> bind_block_z;
-  for (int i = 0; i < (int)outer_index.size(); ++i) {
-    if ((i != y_block_index) && (i != z_block_index)) {
-      // this outer axis is never bound
-      bind_block_z.push_back(cur_cop->axis[outer_index[i]]);
-    }
-  }
-  // collect the remaining inner axis
-  for (int i = 0; i < (int)inner_index.size(); ++i) {
-    if ((i != y_dim_index) && (i != z_dim_index)) {
-      // this inner axis is never bound
-      inner_outer[i] = cur_cop->axis[inner_index[i]];
-    }
-  }
-  // Reorder all the axis
-  Array<tir::IterVar> order;
-  for (auto list : {bind_block_z, outer_outer, outer_inner, inner_outer,
-                    outer_inner_inner, inner_inner, tensor_iters}) {
-    for (auto iv : list) {
-      if (iv.defined()) {
-        order.push_back(iv);
+    TVM_REGISTER_NODE_TYPE(ScheduleContextNode);
+
+    void ScheduleEpilogue(te::Schedule sch, CPUTensorizeContext ctx,
+                          CPUTensorizeParam tensorize_param)
+    {
+      te::Operation cur_op;
+      if (ctx->HasEpilogue())
+      {
+        cur_op = ctx->EpilogueRootOp();
+        auto iv = ctx->FuseAll(sch, cur_op);
+        tir::IterVar outer, inner;
+        sch[cur_op].split_by_nparts(iv, tensorize_param->parallelism, &outer,
+                                    &inner);
+        sch[cur_op].parallel(outer);
+        Array<te::Operation> remain_ops = ctx->EpilogueNonRootOps();
+        // the remaining non-root ops should be inlined
+        for (auto op : remain_ops)
+        {
+          CHECK(ctx->CanInline(op));
+          sch[op].compute_inline();
+        }
       }
     }
-  }
-  sch[second_tensor].reorder(order);
-  tir::IterVar fused_block_z;
-  if (bind_block_z.size() > 0U) {
-    tir::IterVar kernel_scope, org;
-    sch[second_tensor].split_by_nparts(bind_block_z[0], 1, &kernel_scope, &org);
-    sch[second_tensor].pragma(kernel_scope, "auto_unroll_max_step",
-                              tensorize_param->unroll_steps);
-    sch[second_tensor].pragma(kernel_scope, "unroll_explicit", 1);
-    bind_block_z[0] = org;
-    sch[second_tensor].fuse(bind_block_z, &fused_block_z);
-    sch[second_tensor].bind(fused_block_z,
-                            te::thread_axis(Range(), "blockIdx.z"));
-    ever_bind = true; // form a valid CPU kernel
-  }
-  CHECK(ever_bind) << "The scheduler can't bind any axis for CPU.\n";
-  // tensorize
-  sch[second_tensor].tensorize(tensor_iters[0], pintrin->store_intrinsic);
-  /*
-   * Find postion to compute at
-   */
-  tir::IterVar frag_attach_axis;
-  for (auto list : {inner_outer, outer_inner, outer_outer}) {
-    for (int i = (int)list.size() - 1; i >= 0; --i) {
-      if (list[i].defined()) {
-        frag_attach_axis = list[i];
-        break;
-      }
-    }
-    if (frag_attach_axis.defined()) {
-      break;
-    }
-  }
-  if (!frag_attach_axis.defined()) {
-    frag_attach_axis = fused_block_z;
-  }
-  CHECK(frag_attach_axis.defined())
-      << "Can't find second_frag compute_at position during scheduling.\n";
-  tir::IterVar path_attach_axis;
-  for (auto list : {outer_outer}) {
-    for (int i = (int)list.size() - 1; i >= 0; --i) {
-      if (list[i].defined()) {
-        path_attach_axis = list[i];
-        break;
-      }
-    }
-    if (path_attach_axis.defined()) {
-      break;
-    }
-  }
-  if (!path_attach_axis.defined()) {
-    path_attach_axis = fused_block_z;
-  }
-  CHECK(path_attach_axis.defined())
-      << "Can't find inter path compute_at position during scheduling.\n";
-  /*
-   * Store the context for following schedules
-   */
-  ctx->second_op_compute_axis = frag_attach_axis;
-  ctx->second_frag = second_frag;
-  ctx->path_attach_tensor = second_tensor;
-  ctx->path_attach_axis = path_attach_axis;
-}
 
-void ScheduleSecondOpLocality(te::Schedule sch, CPUTensorizeContext ctx,
-                              CPUTensorizeParam tensorize_param) {
-  te::Tensor second_frag = ctx->second_frag;
-  CHECK(second_frag.defined() && sch[second_frag]->op.defined());
-  const te::ComputeOpNode *frag_cop =
-      sch[second_frag]->op.as<te::ComputeOpNode>();
-  CHECK(frag_cop != nullptr)
-      << second_frag << " is from " << sch[second_frag]->op << "\n";
-  // compute_at
-  sch[second_frag].compute_at(sch[ctx->state->second_op],
-                              ctx->second_op_compute_axis);
-  /*
-   * Tile the outer reduce axis with largest extent
-   */
-  // find the reduce outer and inner axis
-  std::vector<int> outer_index, inner_index, tensorize_index;
-  std::tie(outer_index, inner_index) = ctx->SecondOpOuterInnerReduceAxis();
-  tensorize_index = ctx->TensorizeReduceAxis(ctx->state->second_op);
-  CHECK(ctx->ValidTensorizeFusion(inner_index, tensorize_index))
-      << "The fusion and tensorize decisions are not valid.\n";
-  inner_index.erase(inner_index.begin() +
-                        (inner_index.size() - tensorize_index.size()),
-                    inner_index.end());
-  // outer_index should be split into 3 parts
-  // inner_index should be placed at itermediate position
-  // tensorize_index should be placed at innermost position
-  std::vector<int> outer_extents, inner_extents;
-  outer_extents =
-      ctx->GetReduceExtentsByIndex(ctx->state->second_op, outer_index);
-  inner_extents =
-      ctx->GetReduceExtentsByIndex(ctx->state->second_op, inner_index);
-  // The largest outer axis is bind to a virtual reduce dim y
-  int split_id{-1}, largest_dim{-1};
-  for (int i = 0; i < (int)outer_extents.size(); ++i) {
-    if (outer_extents[i] > largest_dim) {
-      largest_dim = outer_extents[i];
-      split_id = i;
-    }
-  }
-  // use these vectors to store intermediate axis
-  std::vector<tir::IterVar> outer_outer(outer_index.size(), tir::IterVar()),
-      outer_inner(outer_index.size(), tir::IterVar()),
-      outer_inner_inner(outer_index.size(), tir::IterVar()), inner,
-      tensor_iters;
-  // fill the inner and tensorize iters
-  for (auto ind : inner_index) {
-    CHECK(ind < (int)frag_cop->reduce_axis.size());
-    inner.push_back(frag_cop->reduce_axis[ind]);
-  }
-  for (auto ind : tensorize_index) {
-    CHECK(ind < (int)frag_cop->reduce_axis.size());
-    tensor_iters.push_back(frag_cop->reduce_axis[ind]);
-  }
-  // split the largets outer reduce axis
-  if (split_id >= 0) {
-    CHECK(outer_index[split_id] < (int)frag_cop->reduce_axis.size());
-    tir::IterVar axis = frag_cop->reduce_axis[outer_index[split_id]];
-    Array<tir::IterVar> tiled =
-        ctx->Split(sch, second_frag->op, axis,
-                   {-1, tensorize_param->block_ry, tensorize_param->warp_ry});
-    outer_outer[split_id] = tiled[0];
-    outer_inner[split_id] = tiled[1];
-    outer_inner_inner[split_id] = tiled[2];
-  }
-  for (int i = 0; i < (int)outer_extents.size(); ++i) {
-    if (i != split_id) {
-      outer_outer[i] = frag_cop->reduce_axis[outer_index[i]];
-    }
-  }
-  // reorder
-  Array<tir::IterVar> order;
-  for (auto list : {outer_outer, outer_inner, inner, outer_inner_inner}) {
-    for (auto iv : list) {
-      if (iv.defined()) {
-        order.push_back(iv);
+    Array<tir::IterVar>
+    splitAndReorder(te::Stage s, std::unordered_map<int, tir::IterVar> idx2iv,
+                    std::unordered_map<int, Array<IntImm>> tileFactor,
+                    std::vector<std::vector<int>> loopOrder, Map<tir::IterVar, Bool> *isSpatial_p = NULL)
+    {
+      size_t n_level;
+      std::vector<std::unordered_map<int, tir::IterVar>> unOrderedloopOrder;
+      const te::ComputeOpNode *cop = s->op.as<te::ComputeOpNode>();
+      Map<tir::IterVar, Bool> isSpatial;
+      if (isSpatial_p)
+      {
+        for (auto iv : cop->axis)
+          isSpatial.Set(iv, Bool(true));
+        for (auto iv : cop->reduce_axis)
+          isSpatial.Set(iv, Bool(false));
       }
-    }
-  }
-  // add the remaining spatial axis
-  for (auto iv : frag_cop->axis) {
-    order.push_back(iv);
-  }
-  // add the tensorize iters
-  for (auto iv : tensor_iters) {
-    order.push_back(iv);
-  }
-  sch[second_frag].reorder(order);
-  // tensorize
-  CHECK(ctx->state->tensorize_intrinsics.count(ctx->state->second_op));
-  PackedIntrinsic pintrin =
-      ctx->state->tensorize_intrinsics.at(ctx->state->second_op);
-  std::vector<int> tensorize_spatial_index =
-      ctx->TensorizeSpatialAxis(ctx->state->second_op);
-  CHECK((int)frag_cop->axis.size() > tensorize_spatial_index[0]);
-  sch[second_frag].tensorize(frag_cop->axis[tensorize_spatial_index[0]],
-                             pintrin->compute_intrinsic);
-  /*
-   * Store the context for following schedule
-   */
-  // inter path compute_at position
-  tir::IterVar path_attach_axis;
-  for (auto list : {outer_outer}) {
-    for (int i = (int)list.size() - 1; i >= 0; --i) {
-      if (list[i].defined()) {
-        path_attach_axis = list[i];
-        break;
-      }
-    }
-    if (path_attach_axis.defined()) {
-      break;
-    }
-  }
-  if (path_attach_axis.defined()) {
-    // update the inter path attach info
-    ctx->path_attach_tensor = second_frag;
-    ctx->path_attach_axis = path_attach_axis;
-  }
-  // input shared memory compute_at position
-  tir::IterVar prologue_attach_axis;
-  for (auto list : {outer_outer, outer_inner, inner, outer_inner_inner}) {
-    for (int i = (int)list.size() - 1; i >= 0; --i) {
-      if (list[i].defined()) {
-        prologue_attach_axis = list[i];
-        break;
-      }
-    }
-    if (prologue_attach_axis.defined()) {
-      break;
-    }
-  }
-  CHECK(prologue_attach_axis.defined())
-      << "Can't find second prologue shared compute_at position during "
-         "scheduling.\n";
-  ctx->second_prologue_shared_attach_tensor = second_frag;
-  ctx->second_prologue_shared_attach_axis = prologue_attach_axis;
-  // input fragment compute_at position
-  tir::IterVar frag_attach_axis;
-  for (auto list : {inner, outer_inner}) {
-    for (int i = (int)list.size() - 1; i >= 0; --i) {
-      if (list[i].defined()) {
-        frag_attach_axis = list[i];
-        break;
-      }
-    }
-    if (frag_attach_axis.defined()) {
-      break;
-    }
-  }
-  CHECK(frag_attach_axis.defined())
-      << "Can't find second prologue fragment compute_at position during "
-         "scheduling.\n";
-  ctx->second_frag_attach_tensor = second_frag;
-  ctx->second_frag_attach_axis = frag_attach_axis;
-}
+      for (size_t i = 0; i < loopOrder.size(); i++)
+        unOrderedloopOrder.push_back(std::unordered_map<int, tir::IterVar>());
 
-void ScheduleInputFrag(te::Schedule sch, CPUTensorizeContext ctx,
-                       CPUTensorizeParam tensorize_param,
-                       te::Operation consumer, te::Tensor inp,
-                       te::Tensor attach_tensor, tir::IterVar attach_axis,
-                       String scope, te::TensorIntrin intrinsic) {
-  CHECK(sch[consumer]->op.defined());
-  const te::ComputeOpNode *frag_cop = sch[consumer]->op.as<te::ComputeOpNode>();
-  CHECK(frag_cop != nullptr);
-  te::Tensor inp_frag = sch.cache_read(inp, scope, {consumer});
-  CHECK(attach_tensor.defined() && attach_axis.defined());
-  sch[inp_frag].compute_at(sch[attach_tensor], attach_axis);
-  const te::ComputeOpNode *inp_cop = inp_frag->op.as<te::ComputeOpNode>();
-  // tensorize
-  const te::ComputeOpNode *cop = intrinsic->op.as<te::ComputeOpNode>();
-  int num_axis = (int)cop->axis.size();
-  sch[inp_frag].tensorize(inp_cop->axis[(int)inp_cop->axis.size() - num_axis],
-                          intrinsic);
-}
-
-void ScheduleInputSharedFrag(te::Schedule sch, CPUTensorizeContext ctx,
-                             CPUTensorizeParam tensorize_param,
-                             te::Operation consumer, te::Tensor inp,
-                             te::Tensor shared_attach_tensor,
-                             tir::IterVar shared_attach_axis,
-                             te::Tensor frag_attach_tensor,
-                             tir::IterVar frag_attach_axis, String scope,
-                             te::TensorIntrin intrinsic) {
-  CHECK(sch[consumer]->op.defined());
-  const te::ComputeOpNode *frag_cop = sch[consumer]->op.as<te::ComputeOpNode>();
-  CHECK(frag_cop != nullptr);
-  te::Tensor inp_shared = sch.cache_read(inp, "shared", {consumer});
-  te::Tensor inp_frag = sch.cache_read(inp_shared, scope, {consumer});
-  // compute_at shared
-  CHECK(shared_attach_tensor.defined() && shared_attach_axis.defined());
-  sch[inp_shared].compute_at(sch[shared_attach_tensor], shared_attach_axis);
-  // cooperative fetching
-  Array<PrimExpr> factors;
-  int cur_id{0}, tz_id{-1}, ty_id{-1}, tx_id{-1}, vec_id{-1};
-  factors.push_back(-1);
-  cur_id += 1;
-  if (ctx->tz_used) {
-    factors.push_back(tensorize_param->tz_size);
-    tz_id = cur_id;
-    cur_id += 1;
-  }
-  if (ctx->ty_used) {
-    factors.push_back(tensorize_param->ty_size);
-    ty_id = cur_id;
-    cur_id += 1;
-  }
-  tx_id = cur_id;
-  factors.push_back(tensorize_param->warp_size);
-  cur_id += 1;
-  factors.push_back(tensorize_param->input_vector_len);
-  vec_id = cur_id;
-  Array<tir::IterVar> tiled =
-      ctx->FuseAllAndSplit(sch, inp_shared->op, factors);
-  if (tz_id >= 0) {
-    sch[inp_shared].bind(tiled[tz_id], te::thread_axis(Range(), "threadIdx.z"));
-  }
-  if (ty_id >= 0) {
-    sch[inp_shared].bind(tiled[ty_id], te::thread_axis(Range(), "threadIdx.y"));
-  }
-  if (tx_id >= 0) {
-    sch[inp_shared].bind(tiled[tx_id], te::thread_axis(Range(), "threadIdx.x"));
-  }
-  if (vec_id >= 0) {
-    sch[inp_shared].vectorize(tiled[vec_id]);
-  }
-
-  // compute_at frag
-  CHECK(frag_attach_tensor.defined() && frag_attach_axis.defined());
-  sch[inp_frag].compute_at(sch[frag_attach_tensor], frag_attach_axis);
-  const te::ComputeOpNode *inp_cop = inp_frag->op.as<te::ComputeOpNode>();
-  // tensorize
-  const te::ComputeOpNode *cop = intrinsic->op.as<te::ComputeOpNode>();
-  int num_axis = (int)cop->axis.size();
-  sch[inp_frag].tensorize(inp_cop->axis[(int)inp_cop->axis.size() - num_axis],
-                          intrinsic);
-}
-
-void ScheduleInterPath(te::Schedule sch, CPUTensorizeContext ctx,
-                       CPUTensorizeParam tensorize_param) {
-  te::Operation root_op = ctx->InterPathRootOp();
-  sch[root_op].set_scope("shared");
-  CHECK(ctx->path_attach_tensor.defined() && ctx->path_attach_axis.defined());
-  sch[root_op].compute_at(sch[ctx->path_attach_tensor], ctx->path_attach_axis);
-  for (auto op : ctx->InterPathNonRootOps()) {
-    CHECK(ctx->CanInline(op));
-    sch[op].compute_inline();
-  }
-  // cooperative fetching
-  Array<PrimExpr> factors;
-  int cur_id{0}, tz_id{-1}, ty_id{-1}, tx_id{-1}, vec_id{-1};
-  factors.push_back(-1);
-  cur_id += 1;
-  if (ctx->tz_used) {
-    factors.push_back(tensorize_param->tz_size);
-    tz_id = cur_id;
-    cur_id += 1;
-  }
-  if (ctx->ty_used) {
-    factors.push_back(tensorize_param->ty_size);
-    ty_id = cur_id;
-    cur_id += 1;
-  }
-  tx_id = cur_id;
-  factors.push_back(tensorize_param->warp_size);
-  cur_id += 1;
-  factors.push_back(tensorize_param->input_vector_len);
-  vec_id = cur_id;
-  Array<tir::IterVar> tiled = ctx->FuseAllAndSplit(sch, root_op, factors);
-  if (tz_id >= 0) {
-    sch[root_op].bind(tiled[tz_id], te::thread_axis(Range(), "threadIdx.z"));
-  }
-  if (ty_id >= 0) {
-    sch[root_op].bind(tiled[ty_id], te::thread_axis(Range(), "threadIdx.y"));
-  }
-  if (tx_id >= 0) {
-    sch[root_op].bind(tiled[tx_id], te::thread_axis(Range(), "threadIdx.x"));
-  }
-  if (vec_id >= 0) {
-    sch[root_op].vectorize(tiled[vec_id]);
-  }
-}
-
-void ScheduleFirstOpLocality(te::Schedule sch, CPUTensorizeContext ctx,
-                             CPUTensorizeParam tensorize_param) {
-  te::Operation first_op = ctx->state->first_op;
-  CHECK(first_op->num_outputs() == 1)
-      << "Only expect one output from first op.\n";
-  te::Tensor first_out = first_op.output(0);
-  te::Operation consumer;
-  if (ctx->HasEpilogue()) {
-    Array<te::Operation> path_ops = ctx->InterPathNonRootOps();
-    if (path_ops.size() > 0U) {
-      consumer = path_ops[0];
-    } else {
-      consumer = ctx->InterPathRootOp();
+      for (auto idxFactor : tileFactor)
+      {
+        int idx = idxFactor.first;
+        n_level = 0;
+        Array<IntImm> factors = idxFactor.second;
+        CHECK(factors.size() == loopOrder.size() - 1) << idx2iv[idx];
+        for (auto factor : factors)
+        {
+          tir::IterVar outer, inner;
+          s.split(idx2iv[idx], factor, &outer, &inner);
+          if (isSpatial_p)
+          {
+            isSpatial.Set(outer, isSpatial[idx2iv[idx]]);
+            isSpatial.Set(inner, isSpatial[idx2iv[idx]]);
+          }
+          unOrderedloopOrder[n_level][idx] = inner;
+          idx2iv[idx] = outer;
+          n_level += 1;
+        }
+        CHECK(n_level == loopOrder.size() - 1) << "nlevel is " << n_level;
+        unOrderedloopOrder[n_level][idx] = idx2iv[idx];
+      }
+      Array<tir::IterVar> ret;
+      for (size_t level = unOrderedloopOrder.size(); level > 0; level--)
+      {
+        for (auto idx : loopOrder[level - 1])
+        {
+          ret.push_back(unOrderedloopOrder[level - 1][idx]);
+        }
+      }
+      if (isSpatial_p)
+        *isSpatial_p = isSpatial;
+      return ret;
     }
-  } else {
-    CHECK(ctx->second_frag.defined())
-        << "The second fragment is not defined.\n";
-    consumer = ctx->second_frag->op;
-  }
-  te::Tensor shared = sch.cache_read(first_out, "shared", {consumer});
-  const te::ComputeOpNode *shared_cop = shared->op.as<te::ComputeOpNode>();
-  CHECK(shared_cop);
-  // compute_at shared
-  CHECK(ctx->path_attach_tensor.defined() && ctx->path_attach_axis.defined());
-  sch[shared].compute_at(sch[ctx->path_attach_tensor], ctx->path_attach_axis);
-  // get intrinsic
-  CHECK(ctx->state->tensorize_intrinsics.count(ctx->state->first_op));
-  PackedIntrinsic pintrin =
-      ctx->state->tensorize_intrinsics.at(ctx->state->first_op);
-  const te::ComputeOpNode *intrin_cop =
-      pintrin->store_intrinsic->op.as<te::ComputeOpNode>();
-  int num_tensorize_iters = (int)intrin_cop->axis.size();
-  // split the remaining spatial axis
-  int tz_id{-1}, ty_id{-1};
-  std::vector<int> spatial_extents =
-      ctx->GetSpatialExtentsByInferBound(sch, shared->op);
-  for (int i = 0; i < (int)spatial_extents.size() - num_tensorize_iters; ++i) {
-    if ((spatial_extents[i] >= tensorize_param->tz_size) && (ctx->tz_used) &&
-        (tz_id < 0)) {
-      tz_id = i;
-    } else if ((spatial_extents[i] >= tensorize_param->ty_size) &&
-               (ctx->ty_used) && (ty_id < 0)) {
-      ty_id = i;
+
+    te::Schedule ScheduleContextNode::run(int i, te::Schedule sch, te::Operation op,
+                                          Array<tir::IterVar> tensorizeAxes,
+                                          te::TensorIntrin intrin, String code,
+                                          String path)
+    {
+      auto factor = data[i];
+      const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+      std::unordered_map<int, tvm::tir::IterVar> idx2iv;
+      int idx = 0;
+      for (auto iv : cop->axis)
+        idx2iv[idx++] = iv;
+      for (auto iv : cop->reduce_axis)
+        idx2iv[idx++] = iv;
+      std::unordered_map<int, Array<IntImm>> firstOpTileFactor;
+      for (auto it : factor.factor.tileSize)
+      {
+        int idx = it.first;
+        firstOpTileFactor[idx] = Array<IntImm>();
+        // firstOpTileFactor[idx].push_back(it.second[0]);
+        Array<IntImm> factor = it.second;
+        for (size_t i = 1; i < factor.size(); i++)
+        {
+          // CHECK(factor[i]->value % factor[i - 1]->value == 0);
+          firstOpTileFactor[idx].push_back(IntImm(
+              DataType::Int(32), (factor[i]->value + factor[i - 1]->value - 1) /
+                                     factor[i - 1]->value));
+        }
+      }
+      Map<tir::IterVar, Bool> isSpatial;
+      Array<tir::IterVar> loopOrder = splitAndReorder(
+          sch[op], idx2iv, firstOpTileFactor, factor.factor.loopOrder, &isSpatial);
+      for (auto iv : tensorizeAxes)
+        loopOrder.push_back(iv);
+      sch[op].reorder(loopOrder);
+      Array<tir::IterVar> reduceAxes, fuseAxes;
+      for (size_t i = 0; i < loopOrder.size(); i++)
+      {
+        if (!isSpatial[loopOrder[i]])
+          reduceAxes.push_back(loopOrder[i]);
+        else
+        {
+          for (size_t j = i; j < loopOrder.size(); j++)
+          {
+            if (isSpatial[loopOrder[j]])
+              fuseAxes.push_back(loopOrder[j]);
+            else
+              break;
+          }
+          break;
+        }
+      }
+      std::cout << "reduce size: " << reduceAxes.size() << ", spatial size: " << fuseAxes.size() << std::endl;
+      tir::IterVar outerfuse, outerfuseouter, outerfuseinner;
+      sch[op].fuse(fuseAxes, &outerfuse);
+      std::cout << "parallelism: " << fuseAxes.size() << " " << parallelism << std::endl;
+      sch[op].split_by_nparts(outerfuse, parallelism, &outerfuseouter, &outerfuseinner);
+      sch[op].parallel(outerfuseouter);
+      Array<tir::IterVar> newOrder;
+      newOrder.push_back(outerfuseouter);
+      for (auto iv : reduceAxes)
+        newOrder.push_back(iv);
+      newOrder.push_back(outerfuseinner);
+      sch[op].reorder(newOrder);
+      sch[op].tensorize(tensorizeAxes[0], intrin);
+      sch[op].pragma(loopOrder[0], "import_llvm", tir::StringImm(code));
+      if (path.size())
+      {
+        std::ofstream outfile;
+        outfile.open(path, std::ios_base::app); // append instead of overwrite
+        outfile << i << " ";
+        for (auto cost_ : factor.costs)
+        {
+          outfile << cost_ << " ";
+        }
+        // outfile << "tileSize: ";
+        // for (auto item : factor.factor.tileSize) {
+        //   outfile << "(" << idx2iv[item.first]->var << "," << item.second << "),
+        //   ";
+        // }
+        // outfile << "loopOrder: ";
+        // for (auto item : factor.factor.loopOrder) {
+        //   outfile << "(";
+        //   for (auto it : item)
+        //     outfile << idx2iv[it]->var << ", ";
+        //   outfile << ")";
+        // }
+        outfile << std::endl;
+      }
+      return sch;
     }
-  }
-  std::vector<tir::IterVar> outers(shared_cop->axis.size(), tir::IterVar()),
-      inners(shared_cop->axis.size(), tir::IterVar());
-  if (tz_id >= 0) {
-    CHECK(tz_id < (int)shared_cop->axis.size());
-    tir::IterVar axis = shared_cop->axis[tz_id];
-    tir::IterVar outer, inner;
-    sch[shared].split_by_nparts(axis, tensorize_param->tz_size, &outer, &inner);
-    sch[shared].bind(outer, te::thread_axis(Range(), "threadIdx.z"));
-    outers[tz_id] = outer;
-    inners[tz_id] = inner;
-  }
-  if (ty_id >= 0) {
-    CHECK(ty_id < (int)shared_cop->axis.size());
-    tir::IterVar axis = shared_cop->axis[ty_id];
-    tir::IterVar outer, inner;
-    sch[shared].split_by_nparts(axis, tensorize_param->ty_size, &outer, &inner);
-    sch[shared].bind(outer, te::thread_axis(Range(), "threadIdx.y"));
-    outers[ty_id] = outer;
-    inners[ty_id] = inner;
-  }
-  for (int i = 0; i < (int)shared_cop->axis.size() - num_tensorize_iters; ++i) {
-    if ((i != tz_id) && (i != ty_id)) {
-      outers[i] = shared_cop->axis[i];
+
+    void ScheduleSecondOpCPU(te::Schedule sch, CPUTensorizeContext ctx,
+                             CPUTensorizeParam tensorize_param)
+    {
+
+      CHECK(ctx->state->second_op->num_outputs() == 1U);
+      te::Operation cur_op = ctx->state->second_op;
+      std::unordered_map<int, tir::IterVar> idx2iv;
+      std::unordered_map<int, tir::IterVar> idx2iv_outer;
+      Array<tir::IterVar> outerParallel;
+
+      Array<tir::IterVar> allIters = ctx->GetAllIters(cur_op);
+      for (size_t i = 0; i < allIters.size(); i++)
+        idx2iv[i] = allIters[i];
+
+      // 1. split the outer loops
+      FusionInfo fusionInfo = tensorize_param->fusionInfo;
+      for (size_t i = 0; i < fusionInfo.secondOpOuterIndices.size(); i++)
+      {
+        int idx = fusionInfo.secondOpOuterIndices[i];
+        tir::IterVar outer, inner;
+        int factor = fusionInfo.secondOpOuterTilingFactors[i];
+        tir::IterVar iv = idx2iv[idx];
+        sch[cur_op].split(iv, factor,
+                          &outer, &inner);
+        idx2iv[idx] = inner;
+        idx2iv_outer[idx] = outer;
+      }
+
+      for (auto idxFactor : fusionInfo.parallelFactor)
+      {
+        tir::IterVar iv, outer, inner;
+        iv = idx2iv_outer.at(idxFactor.first);
+        sch[cur_op].split_by_nparts(iv, idxFactor.second, &outer, &inner);
+        outerParallel.push_back(outer);
+        idx2iv_outer[idxFactor.first] = inner;
+      }
+
+      // 2. the body tiling
+      Array<tir::IterVar> bodyLoops = splitAndReorder(
+          sch[cur_op], idx2iv, tensorize_param->secondOpTilingFactor,
+          tensorize_param->secondOpLoopOrder);
+      Array<tir::IterVar> commonLoops = splitAndReorder(
+          sch[cur_op], idx2iv_outer, tensorize_param->commonTilingFactor,
+          tensorize_param->commonLoopOrder);
+      Array<tir::IterVar> tensorizeLoops = ctx->GetTensorizeIters(cur_op);
+
+      // 3. reorder
+      Array<tir::IterVar> loopOrder;
+      for (auto iv : outerParallel)
+        loopOrder.push_back(iv);
+      for (auto iv : commonLoops)
+        loopOrder.push_back(iv);
+      for (auto iv : bodyLoops)
+        loopOrder.push_back(iv);
+      for (auto iv : tensorizeLoops)
+        loopOrder.push_back(iv);
+      sch[cur_op].reorder(loopOrder);
+
+      // 4. schedule the outer axis parallel
+      tir::IterVar outerFused;
+      sch[cur_op].fuse(outerParallel, &outerFused);
+      sch[cur_op].parallel(outerFused);
+
+      // 5. tensorize
+      PackedIntrinsic pintrin = ctx->state->tensorize_intrinsics.at(cur_op);
+      sch[cur_op].tensorize(tensorizeLoops[0], pintrin->compute_intrinsic);
+
+      // 6. set attach
+      ctx->path_attach_axis = commonLoops[commonLoops.size() - 1];
+      ctx->first_frag_attach_axis = ctx->path_attach_axis;
+      ctx->path_attach_tensor = cur_op;
+      ctx->secondOpOuterMostAxis = outerFused;
+      return;
     }
-  }
-  // reorder
-  Array<tir::IterVar> order;
-  for (auto list : {outers, inners}) {
-    for (auto iv : list) {
-      if (iv.defined()) {
-        order.push_back(iv);
+
+    void ScheduleInterPath(te::Schedule sch, CPUTensorizeContext ctx,
+                           CPUTensorizeParam tensorize_param)
+    {
+      te::Operation root_op = ctx->InterPathRootOp();
+      // sch[root_op].set_scope("shared");
+      CHECK(ctx->path_attach_tensor.defined() && ctx->path_attach_axis.defined());
+      sch[root_op].compute_at(sch[ctx->path_attach_tensor], ctx->path_attach_axis);
+      for (auto op : ctx->InterPathNonRootOps())
+      {
+        CHECK(ctx->CanInline(op));
+        sch[op].compute_inline();
       }
     }
-  }
-  sch[shared].reorder(order);
-  // tensorize
-  sch[shared].tensorize(
-      shared_cop->axis[(int)shared_cop->axis.size() - num_tensorize_iters],
-      pintrin->store_intrinsic);
 
-  // handle fragment
-  const te::ComputeOpNode *first_cop = first_op.as<te::ComputeOpNode>();
-  // find attach axis
-  tir::IterVar frag_attach_axis;
-  for (auto list : {outers, inners}) {
-    for (int i = (int)list.size() - 1; i >= 0; --i) {
-      if (list[i].defined()) {
-        frag_attach_axis = list[i];
-        break;
+    void ScheduleFirstOpCPU(te::Schedule sch, CPUTensorizeContext ctx,
+                            CPUTensorizeParam tensorize_param)
+    {
+      CHECK(ctx->state->first_op->num_outputs() == 1U);
+      te::Operation cur_op = ctx->state->first_op;
+      std::unordered_map<int, tir::IterVar> idx2iv;
+      size_t idx = 0;
+      for (auto it : ctx->GetAllIters(cur_op))
+      {
+        idx2iv[idx++] = it;
       }
-    }
-    if (frag_attach_axis.defined()) {
-      break;
-    }
-  }
-  CHECK(frag_attach_axis.defined())
-      << "Can't find first_frag compute_at position during scheduling.\n";
-  CHECK(ctx->state->tensorize_intrinsics.count(first_op));
-  sch[first_op].set_scope(pintrin->compute_scope);
-  sch[first_op].compute_at(sch[shared], frag_attach_axis);
-  std::vector<int> spatial_index, tensorize_spatial_index, reduce_index,
-      tensorize_reduce_index;
-  // spatial
-  tensorize_spatial_index = ctx->TensorizeSpatialAxis(ctx->state->first_op);
-  for (int i = 0; i < (int)first_cop->axis.size(); ++i) {
-    spatial_index.push_back(i);
-  }
-  CHECK(ctx->ValidTensorizeFusion(spatial_index, tensorize_spatial_index))
-      << "The fusion and tensorize decisions are not valid.\n";
-  spatial_index.erase(spatial_index.begin() + (spatial_index.size() -
-                                               tensorize_spatial_index.size()),
-                      spatial_index.end());
-  // reduce
-  tensorize_reduce_index = ctx->TensorizeReduceAxis(ctx->state->first_op);
-  for (int i = 0; i < (int)first_cop->reduce_axis.size(); ++i) {
-    reduce_index.push_back(i);
-  }
-  CHECK(ctx->ValidTensorizeFusion(reduce_index, tensorize_reduce_index))
-      << "The fusion and tensorize decisions are not valid.\n";
-  reduce_index.erase(reduce_index.begin() +
-                         (reduce_index.size() - tensorize_reduce_index.size()),
-                     reduce_index.end());
-  // find the largest one
-  std::vector<int> reduce_extents =
-      ctx->GetReduceExtentsByIndex(ctx->state->first_op, reduce_index);
-  int split_id{-1}, split_extent{-1};
-  for (int i = 0; i < (int)reduce_extents.size(); ++i) {
-    if (reduce_extents[i] > split_extent) {
-      split_extent = reduce_extents[i];
-      split_id = i;
-    }
-  }
-  std::vector<tir::IterVar> outs(reduce_extents.size(), tir::IterVar()),
-      medians(reduce_extents.size(), tir::IterVar()),
-      ins(reduce_extents.size(), tir::IterVar());
-  if (split_id >= 0) {
-    tir::IterVar axis = first_cop->reduce_axis[split_id];
-    Array<tir::IterVar> tiled =
-        ctx->Split(sch, first_op, axis,
-                   {-1, tensorize_param->block_rx, tensorize_param->warp_rx});
-    outs[split_id] = tiled[0];
-    medians[split_id] = tiled[1];
-    ins[split_id] = tiled[2];
-  }
-  for (int i = 0; i < (int)reduce_extents.size(); ++i) {
-    if (i != split_id) {
-      outs[i] = first_cop->reduce_axis[i];
-    }
-  }
-  Array<tir::IterVar> new_order;
-  for (auto list : {outs, medians, ins}) {
-    for (auto iv : list) {
-      if (iv.defined()) {
-        new_order.push_back(iv);
-      }
-    }
-  }
-  for (auto ind : spatial_index) {
-    new_order.push_back(first_cop->axis[ind]);
-  }
-  for (auto ind : tensorize_spatial_index) {
-    new_order.push_back(first_cop->axis[ind]);
-  }
-  for (auto ind : tensorize_reduce_index) {
-    new_order.push_back(first_cop->reduce_axis[ind]);
-  }
-  sch[first_op].reorder(new_order);
-  // tensorize
-  CHECK(tensorize_spatial_index[0] < (int)first_cop->axis.size());
-  sch[first_op].tensorize(first_cop->axis[tensorize_spatial_index[0]],
-                          pintrin->compute_intrinsic);
-  /*
-   * Store the context for following schedules
-   */
-  tir::IterVar prologue_frag_attach_axis;
-  for (auto list : {medians}) {
-    for (int i = (int)list.size() - 1; i >= 0; --i) {
-      if (list[i].defined()) {
-        prologue_frag_attach_axis = list[i];
-        break;
-      }
-    }
-    if (prologue_frag_attach_axis.defined()) {
-      break;
-    }
-  }
-  CHECK(prologue_frag_attach_axis.defined())
-      << "Can't find first_op's prologue fragment compute_at position during "
-         "scheduling.\n";
-  ctx->first_frag_attach_tensor = first_op.output(0);
-  ctx->first_frag_attach_axis = prologue_frag_attach_axis;
-  tir::IterVar prologue_shared_attach_axis;
-  for (auto list : {outs}) {
-    for (int i = (int)list.size() - 1; i >= 0; --i) {
-      if (list[i].defined()) {
-        prologue_shared_attach_axis = list[i];
-        break;
-      }
-    }
-    if (prologue_shared_attach_axis.defined()) {
-      break;
-    }
-  }
-  CHECK(prologue_shared_attach_axis.defined())
-      << "Can't find first_op's prologue shared compute_at position during "
-         "scheduling.\n";
-  ctx->first_prologue_shared_attach_tensor = first_op.output(0);
-  ctx->first_prologue_shared_attach_axis = prologue_shared_attach_axis;
-}
 
-te::Schedule TensorizeCPU(Layer layer, TensorizeHyperFusionState state,
+      // 1. compute_at second op
+      sch[cur_op].compute_at(sch[ctx->state->second_op],
+                             ctx->first_frag_attach_axis);
+      // 2. the body tiling
+      Array<tir::IterVar> bodyLoops =
+          splitAndReorder(sch[cur_op], idx2iv, tensorize_param->firstOpTilingFactor,
+                          tensorize_param->firstOpLoopOrder);
+
+      Array<tir::IterVar> tensorizeLoops = ctx->GetTensorizeIters(cur_op);
+
+      // 3. reorder
+      Array<tir::IterVar> loopOrder;
+      for (auto iv : bodyLoops)
+        loopOrder.push_back(iv);
+      for (auto iv : tensorizeLoops)
+        loopOrder.push_back(iv);
+
+      sch[cur_op].reorder(loopOrder);
+
+      // 4. tensorize
+      PackedIntrinsic pintrin = ctx->state->tensorize_intrinsics.at(cur_op);
+      sch[cur_op].tensorize(tensorizeLoops[0], pintrin->compute_intrinsic);
+
+      // 6. set attach
+      ctx->first_prologue_shared_attach_axis = bodyLoops[bodyLoops.size() - 1];
+      ctx->firstOpOuterMostAxis = loopOrder[0];
+      return;
+    }
+
+    te::Schedule TensorizeCPU(Layer layer, TensorizeHyperFusionState state,
+                              hardware::HardwareParam cpu_param,
+                              CPUTensorizeParam tensorize_param,
+                              tir::StringImm code)
+    {
+      te::Schedule sch = te::create_schedule(layer->ops);
+      CPUTensorizeContext ctx = CPUTensorizeContext(layer, state);
+      /*
+       * Schedule epilogue
+       * Currently, we treat epilogue as a separate kernel
+       */
+      ScheduleEpilogue(sch, ctx, tensorize_param);
+      /*
+       * Schedule second op tensor
+       * The second tensor determines the overall parallelism
+       */
+      ScheduleSecondOpCPU(sch, ctx, tensorize_param);
+      /*
+       * Schedule second op's prologue
+       */
+      for (auto op_list : ctx->state->second_op_prologue)
+      {
+        bool isFirstOp = false;
+        for (auto op : op_list)
+        {
+          CHECK(ctx->CanInline(op));
+          sch[op].compute_inline();
+          if (!isFirstOp)
+            sch[op].compute_at(sch[ctx->path_attach_tensor], ctx->path_attach_axis);
+          else
+            sch[op].compute_inline();
+          isFirstOp = true;
+        }
+      }
+      /*
+       * Schedule inter path
+       */
+      ScheduleInterPath(sch, ctx, tensorize_param);
+      /*
+       * Schedule first op
+       */
+      ScheduleFirstOpCPU(sch, ctx, tensorize_param);
+      /*
+       * Schedule first op's prologue
+       */
+      for (auto op_list : ctx->state->first_op_prologue)
+      {
+        for (auto op : op_list)
+        {
+          CHECK(ctx->CanInline(op));
+          sch[op].compute_inline();
+        }
+      }
+      /*
+       * import the intrinsic
+       */
+      sch[state->second_op].pragma(ctx->secondOpOuterMostAxis, "import_llvm", code);
+      sch[state->first_op].pragma(ctx->firstOpOuterMostAxis, "import_llvm", code);
+      return sch;
+    }
+
+    CostAndFactor ScheduleHelper(SingleCubicScheduleFactor factor, // the base factor,
+                                 Map<tir::Var, IntImm> bounds,
+                                 std::vector<double> cacheSizes,
+                                 std::unordered_map<int, tir::Var> idx2var,
+                                 Array<AccessFunction> accessFunctions,
+                                 Map<tir::Var, IntImm> fixedTileSize,
+                                 std::vector<double> delayedWeight_init,
+                                 std::vector<double> weightPerTensor,
+                                 std::vector<double> weightPerCacheLevel,
+                                 const size_t beginCacheLevel,
+                                 const size_t endCacheLevel,
+                                 size_t bytePerEle,
+                                 std::string searchType = "stochastic",
+                                 std::string mode = "best",
+                                 std::vector<CostAndFactor> *data = NULL,
+                                 bool verbose = false)
+    {
+      // std::cout << "begin schedule helper with param: \n";
+      // for (auto idxFactors: factor.tileSize){
+      //   int idx = idxFactors.first;
+      //   auto factors = idxFactors.second;
+      //   std::cout << "[" << idx2var[idx] << " , (" << factors[0] << ", " << bounds[idx2var[idx]] << ")], ";
+      // }
+      // std::cout << std::endl;
+      // std::cout << "bounds: " << std::endl;
+      // std::cout << bounds << std::endl;
+      // std::cout << "fixed tileSize" << std::endl;
+      // std::cout << fixedTileSize << std::endl;
+      // std::cout << "begin/end: " << beginCacheLevel << ":" << endCacheLevel << std::endl;
+      // std::cout << "cacheSizes: " << cacheSizes.size() << std::endl;
+      // std::cout << "weightPerCacheLevel.size()" << weightPerCacheLevel.size() << std::endl;
+      // std::cout << "delayedWeightInit.size()" << delayedWeight_init.size() << std::endl;
+      // std::cout << "weightPerTensor.size()" << weightPerTensor.size() << std::endl;
+      // std::cout << "acf.size()" << accessFunctions.size() << std::endl;
+      if (verbose)
+      {
+        for (auto acf : accessFunctions)
+          std::cout << "access_indices" << acf->access_indices << "absentVars: " << acf->absentVars << ", presentVars: " << acf->presentVars << std::endl;
+        std::cout << std::endl;
+        std::cout << "tensorWeight:";
+        for (auto tswt : weightPerTensor)
+          std::cout << tswt << " ";
+        std::cout << std::endl;
+        std::cout << "weightPerCacheLevel:";
+        for (auto wpcl : weightPerCacheLevel)
+          std::cout << wpcl << " ";
+        std::cout << std::endl;
+      }
+
+      std::vector<CostAndFactor> candidates;
+      std::vector<double> footprints;
+      int cnt = 0;
+      std::function<void(std::vector<double>, size_t, std::vector<double>,
+                         SingleCubicScheduleFactor)>
+          dfsTileSize = [&](std::vector<double> cost, size_t cacheLevel,
+                            std::vector<double> delayedWeight,
+                            SingleCubicScheduleFactor factors)
+      {
+        if (verbose)
+          std::cout << "cacheLevel:" << cacheLevel << std::endl;
+        if (cacheLevel >= endCacheLevel)
+        {
+          double cost_ = 0;
+          for (size_t i = 0; i < accessFunctions.size(); i++)
+            cost_ += footprints[i] * delayedWeight[i] * bytePerEle;
+          CHECK(cost.size());
+          auto p = cost.rbegin();
+          *p += cost_;
+          cnt += 1;
+          candidates.push_back({cost, factors});
+          return;
+        }
+
+        std::vector<std::pair<int, int>> baseTileSize;
+        size_t skip;
+        auto getDM = [&accessFunctions, &weightPerCacheLevel, &delayedWeight,
+                      &cacheLevel, &weightPerTensor, &skip, &bounds,
+                      &footprints, &verbose, &bytePerEle](Map<tir::Var, IntImm> tileSize, double * delayedDM_p = NULL)
+        {
+          if (verbose)
+          {
+            std::cout << "delayed weight:" << std::endl;
+            for (auto dlwt : delayedWeight)
+              std::cout << dlwt << " ";
+            std::cout << std::endl;
+            std::cout << "skip" << skip << std::endl;
+            std::cout << "cachelevel: " << cacheLevel << std::endl;
+            std::cout << "bounds" << std::endl;
+            std::cout << "tileSize: " << tileSize << std::endl;
+          }
+          Map<tir::Var, FloatImm> quotients;
+          double prod = 1;
+          for (auto varext : tileSize)
+          {
+            tir::Var var = varext.first;
+            int ext = varext.second->value;
+            double quotient = (bounds[var]->value + ext - 1) / ext;
+            quotients.Set(var, FloatImm(DataType::Float(64), quotient));
+            prod *= quotients[var]->value;
+          }
+          if (verbose)
+            std::cout << "quotients: " << quotients << std::endl;
+          double dm = 0;
+          double delayedDM = 0;
+          for (size_t i = 0; i < accessFunctions.size(); i++)
+          {
+            double dm_ = footprints[i];
+            for (auto var : accessFunctions[i]->absentVars)
+              dm_ *= quotients[var]->value;
+            
+            double weight = delayedWeight[i];
+            
+            delayedDM += dm_ * weight;
+            
+            if (i != skip)
+              weight += weightPerCacheLevel[cacheLevel] * weightPerTensor[i];
+            if (verbose)
+              std::cout << "dm" << i << " : " << dm_ << std::endl;
+            dm += dm_ * weight;
+          }
+          if (delayedDM_p) *delayedDM_p = delayedDM * bytePerEle;
+          return dm * bytePerEle;
+        };
+        auto getFP = [&accessFunctions,
+                      &bytePerEle](Map<tir::Var, IntImm> tileSize)
+        {
+          int fp = 0;
+          for (size_t i = 0; i < accessFunctions.size(); i++)
+          {
+            for (auto fp_ : accessFunctions[i]->getFootprint(tileSize))
+              fp += fp_ * bytePerEle;
+          }
+          return fp;
+        };
+        struct cacheLevelFactor
+        {
+          double cost;
+          Map<tir::Var, IntImm> TileSize;
+          double occupancy;
+          double delayedCost;
+          double curCost;
+          cacheLevelFactor(double cost_, Map<tir::Var, IntImm> TileSize_, double occupancy_, double delayedCost_, double curCost_)
+              : cost(cost_), TileSize(TileSize_), occupancy(occupancy_),delayedCost(delayedCost_),curCost(curCost_) {}
+        };
+        std::vector<cacheLevelFactor> best;
+        size_t beam;
+        std::function<void(int, Map<tir::Var, IntImm>)>
+            dfsTileSizeOfCacheLevel = [&](size_t idx,
+                                          Map<tir::Var, IntImm> tileSize)
+        {
+          if (verbose)
+            std::cout << "idx: " << idx << std::endl;
+          if (mode == "survey" && best.size() >= beam)
+            return;
+          int pos = baseTileSize[idx].first;
+          if (idx == baseTileSize.size())
+          {
+            // do the evaluation
+            if (verbose)
+              std::cout << "tileSize" << tileSize << std::endl;
+            int fp = getFP(tileSize);
+            if (fp > cacheSizes[cacheLevel])
+              return;
+            double delayedDM;
+            double dm = getDM(tileSize, &delayedDM);
+            double occupancy = getFP(tileSize) / cacheSizes[cacheLevel];
+            cacheLevelFactor newItem = {dm, tileSize, occupancy, delayedDM, dm - delayedDM};
+            if (mode == "best")
+            {
+              if (verbose)
+                std::cout << "best.size(): " << best.size() << std::endl;
+              size_t rank = 0;
+              while (best.size() > rank && best[rank].cost < dm)
+                rank++;
+              best.insert(best.begin() + rank, newItem);
+              while (best.size() > beam)
+                best.pop_back();
+            }
+            else if (mode == "survey")
+            {
+              best.push_back(newItem);
+            }
+            return;
+          }
+          for (size_t i = idx; i < baseTileSize.size(); i++)
+          {
+            tileSize.Set(idx2var[baseTileSize[i].first],
+                         IntImm(DataType::Int(32), baseTileSize[i].second));
+          }
+          if (getFP(tileSize) > cacheSizes[cacheLevel])
+            return;
+
+          if (mode == "best")
+          {
+            for (size_t i = idx; i < baseTileSize.size(); i++)
+            {
+              int bound = bounds[idx2var[baseTileSize[i].first]]->value;
+              tileSize.Set(idx2var[baseTileSize[i].first],
+                           IntImm(DataType::Int(32), bound));
+            }
+            if (best.size() == beam &&
+                getDM(tileSize) >= best[beam - 1].cost)
+              return;
+          }
+          int bound =
+              (bounds[idx2var[pos]]->value + baseTileSize[idx].second - 1) /
+              baseTileSize[idx].second;
+          size_t n_trial =
+              (searchType == "stochastic" ? std::min(bound, 10) : bound);
+          for (size_t trial = 0; trial < n_trial; trial++)
+          {
+            int ext = (trial + 1) * baseTileSize[idx].second;
+            if (searchType == "stochastic")
+              ext = (random() % bound + 1) * baseTileSize[idx].second;
+            tileSize.Set(idx2var[pos], IntImm(DataType::Int(32), ext));
+            dfsTileSizeOfCacheLevel(idx + 1, tileSize);
+          }
+          return;
+        };
+        Map<tir::Var, IntImm> tileSizeInit;
+        for (auto varExt : fixedTileSize)
+          tileSizeInit.Set(varExt.first, varExt.second);
+        for (auto idx : factors.tileSize)
+        {
+          baseTileSize.push_back(
+              {idx.first, idx.second[idx.second.size() - 1]->value});
+        }
+        if (verbose)
+        {
+          std::cout << "baseTileSize:\n";
+          for (auto idxext : baseTileSize)
+          {
+            std::cout << "(" << idx2var[idxext.first] << ", " << idxext.second << "), ";
+            std::cout << std::endl;
+          }
+        }
+        if (cacheLevel == 1)
+          beam = 100;
+        else
+          beam = 5;
+        for (size_t i = 0; i < accessFunctions.size(); i++)
+        {
+          // determine the delayed weight
+          skip = i;
+          dfsTileSizeOfCacheLevel(0, tileSizeInit);
+
+          // std::cout << "cacheLevel: " << cacheLevel << ", bestCost"
+          //           << best[0].cost << std::endl;
+          // std::cout << "the ratio: "
+          //           << getFP(best[0].TileSize) /
+          //                  (double)hw_param->cacheSizes[cacheLevel]
+          //           << std::endl;
+          // CHECK(best.size() && best[0].cost < 1e9)
+          //     << "best cost is " << best[0].cost;
+
+          std::vector<double> newDelayedWeight;
+          for (size_t j = 0; j < accessFunctions.size(); j++)
+          {
+            if (j != i)
+              newDelayedWeight.push_back(0);
+            else
+              newDelayedWeight.push_back(weightPerTensor[i] *
+                                         weightPerCacheLevel[cacheLevel]);
+          }
+
+          Array<tir::Var> absentVars = accessFunctions[i]->absentVars;
+          auto isAbsentVar = [&absentVars](tir::Var var_)
+          {
+            for (auto var : absentVars)
+              if (var.same_as(var_))
+                return true;
+            return false;
+          };
+          std::vector<int> newLoopOrder;
+          std::vector<int> innerOrder;
+          for (auto it : baseTileSize)
+          {
+            int idx = it.first;
+            if (isAbsentVar(idx2var[idx]))
+              innerOrder.push_back(idx);
+            else
+              newLoopOrder.push_back(idx);
+          }
+          newLoopOrder.insert(newLoopOrder.end(), innerOrder.begin(),
+                              innerOrder.end());
+
+          for (auto item : best)
+          {
+            auto tileSize = item.TileSize;
+            SingleCubicScheduleFactor newFactors = factors;
+            for (auto &kv : newFactors.tileSize)
+            {
+              kv.second.push_back(tileSize[idx2var[kv.first]]);
+            }
+            newFactors.skip.push_back(i);
+            newFactors.loopOrder.push_back(newLoopOrder);
+            auto newCost = cost;
+            CHECK(newCost.size());
+            auto p = newCost.rbegin();
+            *p += item.delayedCost;
+            newCost.push_back(item.curCost);
+            newFactors.cacheOccupancy.push_back(item.occupancy);
+            dfsTileSize(newCost, cacheLevel + 1, newDelayedWeight, newFactors);
+          }
+        }
+      };
+      // check factor.tileSize doesn't have fixed vars
+      for (auto iv : factor.tileSize)
+      {
+        CHECK(idx2var.count(iv.first)) << "idx2var not contain " << iv.first;
+        tir::Var var = idx2var[iv.first];
+        CHECK(fixedTileSize.count(var) == 0) << "fixed tilesize exist in init factor";
+      }
+
+      for (auto acf : accessFunctions)
+      {
+        int fp = 0;
+        for (auto fp_ : acf->getFootprint(bounds))
+          fp += fp_;
+        footprints.push_back(fp);
+      }
+      std::cout << std::endl;
+      dfsTileSize({0.0}, beginCacheLevel, delayedWeight_init, factor);
+      std::sort(candidates.begin(), candidates.end(),
+                [](CostAndFactor &a, CostAndFactor &b)
+                { return a.sum < b.sum; });
+      if (data)
+      {
+        std::vector<CostAndFactor> candidates_;
+        if (mode == "best")
+          candidates_.push_back(candidates[0]);
+        else if (mode == "survey")
+          for (size_t i = 0; i < candidates.size();
+               i += std::max(1, (int)candidates.size() / 10))
+          {
+            candidates_.push_back(candidates[i]);
+          }
+        *data = candidates_;
+      }
+      CHECK(candidates.size()) << "no valid candidates" << std::endl;
+      return candidates[0];
+    }
+
+    CostAndFactor scheduleSingleCubic(OpHyperState op, Map<tir::Var, IntImm> bounds,
+                                      hardware::HardwareParam hw_param,
+                                      const size_t fusionCacheLevel,
+                                      size_t bytePerEle,
+                                      std::string searchType = "stochastic",
+                                      std::string mode = "best",
+                                      std::vector<CostAndFactor> *data = NULL)
+    {
+      std::vector<double> weightPerCacheLevel, weightPerTensor, delayedWeight_init;
+      std::vector<CostAndFactor> candidates;
+      std::unordered_map<int, tir::Var> idx2var;
+      Array<AccessFunction> accessFunctions;
+      Map<tir::Var, IntImm> fixedTileSize;
+
+      idx2var = op->getIdx2var();
+      for (auto bdwidth : hw_param->cacheBandwidth)
+        weightPerCacheLevel.push_back(1 / (double)bdwidth);
+      for (auto acf : op->ReadAccessFunctions())
+      {
+        accessFunctions.push_back(acf);
+        weightPerTensor.push_back(hw_param->tensorWeight[0]);
+        delayedWeight_init.push_back(0);
+      }
+      accessFunctions.push_back(op->WriteAccessFunctions());
+      weightPerTensor.push_back(hw_param->tensorWeight[1]);
+      delayedWeight_init.push_back(
+          0); // currently we do not have register level reuse
+      // init footprint
+
+      SingleCubicScheduleFactor factor;
+      std::unordered_map<int, Array<IntImm>> &tileFactorInit = factor.tileSize;
+      std::vector<int> L1LoopOrder;
+      std::vector<int> innerOrder;
+      for (auto iv : op->getAllIters())
+      {
+        if (iv->iv_type != IV_Type::TENSORIZE)
+        {
+          tileFactorInit[iv->index] = Array<IntImm>();
+          tileFactorInit[iv->index].push_back(IntImm(DataType::Int(32), 1));
+          if (iv->iv_type != IV_Type::REDUCE)
+            L1LoopOrder.push_back(iv->index);
+          else
+            innerOrder.push_back(iv->index);
+        }
+        else
+          fixedTileSize.Set(iv->originVar, IntImm(DataType::Int(32), iv->ext));
+      }
+      for (auto idx : innerOrder)
+        L1LoopOrder.push_back(idx);
+      factor.loopOrder.push_back(L1LoopOrder);
+      factor.skip.push_back(accessFunctions.size() - 1);
+      return ScheduleHelper(factor, bounds, hw_param->cacheSizePerThread,
+                            idx2var, accessFunctions, fixedTileSize,
+                            delayedWeight_init, weightPerTensor,
+                            weightPerCacheLevel, 1, fusionCacheLevel,
+                            bytePerEle, searchType, mode, data);
+    }
+
+    CostAndFactor scheduleCommonLoop(
+        OpHyperState op1, OpHyperState op2,
+        hardware::HardwareParam hw_param,
+        FusionInfo fusionInfo,
+        const size_t bytePerEle,
+        const std::string searchType,
+        const std::string mode,
+        std::vector<CostAndFactor> *data)
+    {
+      SingleCubicScheduleFactor factor;
+      std::unordered_map<int, tir::Var> idx2var = op2->getIdx2var();
+      std::vector<double> weightPerTensor, weightPerCacheLevel, delayedWeight;
+      Map<tir::Var, IntImm> innerBounds;
+
+      Array<AccessFunction> accessFunctions;
+
+      // init the innerbounds
+      for (auto iv : fusionInfo.bounds)
+      {
+        innerBounds.Set(iv.first, iv.second);
+      }
+      // the init tileSize
+      std::unordered_map<int, Array<IntImm>> &tileFactorSize = factor.tileSize;
+      std::vector<int> loopOrderInit;
+      for (auto idx : fusionInfo.secondOpOuterIndices)
+      {
+        tileFactorSize[idx] = Array<IntImm>();
+        tir::Var var = idx2var[idx];
+        tileFactorSize[idx].push_back(innerBounds[var]);
+        innerBounds.erase(var);
+        loopOrderInit.push_back(idx);
+      }
+      factor.loopOrder.push_back(loopOrderInit);
+
+      // init of weightPerCacheLevel
+      for (auto bdwidth : hw_param->cacheBandwidth)
+        weightPerCacheLevel.push_back(1 / bdwidth);
+
+      auto sharedPairs = share_axis_analysis(op1->op, op2->op);
+      Map<tir::Var, tir::Var> varMap;
+      for (auto arr : sharedPairs)
+      {
+        CHECK(arr.size() == 2);
+        varMap.Set(arr[0]->var, arr[1]->var);
+      }
+      // init of access function
+      Array<tir::Var> op2AllVars = op2->getAllVars();
+      for (auto acf : op1->ReadAccessFunctions())
+      {
+        acf->repalceVars(varMap);
+        Array<tir::Var> newAbsentVar;
+        for (auto var : op2AllVars)
+        {
+          bool isAbsent = true;
+          for (auto var_ : acf->presentVars)
+          {
+            if (var.same_as(var_))
+            {
+              isAbsent = false;
+              break;
+            }
+          }
+          if (isAbsent)
+            newAbsentVar.push_back(var);
+        }
+        acf->setAbsentVars(newAbsentVar);
+        accessFunctions.push_back(acf);
+        weightPerTensor.push_back(hw_param->tensorWeight[0]);
+      }
+      accessFunctions.push_back(op2->WriteAccessFunctions());
+      weightPerTensor.push_back(hw_param->tensorWeight[1]);
+      // judge whether the access function is shared
+      for (auto acf : op2->ReadAccessFunctions())
+      {
+        auto inAbsentVar = [&acf](tir::Var var)
+        {
+          for (auto var_ : acf->absentVars)
+            if (var_.same_as(var))
+              return true;
+          return false;
+        };
+        bool isShared = true;
+        for (auto iv : op2->getAllIters())
+        {
+          if (iv->iv_type == IV_Type::SECONDSPATIAL)
+          {
+            if (!inAbsentVar(iv->originVar))
+            {
+              isShared = false;
+              break;
+            }
+          }
+        }
+        if (!isShared)
+        {
+          accessFunctions.push_back(acf);
+          weightPerTensor.push_back(hw_param->tensorWeight[0]);
+        }
+      }
+      for (auto acf : accessFunctions)
+        delayedWeight.push_back(0);
+
+      return ScheduleHelper(factor, fusionInfo.boundsAfterParallel, hw_param->cacheSizePerThread,
+                            idx2var, accessFunctions, innerBounds,
+                            delayedWeight, weightPerTensor, weightPerCacheLevel,
+                            fusionInfo.fusionLevel + 1, hw_param->cacheSizePerThread.size(),
+                            bytePerEle, searchType, mode, data);
+    }
+    CPUTensorizeParam buildCPUTensorizeParam(SerialFusionState sfs,
+                                             hardware::HardwareParam hw_param,
+                                             int bytePerEle,
+                                             FusionInfo fusionInfo)
+    {
+
+      OpHyperState op1, op2;
+      std::tie(op1, op2) = sfs->getCubicOpPair();
+      Map<tir::Var, IntImm> bounds = fusionInfo.bounds;
+      CostAndFactor op1caf =
+          scheduleSingleCubic(op1, bounds, hw_param, fusionInfo.fusionLevel,
+                              bytePerEle, "normal", "best", NULL);
+      CostAndFactor op2caf =
+          scheduleSingleCubic(op2, bounds, hw_param, fusionInfo.fusionLevel,
+                              bytePerEle, "normal", "best", NULL);
+      CostAndFactor commCaf =
+          scheduleCommonLoop(op1, op2, hw_param, fusionInfo, bytePerEle, "normal", "best", NULL);
+
+      SingleCubicScheduleFactor op1Schedule = op1caf.factor;
+      SingleCubicScheduleFactor op2Schedule = op2caf.factor;
+      SingleCubicScheduleFactor commSchedule = commCaf.factor;
+
+      auto tileSize2factor = [](const SingleCubicScheduleFactor &sch, std::unordered_map<int, Array<IntImm>> &tileFactor)
+      {
+        for (auto it : sch.tileSize)
+        {
+          int idx = it.first;
+          Array<IntImm> factor = it.second;
+          tileFactor[idx] = Array<IntImm>();
+          for (size_t i = 1; i < factor.size(); i++)
+          {
+            CHECK(factor[i]->value % factor[i - 1]->value == 0);
+            tileFactor[idx].push_back(
+                IntImm(DataType::Int(32), factor[i]->value / factor[i - 1]->value));
+          }
+        }
+      };
+      std::unordered_map<int, Array<IntImm>> firstOpTileFactor, secondOpTileFactor, commonLoopTileFcator;
+      tileSize2factor(op1Schedule, firstOpTileFactor);
+      tileSize2factor(op2Schedule, secondOpTileFactor);
+      tileSize2factor(commSchedule, commonLoopTileFcator);
+
+      // construct the occupancy
+      Array<FloatImm> occupancy;
+      for (auto occupancy_ : op1caf.factor.cacheOccupancy)
+        occupancy.push_back(FloatImm(DataType::Float(32), occupancy_));
+      for (auto occupancy_ : op1caf.factor.cacheOccupancy)
+        occupancy.push_back(FloatImm(DataType::Float(32), occupancy_));
+      occupancy.push_back(FloatImm(DataType::Float(32), fusionInfo.cacheOccupancy));
+      for (auto occupancy_ : commSchedule.cacheOccupancy)
+        occupancy.push_back(FloatImm(DataType::Float(32), occupancy_));
+
+      for (auto &cost : op1caf.costs)
+        cost = cost * (double)fusionInfo.n_block / (double)fusionInfo.parallelism;
+      for (auto &cost : op2caf.costs)
+        cost = cost * (double)fusionInfo.n_block / (double)fusionInfo.parallelism;
+      return CPUTensorizeParam(op1, op2, hw_param->num_groups,
+                               op1Schedule.loopOrder, op2Schedule.loopOrder, commSchedule.loopOrder,
+                               firstOpTileFactor, secondOpTileFactor, commonLoopTileFcator,
+                               fusionInfo,
+                               op1caf.costs, op2caf.costs, commCaf.costs, occupancy);
+    }
+
+    ScheduleContext SingleOpSchedule(te::Operation op,
+                                     Array<tir::IterVar> tensorizeAxes,
+                                     hardware::HardwareParam hw_param,
+                                     String searchType = "stochastic",
+                                     String mode = "best")
+    {
+      OpHyperState op_ = buildOpHyperState(op, 0, tensorizeAxes);
+      Map<tir::Var, IntImm> bounds;
+      for (auto iv : op_->getAllIters())
+        bounds.Set(iv->originVar, IntImm(DataType::Int(32), iv->ext));
+      std::vector<CostAndFactor> candidates;
+      scheduleSingleCubic(op_, bounds, hw_param, 3, 4, searchType, mode,
+                          &candidates);
+      return ScheduleContext(candidates, hw_param->num_groups);
+    }
+
+    te::Schedule FusionContextNode::run(int i, te::Schedule sch, bool verbose)
+    {
+      CHECK(0 <= i && i < (int)schParams.size()) << "run " << i << " out of range "
+                                                 << "[0, " << schParams.size() << ")";
+      CPUTensorizeParam schParam = schParams[i];
+      FusionInfo info = schParam->fusionInfo;
+      if (path.size())
+      {
+        std::ofstream outfile;
+        outfile.open(path, std::ios_base::app); // append instead of overwrite
+        outfile << i << " ";
+        double sum = 0;
+        for (auto cost_ : schParam->costs)
+        {
+          sum += cost_;
+          outfile << cost_ << " ";
+        }
+        outfile << sum;
+        outfile << std::endl;
+      }
+      std::cout << "run " << i << std::endl;
+      if (verbose)
+      {
+        double cost_sum = 0;
+        for (auto cost : schParam->costs)
+        {
+          cost_sum += cost;
+          std::cout << cost << " ";
+        }
+        std::cout << cost_sum << std::endl;
+      }
+      OpHyperState op1, op2;
+      std::tie(op1, op2) = sfs->getCubicOpPair();
+      std::unordered_map<int, tir::Var> op2_idx2var = op2->getIdx2var();
+      if (verbose)
+        std::cout << "outer indices: ";
+      for (size_t i = 0; i < info.secondOpOuterIndices.size(); i++)
+      {
+        tir::Var var = op2_idx2var[info.secondOpOuterIndices[i]];
+        int factor = info.secondOpOuterTilingFactors[i];
+        if (verbose)
+          std::cout << "(" << var << ": " << factor << "), ";
+      }
+      if (verbose)
+      {
+        std::cout << std::endl;
+        std::cout << schParam << std::endl;
+      }
+      return TensorizeCPU(layer, state, hw_param, schParam, code);
+    }
+
+    TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
+        .set_dispatch<CPUTensorizeParamNode>([](const ObjectRef &node,
+                                                ReprPrinter *p)
+                                             {
+      auto *op = static_cast<const CPUTensorizeParamNode *>(node.get());
+      p->PrintIndent();
+      p->stream << "---------------CPU Tensorize Param------------------\n";
+      std::unordered_map<int, tir::Var> firstOpIdx2var = op->op1->getIdx2var();
+      p->stream << "fusion level: " << op->fusionInfo.fusionLevel;
+      p->stream << "first op tileSize: " << std::endl;
+      for (auto idx_factor : op->firstOpTilingFactor)
+        p->stream << "\t" << firstOpIdx2var[idx_factor.first] << ": "
+                  << idx_factor.second << std::endl;
+      p->stream << "first op order:" << std::endl;
+      int level = 0;
+      for (auto order : op->firstOpLoopOrder) {
+        p->stream << "\t" << level++ << ": ";
+        for (auto i : order)
+          p->stream << firstOpIdx2var[i] << ", ";
+        p->stream << std::endl;
+      }
+
+      std::unordered_map<int, tir::Var> secondOpIdx2var = op->op2->getIdx2var();
+      p->stream << "second op tileSize: " << std::endl;
+      for (auto idx_factor : op->secondOpTilingFactor)
+        p->stream << "\t" << secondOpIdx2var[idx_factor.first] << ": "
+                  << idx_factor.second << std::endl;
+      p->stream << "second op order:" << std::endl;
+      level = 0;
+      for (auto order : op->secondOpLoopOrder) {
+        p->stream << "\t";
+        p->stream << "\t" << level++ << ": ";
+        for (auto i : order)
+          p->stream << secondOpIdx2var[i] << ", ";
+        p->stream << std::endl;
+      }
+
+      p->stream << "common loop: " << std::endl;
+      for (auto idx_factor : op->commonTilingFactor)
+        p->stream << "\t" << secondOpIdx2var[idx_factor.first] << ": "
+                  << idx_factor.second << std::endl;
+      p->stream << "common loop order:" << std::endl;
+      level = 0;
+      for (auto order : op->commonLoopOrder) {
+        p->stream << "\t";
+        p->stream << "\t" << level++ << ": ";
+        for (auto i : order)
+          p->stream << secondOpIdx2var[i] << ", ";
+        p->stream << std::endl;
+      }
+      p->stream << "firstOpCosts: ";
+      for (auto cost: op->firstOpCosts)
+        std::cout << cost << " ";
+      std::cout << std::endl;
+      p->stream << "secondOpCost: ";
+      for (auto cost: op->secondOpCosts)
+        std::cout << cost << " ";
+      std::cout << std::endl;
+      p->stream << "commonLoopCost: ";
+      for (auto cost: op->commCosts)
+        std::cout << cost << " ";
+      std::cout << std::endl;
+      p->stream << "fusionCost: " << op->fusionInfo.cost << std::endl;
+      p->stream << "\n----------------------------------------------------\n"; });
+
+    TVM_REGISTER_GLOBAL("ditto.auto_tensorize.CPUTensorizeContext")
+        .set_body_typed([](Layer layer, TensorizeHyperFusionState state)
+                        { return CPUTensorizeContext(layer, state); });
+
+    TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildCPUTensorizeParam")
+        .set_body_typed([](SerialFusionState sfs, 
+                           FusionChoice fusionChoice, hardware::HardwareParam hw_param, int bytePerEle)
+                        {
+      /*
+              fusionInfo.cacheOccupancy = occupancy;
+              fusionInfo.cost = dm / hw_param->cacheBandwidth[fusionLevel];
+              fusionInfo.n_block = ig->getNumOfBlocks();
+              fusionInfo.parallelism = std::min(hw_param->num_groups, (int)ig->getParallelism());
+              fusionInfo.secondOpOuterIndices = secondOpOuterIndices;
+              fusionInfo.fusionLevel = fusionLevel;
+              fusionInfo.computation = ig->getFirstOpWorkload() + ig->getSecondOpWorkload();
+              fusionInfo.bounds = ig->bounds;
+              fusionInfo.valid = true;
+              ig->scheduleParallel();
+              fusionInfo.boundsAfterParallel = ig->_boundsAfterParallel;
+              fusionInfo.parallelFactor = ig->_parallelSchedule;
+              for (auto idx : secondOpUnsetIndices)
+                fusionInfo.secondOpOuterTilingFactors.push_back(
+                    secondOpTilingFactors[idx]);
+      */
+      FusionInfo fusionInfo;
+      fusionInfo.fusionLevel = fusionChoice->fusionResult->fusionLevel;
+      fusionInfo.cost =
+          fusionChoice->fusionResult->dataMovement /
+          hw_param->cacheBandwidth.at(fusionInfo.fusionLevel);
+      for (auto i : fusionChoice->secondOpOuterIndices)
+        fusionInfo.secondOpOuterIndices.push_back(i->value);
+      for (auto i : fusionChoice->secondOpOuterTilingFactors)
+        fusionInfo.secondOpOuterTilingFactors.push_back(i->value);
+      fusionInfo.n_block = fusionChoice->fusionResult->n_block;
+      fusionInfo.parallelism = fusionChoice->fusionResult->parallelism;
+      fusionInfo.valid = true;
+      fusionInfo.bounds = fusionChoice->fusionResult->bounds;
+      IterGraph ig = buildIterGraph(sfs, sfs->tensorizeAxes, "");
+      ig->setParallel(hw_param->num_groups);
+      ig->setFusionLevel(fusionInfo.fusionLevel);
+      ig->setFusion(fusionChoice->fusionItem);
+      ig->scheduleParallel();
+      fusionInfo.boundsAfterParallel = ig->_boundsAfterParallel;
+      fusionInfo.parallelFactor = ig->_parallelSchedule;
+      fusionInfo.cacheOccupancy = fusionChoice->fusionResult->occupancy;
+      fusionInfo.computation = ig->getFirstOpWorkload() + ig->getSecondOpWorkload();
+      return buildCPUTensorizeParam(sfs, hw_param, bytePerEle, fusionInfo); });
+
+    TVM_REGISTER_GLOBAL("ditto.auto_tensorize.TensorizeCPU")
+        .set_body_typed([](Layer layer, TensorizeHyperFusionState state,
                            hardware::HardwareParam cpu_param,
-                           CPUTensorizeParam tensorize_param) {
-  te::Schedule sch = te::create_schedule(layer->ops);
-  CPUTensorizeContext ctx = CPUTensorizeContext(layer, state, cpu_param);
-  /*
-   * Schedule epilogue
-   * Currently, we treat epilogue as a separate kernel
-   */
-  ScheduleEpilogue(sch, ctx, tensorize_param);
-  /*
-   * Schedule second op tensor
-   * The second tensor determines the overall parallelism
-   */
-  ScheduleSecondOpParallelism(sch, ctx, tensorize_param);
-  /*
-   * Schedule second op fragment
-   * The second frag determines part of the locality
-   */
-  ScheduleSecondOpLocality(sch, ctx, tensorize_param);
-  /*
-   * Schedule second op's inputs, including inter path
-   * The inter path's attach position can be different from
-   * other inputs'.
-   */
-  CHECK(ctx->second_frag.defined() && ctx->second_frag->op.defined());
-  int count_num_input = 0;
-  for (auto inp : ctx->second_frag->op->InputTensors()) {
-    CHECK(ctx->state->tensorize_intrinsics.count(ctx->state->second_op));
-    PackedIntrinsic pintrin =
-        ctx->state->tensorize_intrinsics.at(ctx->state->second_op);
-    CHECK(count_num_input < (int)pintrin->load_scopes.size());
-    if ((inp->op == ctx->state->first_op) || ctx->IsInInterPath(inp->op)) {
-      // input from first op or inter path
-      ScheduleInputFrag(sch, ctx, tensorize_param, ctx->second_frag->op, inp,
-                        ctx->second_frag_attach_tensor,
-                        ctx->second_frag_attach_axis,
-                        pintrin->load_scopes[count_num_input],
-                        pintrin->load_intrinsics[count_num_input]);
-    } else {
-      // input from prologue
-      ScheduleInputSharedFrag(sch, ctx, tensorize_param, ctx->second_frag->op,
-                              inp, ctx->second_prologue_shared_attach_tensor,
-                              ctx->second_prologue_shared_attach_axis,
-                              ctx->second_frag_attach_tensor,
-                              ctx->second_frag_attach_axis,
-                              pintrin->load_scopes[count_num_input],
-                              pintrin->load_intrinsics[count_num_input]);
-    }
-    count_num_input += 1;
-  }
-  /*
-   * Schedule second op's prologue
-   */
-  for (auto op_list : ctx->state->second_op_prologue) {
-    for (auto op : op_list) {
-      CHECK(ctx->CanInline(op));
-      sch[op].compute_inline();
-    }
-  }
-  /*
-   * Schedule inter path
-   */
-  ScheduleInterPath(sch, ctx, tensorize_param);
-  /*
-   * Schedule first op
-   */
-  ScheduleFirstOpLocality(sch, ctx, tensorize_param);
-  /*
-   * Schedule first op's inputs
-   */
-  count_num_input = 0;
-  for (auto inp : ctx->state->first_op->InputTensors()) {
-    CHECK(ctx->state->tensorize_intrinsics.count(ctx->state->first_op));
-    PackedIntrinsic pintrin =
-        ctx->state->tensorize_intrinsics.at(ctx->state->first_op);
-    CHECK(count_num_input < (int)pintrin->load_scopes.size());
-    // input from prologue
-    ScheduleInputSharedFrag(
-        sch, ctx, tensorize_param, ctx->state->first_op, inp,
-        ctx->first_prologue_shared_attach_tensor,
-        ctx->first_prologue_shared_attach_axis, ctx->first_frag_attach_tensor,
-        ctx->first_frag_attach_axis, pintrin->load_scopes[count_num_input],
-        pintrin->load_intrinsics[count_num_input]);
-    count_num_input += 1;
-  }
-  /*
-   * Schedule first op's prologue
-   */
-  for (auto op_list : ctx->state->first_op_prologue) {
-    for (auto op : op_list) {
-      CHECK(ctx->CanInline(op));
-      sch[op].compute_inline();
-    }
-  }
-  return sch;
-}
-
-TVM_REGISTER_GLOBAL("ditto.auto_tensorize.CPUTensorizeContext")
-    .set_body_typed([](Layer layer, TensorizeHyperFusionState state,
-                       hardware::HardwareParam cpu_param) {
-      return CPUTensorizeContext(layer, state, cpu_param);
-    });
-
-TVM_REGISTER_GLOBAL("ditto.auto_tensorize.CPUTensorizeParam")
-    .set_body_typed([](int warp_size, int ty_size, int tz_size,
-                       int input_vector_len, int serial_y, int serial_z,
-                       int block_rx, int block_ry, int block_rz, int warp_rx,
-                       int warp_ry, int warp_rz, int unroll_steps) {
-      return CPUTensorizeParam(warp_size, ty_size, tz_size, input_vector_len,
-                                serial_y, serial_z, block_rx, block_ry,
-                                block_rz, warp_rx, warp_ry, warp_rz,
-                                unroll_steps);
-    });
-
-TVM_REGISTER_GLOBAL("ditto.auto_tensorize.TensorizeCPU")
-    .set_body_typed([](Layer layer, TensorizeHyperFusionState state,
-                       hardware::HardwareParam cpu_param,
-                       CPUTensorizeParam tensorize_param) {
-      return TensorizeCPU(layer, state, cpu_param, tensorize_param);
-    });
-
-} // namespace auto_tensorize
+                           CPUTensorizeParam tensorize_param, String code)
+                        {
+      tir::StringImm code_ = code;
+      return TensorizeCPU(layer, state, cpu_param, tensorize_param, code_); });
+    TVM_REGISTER_GLOBAL("ditto.auto_tensorize.SingleOpSchedule")
+        .set_body_typed([](te::Operation op, Array<tir::IterVar> tensorizeAxes,
+                           hardware::HardwareParam hw_param, String searchType,
+                           String mode)
+                        { return SingleOpSchedule(op, tensorizeAxes, hw_param, searchType, mode); });
+    TVM_REGISTER_GLOBAL("ditto.auto_tensorize.run")
+        .set_body_method<ScheduleContext>(&ScheduleContextNode::run);
+    TVM_REGISTER_GLOBAL("ditto.auto_tensorize.runFusion")
+        .set_body_method<FusionContext>(&FusionContextNode::run);
+  } // namespace auto_tensorize
 
 } // namespace ditto

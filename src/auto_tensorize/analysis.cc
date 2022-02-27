@@ -21,7 +21,8 @@ PrimExpr flatten_indices(const Array<PrimExpr> shape,
 }
 
 Array<Array<tir::IterVar>> share_axis_analysis(te::Operation op1,
-                                               te::Operation op2) {
+                                               te::Operation op2,
+                                               Array<tir::IterVar> tensorizeAxes) {
   // consumer_op -> axis -> producer_op -> set(axis)
   std::unordered_map<
       te::Operation,
@@ -116,7 +117,10 @@ Array<Array<tir::IterVar>> share_axis_analysis(te::Operation op1,
       }
     }
   };
-
+  Map<tir::IterVar, Bool> tensorize;
+  for (auto iv: tensorizeAxes){
+    tensorize.Set(iv, Bool(true));
+  }
   helper(op2);
   Array<Array<tir::IterVar>> ret;
   if (share_relations.count(op2)) {
@@ -127,7 +131,11 @@ Array<Array<tir::IterVar>> share_axis_analysis(te::Operation op1,
             Array<tir::IterVar> tmp;
             tmp.push_back(iv);
             tmp.push_back(kv.first);
-            if (tmp.size()) {
+            bool hasTensorize = false;
+            for(auto iv_: tmp){
+              if(tensorize.count(iv_)) {hasTensorize = true; break;}
+            }
+            if (!hasTensorize && tmp.size()) {
               ret.push_back(tmp);
             }
           }

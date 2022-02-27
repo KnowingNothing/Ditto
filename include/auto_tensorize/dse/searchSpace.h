@@ -81,6 +81,7 @@ public:
   TilingItem firstOpTiling, secondOpTiling;
   PermuteItem firstOpPermute, secondOpPermute;
   AttachItem attachPos;
+  size_t fusionLevel;
   static constexpr const char *_type_key = "ditto.auto_tensorize.FusionItem";
   void VisitAttrs(AttrVisitor *v) {
     v->Visit("fristOpTiling", &firstOpTiling);
@@ -96,7 +97,7 @@ class FusionItem : public Item {
 public:
   TVM_DLL FusionItem(TilingItem firstOpTiling, TilingItem secondOpTiling,
                      PermuteItem firstOpPermute, PermuteItem secondOpPermute,
-                     AttachItem attachPos);
+                     AttachItem attachPos, size_t fusionLevel);
   TVM_DEFINE_OBJECT_REF_METHODS(FusionItem, Item, FusionItemNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(FusionItemNode);
 };
@@ -255,7 +256,7 @@ inline FusionItem buildFusionItem(Array<IntImm> firstOpTiling,
                                   Array<IntImm> secondOpTiling,
                                   Array<IntImm> firstOpPermute,
                                   Array<IntImm> secondOpPermute,
-                                  size_t attachPos);
+                                  size_t attachPos, size_t fusionLevel);
 } // namespace auto_tensorize
 
 } // namespace ditto

@@ -8,7 +8,6 @@
 #include <tvm/tir/expr_functor.h>
 #include <tvm/tir/stmt_functor.h>
 
-
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -25,6 +24,7 @@ enum class IV_Type : int {
   FIRSTSPATIAL = 0,
   SECONDSPATIAL = 1,
   REDUCE = 2,
+  TENSORIZE = 3
 };
 typedef int FACTOR;
 
@@ -37,15 +37,25 @@ public:
   te::Operation op;
   /*! \brief The indices for one tensor */
   Array<Array<PrimExpr>> access_indices;
-
+  /*! \brief vars doesn't appear in this tensor*/
+  Array<tir::Var> absentVars;
+  /*! \brief present vars*/
+  Array<tir::Var> presentVars;
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("op", &op);
     v->Visit("access_indices", &access_indices);
+    v->Visit("absent vars", &absentVars);
   }
   /*! \brief get the data footprint */
   std::vector<int> getFootprint(Map<tir::Var, IntImm> bounds);
   /*! \brief get the workload */
   int getWorkload(Map<tir::Var, IntImm> bounds);
+  /*! \brief get the product of absent axis*/
+  int getProductOfAbsentVars(Map<tir::Var, IntImm> bounds);
+  /*! \brief replace vars by map */
+  void repalceVars(Map<tir::Var, tir::Var> map);
+  /*! \brief set the absent vars */
+  void setAbsentVars(Array<tir::Var> newAbsentVars);
   static constexpr const char *_type_key =
       "ditto.auto_tensorize.AccessFunction";
   TVM_DECLARE_BASE_OBJECT_INFO(AccessFunctionNode, Object);
@@ -58,7 +68,9 @@ public:
    * \param op The operation
    */
   TVM_DLL AccessFunction(te::Operation op,
-                         Array<Array<PrimExpr>> access_indices);
+                         Array<Array<PrimExpr>> access_indices,
+                         Array<tir::Var> absentVars,
+                         Array<tir::Var> presentVars);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(AccessFunction, ObjectRef,
                                         AccessFunctionNode);
@@ -82,7 +94,10 @@ public:
     v->Visit("originVar", &originVar);
   }
 
-  bool isSpatial() { return iv_type == IV_Type::FIRSTSPATIAL || iv_type == IV_Type::SECONDSPATIAL; }
+  bool isSpatial() {
+    return iv_type == IV_Type::FIRSTSPATIAL ||
+           iv_type == IV_Type::SECONDSPATIAL;
+  }
   bool isReduce() { return iv_type == IV_Type::REDUCE; }
   void setExt(FACTOR ext_) { ext = ext_; }
   static constexpr const char *_type_key = "ditto.auto_tensorize.IterVar";
@@ -203,10 +218,16 @@ public:
   Map<tir::Var, IntImm> bounds;
   Array<IterVar> firstOpTensorizeIters;
   Array<IterVar> secondOpTensorizeIters;
-
+  /*! \brief the cost for read/write tensor */
+  std::vector<double> tensorWeight;
   size_t attachPos = 0; // default: independent loops
-
+  std::vector<double> cacheSizes;
+  size_t fusionLevel;
   String resultPath;
+  int totalFp;
+  double parallelism_;
+  std::unordered_map<int, IntImm> _parallelSchedule;
+  Map<tir::Var, IntImm>  _boundsAfterParallel;
 
   void VisitAttrs(AttrVisitor *v) {
     v->Visit("init_firstOpIters", &_firstOpIters);
@@ -229,6 +250,10 @@ public:
     v->Visit("shareRelations", &shareRelations);
     v->Visit("splitRelations", &splitRelations);
   }
+  /*!
+   *  \brief Set the total footprint
+   */
+  void setTotalFp();
   /*!
    *  \brief Set the tiling factors for the first op.
    *  \param factors(List[int]): the tiling factors for the first op
@@ -271,29 +296,45 @@ public:
   /*! \brief get the bounds of all iters */
   Map<tir::Var, IntImm> inferBound() const;
   /*! \brief get the number of inner blocks */
-  int getNumOfBlocks() const;
+  double getNumOfBlocks() const;
   /*! \brief get the parallelism */
-  int getParallelism() const;
+  double getParallelism() const;
   /*! \brief get the first Op's memvisit*/
-  int getFirstOpDataVolume() const;
+  double getFirstOpDataVolume() const;
   /*! \brief get the first Op's workload*/
-  int getFirstOpWorkload() const;
+  double getFirstOpWorkload() const;
   /*! \brief get the first Op's blockSize*/
-  int getFirstOpBufferSize() const;
+  double getFirstOpBufferSize(bool considerWrite = false) const;
   /*! \brief get the second Op's memvisit*/
-  int getSecondOpDataVolume() const;
+  double getSecondOpDataVolume() const;
   /*! \brief get the second Op's workload*/
-  int getSecondOpWorkload() const;
+  double getSecondOpWorkload() const;
   /*! \brief get the second Op's blockSize*/
-  int getSecondOpBufferSize(bool writeThrough = true) const;
+  double getSecondOpBufferSize(bool writeThrough = false) const;
   /*! \brief get the redundant compute volume*/
-  int getRedundancy() const;
+  double getRedundancy() const;
+  /*! \brief get the fusion level */
+  size_t getFusionLevel(std::vector<double> cacheSizes);
+  /*! \brief manually set the fusion level*/
+  void setFusionLevel(size_t fusionLevel_);
+  /*! \brief manually set the cache size*/
+  void setCacheSize(std::vector<double> cacheSizes);
   /*! \brief get the analytical result */
-  FusionResult getAnalyticalResult(hardware::HardwareParam hw_param, int bytePerEle, bool writeThrough = true);
+  FusionResult getAnalyticalResult(hardware::HardwareParam hw_param,
+                                   int bytePerEle, bool writeThrough = true);
+  /*! \brief get the data movement*/
+  std::pair<bool, double> getDM(int bytePerEle,
+                                bool writeThrough, double * occupancy = NULL);
   /*! \brief looplike lightweight visualize */
   void visualize();
   /*! \brief write result */
   void writeResult(FusionResult res);
+  /*! \brief scheduleOuterParallel */
+  void scheduleParallel();
+  /*! \brief get the problem size after parallel */
+  Map<tir::Var, IntImm> getPbsz();
+  /*! \brief set the parallelism */
+  void setParallel(double parallel){parallelism_ = parallel;};
   static constexpr const char *_type_key = "ditto.auto_tensorize.IterGraph";
   TVM_DECLARE_FINAL_OBJECT_INFO(IterGraphNode, Object);
 };
@@ -306,7 +347,10 @@ public:
                     Array<AccessFunction> secondOpReadAccessFuncs,
                     AccessFunction firstOpWriteAccessFunc,
                     AccessFunction secondOpWriteAccessFunc, int readProducerPos,
-                    te::Operation op1, te::Operation op2, Array<IterVar> firstOpTensorizeIters, Array<IterVar> secondOpTensorizeIters, String path = "");
+                    te::Operation op1, te::Operation op2,
+                    Array<IterVar> firstOpTensorizeIters,
+                    Array<IterVar> secondOpTensorizeIters,
+                    std::vector<double> tensorWeight, String path = "");
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(IterGraph, ObjectRef, IterGraphNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(IterGraphNode);
 };

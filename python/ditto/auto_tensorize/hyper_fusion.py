@@ -207,19 +207,17 @@ def cpu_tensorize_context(
 class CPUTensorizeParam(Object):
     """CPUTensorizeParam object"""
 
-    def __str__(self):
-        ret = "CPUTensorizeParam("
-        ret += f"    warp_size={self.warp_size}\n"
-        ret += f"    ty_size={self.ty_size}\n"
-        ret += f"    tz_size={self.tz_size}\n"
-        ret += f"    input_vector_len={self.input_vector_len}\n"
-        ret += f"    serial_y={self.serial_y}\n"
-        ret += f"    serial_z={self.serial_z}\n"
-        ret += ")\n"
-        return ret
+    # def __str__(self):
+    #     ret = "CPUTensorizeParam("
+    #     ret += f"    first op tiling factor={self.firstOpTilingFactor}\n"
+    #     ret += f"    first op loop order={self.firstOpLoopOrder}\n"
+    #     ret += f"    second op tiling factor={self.secondOpTilingFactor}\n"
+    #     ret += f"    second op loop order={self.secondOpLoopOrder}\n"
+    #     ret += ")\n"
+    #     return ret
 
-    def __repr__(self) -> str:
-        return str(self)
+    # def __repr__(self) -> str:
+    #     return str(self)
 
 
 def cpu_tensorize_param(
@@ -259,60 +257,35 @@ def tensorize_cpu(
     state: TensorizeHyperFusionState,
     cpu_param: hardware.HardwareParam,
     tensorize_param: CPUTensorizeParam,
+    code,
 ):
-    return _ffi_api.TensorizeCPU(layer, state, cpu_param, tensorize_param)
+    return _ffi_api.TensorizeCPU(layer, state, cpu_param, tensorize_param, code)
+
 def build_fusion_choice(
-    ops, tensorizeAxes: List[tvm.tir.IterVar], hw_param: hardware.HardwareParam, 
-    inputs=None, weights=None, const_scalars=None,
-    const_tensors=None, requires_grad=False, name="layer",
-    dtype = "float32", path: str = ""
+    sfs, hw_param: hardware.HardwareParam, 
+    dtype = "float32", path: str = "", simple_mode = -1
 ):
     """Build the fusion choice.
 
     Parameters
     ----------
-    ops : te.Operation or List[te.Operation] (not empty)
-        The output operations that make this layer.
-
-    inputs : optional List[te.Tensor]
-        The list of input tensors.
-
-    weights : optional List[te.Tensor]
-        The list of weights.
-
-    const_scalars : optional List[PrimExpr]
-        The list of constant scalar values.
-
-    const_tensors : optional List[te.Tensor]
-        The list of constant tensors.
-
-    requires_grad : optional bool
-
-    name: str
-
+    sfs: the serial fusion state
+    hw_param: the hardware parameters
+    simple_mode:
+        1: a random pick
+        0: the heavy search method
+        -1: the pruned search method 
     Returns
     -------
-    tensors: ditto.auto_compute.Layer
-        The result layer
-
+    The fusion choice
     Example
     -------
     .. code-block:: python
     """
-    if not isinstance(ops, list):
-        ops = [ops]
-    if inputs is None:
-        inputs = []
-    #inputs = [x.tensor if isinstance(x, LayerTensor) else x for x in inputs]
-    if weights is None:
-        weights = []
-    #weights = [x.tensor if isinstance(x, LayerTensor) else x for x in weights]
-    if const_scalars is None:
-        const_scalars = []
-    if const_tensors is None:
-        const_tensors = []
-    #const_tensors = [x.tensor if isinstance(
-    #    x, LayerTensor) else x for x in const_tensors]
-    return _ffi_api.buildFusionChoice(name, ops, inputs, weights,
-                              const_scalars, const_tensors, hw_param, 
-                              tensorizeAxes, dtype, path)
+    return _ffi_api.buildFusionChoice(sfs, hw_param,  
+                              dtype, path, simple_mode)
+
+def build_cpu_tensorize_param(
+    sfs, fusion_choice, hw_param, bytePerEle
+):
+    return _ffi_api.buildCPUTensorizeParam(sfs, fusion_choice, hw_param, bytePerEle)

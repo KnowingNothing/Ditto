@@ -679,64 +679,34 @@ def test_build_tensorize_hyper_fusion_state_cpu():
     # print(tvm.lower(sch, layer.schedule_tensors, simple_mode=True))
 
 def test_tensorize_cpu():
-    ins, outs = BatchGemmSoftmaxGemm()
-    A, B, C = ins
-    (F,) = outs
-
-    E_frag = F.op.input_tensors[0]
-    exp, C_ext = E_frag.op.input_tensors
-    D_frag = exp.op.input_tensors[0]
-    A_shared, B_shared = D_frag.op.input_tensors
-
-    b, m, n, mi, ni = E_frag.op.axis
-    rlo, rli = E_frag.op.reduce_axis
-    fuse_choice = at.fusion_choice(D_frag.op, E_frag.op, [b, m, n, rlo, mi, ni, rli], 3)
-
-    loads = [intrin_wmma_load_matrix_a("float16"), intrin_wmma_load_matrix_b("float16")]
-
-    compute = intrin_wmma_gemm("float16", "float32")
-
-    store = intrin_wmma_store_matrix("shared", "float32")
-
-    first_packed = at.packed_intrinsic(
-        loads,
-        compute,
-        store,
-        ["wmma.matrix_a", "wmma.matrix_b"],
-        "wmma.accumulator",
-        "wmma.accumulator",
-    )
-
-    b, m, l, mi, li = D_frag.op.axis
-    rko, rki = D_frag.op.reduce_axis
-    first_match_info = at.match_info([mi, li, rki], first_packed)
-
-    loads = [intrin_wmma_load_matrix_a("float16"), intrin_wmma_load_matrix_b("float16")]
-
-    compute = intrin_wmma_gemm("float16", "float32")
-
-    store = intrin_wmma_store_matrix("global", "float32")
-
-    second_packed = at.packed_intrinsic(
-        loads,
-        compute,
-        store,
-        ["wmma.matrix_a", "wmma.matrix_b"],
-        "wmma.accumulator",
-        "wmma.accumulator",
-    )
-
-    b, m, n, mi, ni = E_frag.op.axis
-    rlo, rli = E_frag.op.reduce_axis
-    second_match_info = at.match_info([mi, ni, rli], second_packed)
-
-    layer = ac.layer([F.op], inputs=[A, B, C])
-    tensorize_state = at.tensorize_hyper_fusion_state(
-        layer, fuse_choice, {D_frag.op: first_match_info, E_frag.op: second_match_info}
-    )
-
     V100 = hw.query_hw_param("gpu.cuda.V100")
-    tensorize_param = at.cpu_tensorize_param(
+    ins, outs, tensorizeAxes = BatchGemmSoftmaxGemm()
+    fuse_choice = at.build_fusion_choice(outs[0].op,tensorizeAxes,hw_param=V100, inputs=ins, dtype="float32", simple_mode = True)
+    print(fuse_choice)
+    op1,op2 = fuse_choice.first_op, fuse_choice.second_op
+
+    first_packed = at.cuda_wmma(scope="shared")
+
+    first_match_info_choices = at.intrinsic_match(op1.output(0), first_packed, ["InnerMost", "SameRange"])
+
+    choice = first_match_info_choices[0]
+
+    first_match_info = at.match_info(choice, first_packed)
+
+    second_packed = at.cuda_wmma(scope="global")
+
+    second_match_info_choices = at.intrinsic_match(op2.output(0), second_packed, ["InnerMost", "SameRange"])
+
+    choice = second_match_info_choices[0]
+
+    second_match_info = at.match_info(choice, second_packed)
+
+    layer = ac.layer([outs[0].op], inputs=ins)
+    tensorize_state = at.tensorize_hyper_fusion_state(
+        layer, fuse_choice, {op1: first_match_info, op2: second_match_info}
+    )
+
+    tensorize_param = at.cuda_tensorize_param(
         warp_size=32,
         ty_size=4,
         tz_size=2,

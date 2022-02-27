@@ -171,7 +171,8 @@ private:
 };
 
 Array<Array<tir::IterVar>> share_axis_analysis(te::Operation op1,
-                                               te::Operation op2);
+                                               te::Operation op2,
+                                               Array<tir::IterVar> tensorizeAxes = {});
 
 class FeatureLogNode : public Object {
 public:

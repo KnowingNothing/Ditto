@@ -37,34 +37,44 @@ public:
 class FusionResultNode : public ResultNode {
 public:
   struct opFeat {
-    int dataMovementVolume;
-    int workLoad;
-    int bufferSize;
+    double dataMovementVolume;
+    double workLoad;
+    double bufferSize;
   };
   Map<tir::Var, IntImm> bounds;
   opFeat op1, op2;
-  int parallelism;
-  int redundancy;
+  int workload;
+  double parallelism;
+  double redundancy;
   double locality;
-  int n_block;
+  double n_block;
   bool valid;
+  int fusionLevel;
+  int bytePerEle;
+  double cacheSize;
+  double occupancy;
+  double dataMovement;
 
   double getArithmeticIntensity() const;
   double getLocality(hardware::HardwareParam) const;
   double getRedundancy() const;
   double getParallelism() const;
+  double getWorkload() const;
   Map<String, FloatImm> getLog() const;
   static constexpr const char *_type_key = "ditto.auto_tensorize.FusionResult";
+  void VisitAttrs(AttrVisitor *v) {
+    v->Visit("workload", &workload);
+  }
   TVM_DECLARE_FINAL_OBJECT_INFO(FusionResultNode, ResultNode);
 };
 
 class FusionResult : public Result {
 public:
-  TVM_DLL FusionResult(Map<tir::Var, IntImm> bounds, int op1MemVisit,
-                       int op1WorkLoad, int op1Buffer, int op2MemVisit,
-                       int op2WorkLoad, int op2Buffer, double locality,
-                       int parallelism, int redundancy, int n_block,
-                       bool valid);
+  TVM_DLL FusionResult(Map<tir::Var, IntImm> bounds, double op1MemVisit,
+                       double op1WorkLoad, double op1Buffer, double op2MemVisit,
+                       double op2WorkLoad, double op2Buffer, double locality,
+                       double parallelism, double redundancy, double n_block,
+                       bool valid, int fusionLevel, int bytePerEle, double cacheSize);
   TVM_DEFINE_OBJECT_REF_METHODS(FusionResult, Result, FusionResultNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(FusionResultNode);
 };

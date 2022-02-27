@@ -146,9 +146,9 @@ Item FusionSpaceNode::idxToItem(size_t idx) const {
   idx /= secondOpTiling->cardinal;
 
   attachItem = Downcast<AttachItem, Item>(attach->idxToItem(idx));
-
+   // TODO: change the fusion space to consider the fusion level
   FusionItem item = FusionItem(firstOpTilingItem, secondOpTilingItem, firstOpPermuteItem,
-                    secondOpPermuteItem, attachItem);
+                    secondOpPermuteItem, attachItem, 2);
   return item;
 }
 TilingItem::TilingItem(Array<IntImm> factors) {
@@ -168,22 +168,24 @@ AttachItem::AttachItem(size_t attachPos) {
 }
 FusionItem::FusionItem(TilingItem firstOpTiling, TilingItem secondOpTiling,
                        PermuteItem firstOpPermute, PermuteItem secondOpPermute,
-                       AttachItem attachPos) {
+                       AttachItem attachPos, size_t fusionLevel) {
   auto n = make_object<FusionItemNode>();
   n->firstOpPermute = firstOpPermute;
   n->firstOpTiling = firstOpTiling;
   n->secondOpPermute = secondOpPermute;
   n->secondOpTiling = secondOpTiling;
   n->attachPos = attachPos;
+  n->fusionLevel = fusionLevel;
   data_ = n;
 }
-FusionItem buildFusionItem(Array<IntImm> firstOpTiling,
-                           Array<IntImm> secondOpTiling,
-                           Array<IntImm> firstOpPermute,
-                           Array<IntImm> secondOpPermute, size_t attachPos) {
+inline FusionItem buildFusionItem(Array<IntImm> firstOpTiling,
+                                  Array<IntImm> secondOpTiling,
+                                  Array<IntImm> firstOpPermute,
+                                  Array<IntImm> secondOpPermute,
+                                  size_t attachPos, size_t fusionLevel) {
   return FusionItem(TilingItem(firstOpTiling), TilingItem(secondOpTiling),
                     PermuteItem(firstOpPermute), PermuteItem(secondOpPermute),
-                    AttachItem(attachPos));
+                    AttachItem(attachPos), fusionLevel);
 }
 
 TVM_REGISTER_NODE_TYPE(ItemNode);
@@ -229,6 +231,9 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
       p->stream << "\n";
       p->stream << "attachPos:\t";
       p->Print(op->attachPos);
+      p->stream << "\n";
+      p->stream << "fusionLevel:\t";
+      p->stream << op->fusionLevel;
       p->stream << "\n";
       p->stream << "-------------------------";
     });

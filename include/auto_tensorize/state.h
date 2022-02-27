@@ -13,8 +13,8 @@
 #include <vector>
 
 #include <auto_compute/state.h>
-#include <auto_tensorize/pattern.h>
 #include <auto_tensorize/iter_graph.h>
+#include <auto_tensorize/pattern.h>
 
 using namespace tvm;
 namespace ditto {
@@ -38,24 +38,22 @@ public:
   size_t index;
   /*! \brief The iterVar map*/
   std::unordered_map<tir::IterVar, IterVar> IterMap;
+  /*! \brief The axes for tensorize */
+  Array<te::IterVar> tensorizeAxes;
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("op", &op);
     v->Visit("pattern", &pattern);
   }
   /*!
-  * \brief get the 
-  */
-  void classifyVars();
-  /*!
    *  \brief get all the iters.
-   *  \return  the IterVar Array. 
+   *  \return  the IterVar Array.
    */
   Array<IterVar> getAllIters();
   /*!
    *  \brief get all the iters.
-   *  \return the map from tir::IterVar to IterVar; 
+   *  \return the map from tir::IterVar to IterVar;
    */
-  std::unordered_map<tir::IterVar, IterVar> getIterMap() {return IterMap;}
+  std::unordered_map<tir::IterVar, IterVar> getIterMap() { return IterMap; }
   /*!
    * \brief Get the spatial iterators.
    */
@@ -77,15 +75,26 @@ public:
   /*!
    * \brief Get the first computeOp pos in input tensors.
    */
-  int getFirstProducerPos(){
+  int getFirstProducerPos() {
     int idx = 0;
-    for (auto it: op->InputTensors()){
-      if(it->op.as<te::ComputeOpNode>())
+    for (auto it : op->InputTensors()) {
+      if (it->op.as<te::ComputeOpNode>())
         return idx;
       idx++;
     }
     return -1;
   }
+  /*! get the idx to var mapping*/
+  std::unordered_map<int, tir::Var> getIdx2var() {
+    std::unordered_map<int, tir::Var> ret;
+    for (auto iv : getAllIters())
+      ret[iv->index] = iv->originVar;
+    return ret;
+  }
+  /*! get all vars*/
+  Array<tir::Var> getAllVars();
+  
+  Map<tir::Var, IntImm> getBounds(); 
 
   static constexpr const char *_type_key = "ditto.auto_tensorize.OpHyperState";
   TVM_DECLARE_BASE_OBJECT_INFO(OpHyperStateNode, Object);
@@ -97,13 +106,13 @@ public:
    * \brief The constructor.
    * \param op The operation
    */
-  TVM_DLL OpHyperState(te::Operation op, size_t idx);
+  TVM_DLL OpHyperState(te::Operation op, size_t idx,
+                       Array<tir::IterVar> tensorizeAxes);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(OpHyperState, ObjectRef,
                                         OpHyperStateNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(OpHyperStateNode);
 };
-
 
 /*!
  * \brief A class for fusion of linear topo.
@@ -114,22 +123,24 @@ public:
   LayerState layer_state;
   /*! \brief The compute ops */
   Array<te::Operation> ops;
-  /*! 
+  /*!
    *  \brief The states for ops
    */
   std::unordered_map<te::Operation, OpHyperState> op_hyper_states;
-
+  /*! \brief The tensorize axes */
+  Array<tir::IterVar> tensorizeAxes;
+  /*! \brief The cost of read and write tensor */
+  std::vector<double> tensorWeight;
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("layer_state", &layer_state);
     v->Visit("ops", &ops);
   }
 
-  
   bool IsLinearTopo();
   int CountOp(OpPattern pattern);
   /*!
    * \brief get the cubic state pairs
-   * \return <op1, op2>, op2 takes op1 as input (may be indirect) 
+   * \return <op1, op2>, op2 takes op1 as input (may be indirect)
    */
   std::pair<OpHyperState, OpHyperState> getCubicOpPair();
   static constexpr const char *_type_key =
@@ -143,7 +154,8 @@ public:
    * \brief The constructor.
    * \param layer The layer
    */
-  TVM_DLL SerialFusionState(Layer layer);
+  TVM_DLL SerialFusionState(Layer layer, Array<tir::IterVar> tensorizeAxes,
+                            std::vector<double> tensorWeight = {1.0,1.0});
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(SerialFusionState, ObjectRef,
                                         SerialFusionStateNode);
@@ -156,29 +168,42 @@ public:
  */
 std::pair<bool, std::string> validate(SerialFusionState state);
 
-
 /*!
  * \brief The SerialFusionState builder
  * \param layer The layer to schedule
  */
-inline SerialFusionState buildSerialFusionState(Layer layer)
-{
-  SerialFusionState rv = SerialFusionState(layer);
+inline SerialFusionState
+buildSerialFusionState(Layer layer, Array<tir::IterVar> tensorizeAxes,
+                       Array<FloatImm> tensorWeight) {
+  std::vector<double> tensorWeight_;
+  if (!tensorWeight.defined())
+    tensorWeight_ = {1, 2};
+  else {
+    for (auto tw : tensorWeight)
+      tensorWeight_.push_back(tw->value);
+  }
+  SerialFusionState rv = SerialFusionState(layer, tensorizeAxes, tensorWeight_);
   bool valid = false;
-  std::string reason = ""; 
+  std::string reason = "";
   std::tie(valid, reason) = validate(rv);
-  CHECK(valid)  << "The given layer is not suitable for auto tensorize because "
-                << reason << "The layer is: " << std::endl
-                << layer << "\n";
+  CHECK(valid) << "The given layer is not suitable for auto tensorize because "
+               << reason << "The layer is: " << std::endl
+               << layer << "\n";
   return rv;
 }
 
 /*!
  * \brief The IterGraph builder
- * \param 
+ * \param
  */
-IterGraph buildIterGraph(SerialFusionState sfState, Array<te::IterVar> tensorizeAxes, String path);
+IterGraph buildIterGraph(SerialFusionState sfState,
+                         Array<te::IterVar> tensorizeAxes,
+                         String path);
 
+inline OpHyperState buildOpHyperState(te::Operation op, size_t idx,
+                                      Array<tir::IterVar> tensorizeAxes) {
+  return OpHyperState(op, idx, tensorizeAxes);
+}
 
 } // namespace auto_tensorize
 
