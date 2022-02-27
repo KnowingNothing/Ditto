@@ -58,6 +58,7 @@ Result StaticAnalysisNode::eval(Item it) const {
 }
 cost_t StaticAnalysisNode::cost(Item it) const {
   auto fusionItem = Downcast<FusionItem, Item>(it);
+  CHECK(it.defined());
   iterGraph->setFusion(fusionItem);
   FusionResult result = iterGraph->getAnalyticalResult(hw_param, bytePerEle);
   if (!result->valid)
@@ -70,6 +71,7 @@ Map<String, FloatImm> FusionResultNode::getLog() const {
   m.Set("redundancy", FloatImm(DataType::Float(64), (double)redundancy));
   m.Set("parallelism", FloatImm(DataType::Float(64), (double)parallelism));
   m.Set("AI", FloatImm(DataType::Float(64), getArithmeticIntensity()));
+  m.Set("valid", FloatImm(DataType::Float(64), (double)valid));
   return m;
 }
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)

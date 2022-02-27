@@ -261,3 +261,58 @@ def tensorize_cpu(
     tensorize_param: CPUTensorizeParam,
 ):
     return _ffi_api.TensorizeCPU(layer, state, cpu_param, tensorize_param)
+def build_fusion_choice(
+    ops, tensorizeAxes: List[tvm.tir.IterVar], hw_param: hardware.HardwareParam, 
+    inputs=None, weights=None, const_scalars=None,
+    const_tensors=None, requires_grad=False, name="layer",
+    dtype = "float32", path: str = ""
+):
+    """Build the fusion choice.
+
+    Parameters
+    ----------
+    ops : te.Operation or List[te.Operation] (not empty)
+        The output operations that make this layer.
+
+    inputs : optional List[te.Tensor]
+        The list of input tensors.
+
+    weights : optional List[te.Tensor]
+        The list of weights.
+
+    const_scalars : optional List[PrimExpr]
+        The list of constant scalar values.
+
+    const_tensors : optional List[te.Tensor]
+        The list of constant tensors.
+
+    requires_grad : optional bool
+
+    name: str
+
+    Returns
+    -------
+    tensors: ditto.auto_compute.Layer
+        The result layer
+
+    Example
+    -------
+    .. code-block:: python
+    """
+    if not isinstance(ops, list):
+        ops = [ops]
+    if inputs is None:
+        inputs = []
+    #inputs = [x.tensor if isinstance(x, LayerTensor) else x for x in inputs]
+    if weights is None:
+        weights = []
+    #weights = [x.tensor if isinstance(x, LayerTensor) else x for x in weights]
+    if const_scalars is None:
+        const_scalars = []
+    if const_tensors is None:
+        const_tensors = []
+    #const_tensors = [x.tensor if isinstance(
+    #    x, LayerTensor) else x for x in const_tensors]
+    return _ffi_api.buildFusionChoice(name, ops, inputs, weights,
+                              const_scalars, const_tensors, hw_param, 
+                              tensorizeAxes, dtype, path)

@@ -31,11 +31,27 @@ class IterGraph(Object):
         _ffi_api.setFusion(self, fusionItem)
 
     def analyse(self, hw_param, bytePerEle, writeThrough):
+        """Get the analysis result
+
+        Parameters
+        ----------
+        hw_param: hardware params
+
+        bytePerEle: int
+            the byte taken by single element; e.x. float32 --> 4
+        writeThrough: bool
+            whether write E reside in the shared memory
+        Returns
+        -------
+        out : FusionResult
+            The analysis result
+        """
+
         return _ffi_api.getAnalyticalResult(self, hw_param, bytePerEle, writeThrough)
 
     def display(self):
         return _ffi_api.display(self)
 
 
-def build_iter_graph(sfstate: SerialFusionState, path: str):
-    return _ffi_api.build_iter_graph(sfstate, path)
+def build_iter_graph(sfstate: SerialFusionState, tensorizeItervars: List[tvm.tir.IterVar], path: str):
+    return _ffi_api.build_iter_graph(sfstate, tensorizeItervars, path)

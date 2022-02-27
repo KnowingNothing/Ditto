@@ -62,12 +62,27 @@ IterVar::IterVar(int idx_, FACTOR ext_, IV_Type iv_type_, tvm::tir::Var name_,
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
     .set_dispatch<IterVarNode>([](const ObjectRef &node, ReprPrinter *p) {
       auto *op = static_cast<const IterVarNode *>(node.get());
+      std::string classes[3] = {"S1", "S2", "R"};
       p->PrintIndent();
       // p->stream << "IterVar(";
       // p->stream << "ext: " << op->ext << ", ";
       // p->stream << "type: " << (op->iv_type == IV_Type::SPATIAL? "S":"R") <<
       // ", ";
-      p->stream << op->name;
+      p->stream << op->name << " ";
+      switch (op->iv_type){
+        case IV_Type::FIRSTSPATIAL: 
+        p->stream << "S1";
+        break;
+        case IV_Type::SECONDSPATIAL:
+        p->stream << "S2";
+        break;
+        case IV_Type::REDUCE:
+        p->stream << "R";
+        break;
+        default:
+        p->stream << "U";
+      }
+      p->stream << " " << op->ext;
     });
 
 AccessFunction::AccessFunction(te::Operation op,
@@ -88,7 +103,7 @@ AccessFunctionNode::getFootprint(Map<tir::Var, IntImm> bounds) {
   for (auto access_index : access_indices) {
     Map<tir::Var, PrimExpr> vars_to_infer;
     for (auto index : access_index) {
-      vars_to_infer.Set(tvm::tir::Var("v" + std::to_string(idx)), index);
+      vars_to_infer.Set(tvm::tir::Var("v" + std::to_string(idx++)), index);
     }
     Map<tir::Var, Range> var_range_map =
         utils::InferRange(vars_to_infer, ori_ranges);
@@ -121,6 +136,8 @@ IterGraph::IterGraph(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters,
                      AccessFunction firstOpWriteAccessFunc,
                      AccessFunction secondOpWriteAccessFunc,
                      int readProducerPos, te::Operation op1, te::Operation op2,
+                     Array<IterVar> firstOpTensorizeIters,
+                     Array<IterVar> secondOpTensorizeIters,
                      String path) {
   auto n = make_object<IterGraphNode>();
   n->_firstOpIters = firstOpIters;
@@ -143,6 +160,10 @@ IterGraph::IterGraph(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters,
   n->op1 = op1;
   n->op2 = op2;
   n->resultPath = path;
+  Map<tir::Var, IntImm> bounds;
+  
+  n->firstOpTensorizeIters = firstOpTensorizeIters;
+  n->secondOpTensorizeIters = secondOpTensorizeIters;
   struct stat buffer;
   if (stat(path.c_str(), &buffer) == 0) {
     LOG(WARNING) << path << "exists. Results will not be written to any file.";
@@ -225,7 +246,7 @@ void IterGraphNode::setSecondOpTiling(Array<IntImm> factors_) {
   Array<IterVar> outer, inner;
   for (size_t i = 0; i < factors.size(); i++) {
     IterVar parent = secondOpIters[i];
-    CHECK(factors[i] <= parent->ext) << "tiling factor larger than axis extent";
+    CHECK(factors[i] <= parent->ext) << "tiling factor larger than axis extent. iv: " << _secondOpIters[i] << " " << factors[i] << " > " << parent->ext;
     IterVar outer_, inner_;
     outer_ = IterVar(parent->index, -1, parent->iv_type,
                      parent->name.copy_with_suffix(".outer"), tir::Var());
@@ -252,10 +273,10 @@ void IterGraphNode::setFirstOpPermute(Array<IntImm> _permutation) {
   std::vector<size_t> permutation_ = permutation;
   std::sort(permutation_.begin(), permutation_.end());
   CHECK(permutation_.size() == _firstOpIters.size())
-      << "setPermute takes Sigma([len(firstOpIters)]) as input.";
+      << "setPermute takes sigma([len(firstOpIters)]) as input.";
   for (size_t i = 0; i < permutation_.size(); i++)
     CHECK(permutation_[i] == i)
-        << "setPermute takes Sigma([len(firstOpIters)]) as input.";
+        << "setPermute takes sigma([len(firstOpIters)]) as input. The permute given is " << _permutation;
   auto findIvInIters = [&](IterVar iv) {
     for (auto i : splitRelations)
       if (i->parent == iv)
@@ -383,6 +404,12 @@ void IterGraphNode::applyAll() {
 
 Map<tir::Var, IntImm> IterGraphNode::inferBound() const {
   Map<tir::Var, IntImm> bounds;
+  for (auto iv: firstOpTensorizeIters){
+    bounds.Set(iv->originVar, IntImm(DataType::Int(32), iv->ext));
+  }
+  for (auto iv: secondOpTensorizeIters){
+    bounds.Set(iv->originVar, IntImm(DataType::Int(32), iv->ext));
+  }
   auto is_common = [&](IterVar iv) {
     for (auto common : commonIters) {
       if (iv == common)
@@ -418,7 +445,7 @@ int IterGraphNode::getNumOfBlocks() const {
 int IterGraphNode::getParallelism() const {
   int ret = 1;
   for (auto iv : commonIters) {
-    if (iv->iv_type != IV_Type::SPATIAL)
+    if (iv->iv_type == IV_Type::REDUCE)
       continue;
     ret *= iv->ext;
   }
@@ -445,12 +472,14 @@ int IterGraphNode::getFirstOpDataVolume() const {
   //   fp += fp_;
   return fp * n_block;
 }
+
 /*! \brief get the first Op's workload*/
 int IterGraphNode::getFirstOpWorkload() const {
   int n_block = getNumOfBlocks();
   int fp = firstOpWriteAccessFunc->getWorkload(bounds);
   return fp * n_block;
 }
+
 /*! \brief get the first Op's blockSize*/
 int IterGraphNode::getFirstOpBufferSize() const {
   int fp = 0;
@@ -461,6 +490,7 @@ int IterGraphNode::getFirstOpBufferSize() const {
     fp += fp_;
   return fp;
 }
+
 /*! \brief get the second Op's memvisit*/
 int IterGraphNode::getSecondOpDataVolume() const {
   int n_block = getNumOfBlocks();
@@ -533,7 +563,7 @@ IterGraphNode::getAnalyticalResult(hardware::HardwareParam hw_param,
   int secondOpDataVolume = getSecondOpDataVolume() * bytePerEle;
   int secondOpBufferSize = getSecondOpBufferSize(writeThrough) * bytePerEle;
   int secondOpWorkload = getSecondOpWorkload();
-  int memUse = (firstOpBufferSize + secondOpBufferSize);
+  int memUse = std::max(firstOpBufferSize, secondOpBufferSize);
   bool valid = (memUse) <= (hw_param->shared_memory_per_group_kb * 1000);
   double locality =
       valid ? 1 / (double)(firstOpDataVolume + secondOpDataVolume) : -INFINITY;
@@ -550,6 +580,7 @@ IterGraphNode::getAnalyticalResult(hardware::HardwareParam hw_param,
   writeResult(res);
   return res;
 }
+
 /*! \brief looplike lightweight visualize */
 void IterGraphNode::visualize() {
   std::cout << "-----IterGraph Visualization------\n";
@@ -560,7 +591,9 @@ void IterGraphNode::visualize() {
       std::cout << "\t";
     std::cout << "for  " << common->name << " in [0, " << common->ext << "):";
     if (common->shared)
-      std::cout << "\"shared\"";
+      std::cout << "\"shared\" ";
+    if (common->iv_type != IV_Type::REDUCE)
+      std::cout << "\"parallel\"";
     std::cout << "\n";
     n_tab++;
   }
@@ -573,6 +606,12 @@ void IterGraphNode::visualize() {
     std::cout << "for  " << iv->name << " in [0, " << iv->ext << "):\n";
     n_tab_ += 1;
   }
+  for (auto iv : firstOpTensorizeIters) {
+    for (size_t i = 0; i < n_tab_; i++)
+      std::cout << "\t";
+    std::cout << "for  " << iv->name << " in [0, " << iv->ext << ") \"tensorize\":\n" ;
+    n_tab_ += 1;
+  }
   n_tab_ = n_tab;
   for (size_t _ = attachPos; _ < secondOpIters.size(); _++) {
     auto iv = secondOpIters[_];
@@ -581,13 +620,97 @@ void IterGraphNode::visualize() {
     std::cout << "for  " << iv->name << " in [0, " << iv->ext << "):\n";
     n_tab_++;
   }
+  for (auto iv : secondOpTensorizeIters) {
+    for (size_t i = 0; i < n_tab_; i++)
+      std::cout << "\t";
+    std::cout << "for  " << iv->name << " in [0, " << iv->ext << ") \"tensorize\":\n" ;
+    n_tab_ += 1;
+  }
   std::cout << "---------------------------------\n";
 }
-inline IterGraph buildIterGraph(SerialFusionState sfState, String path) {
+bool ivBindingAndValidate(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters, Array<Share> sharedPairs){
+  // op2.R bind to op1.S
+  auto isMapped = [&sharedPairs] (Array<IterVar> ivs1, Array<IterVar> ivs2) {
+    bool tmp[ivs2.size()];
+    if (! (ivs1.size() == ivs2.size())) return false;
+    for (size_t i = 0; i < ivs2.size(); i++) 
+      tmp[i] = 0;
+    for (auto iv1: ivs1)
+    {
+      bool matched = false;
+      for(auto share: sharedPairs){
+        if (share->upper == iv1){
+          for (size_t i = 0; i < ivs2.size(); i++){
+            if(!tmp[i] && ivs2[i] == share->lower){
+              tmp[i] = true;
+              matched = true;
+              break;
+            }
+          }
+          break;
+        }
+      }
+      if(!matched)
+        return false;
+    }
+    return true;
+  };
+  Array<IterVar> firstOpR, firstOpS1, firstOpS2, secondOpR, secondOpS1, secondOpS2;
+  for (auto iv: secondOpIters)
+    if(iv->iv_type == IV_Type::REDUCE) 
+      secondOpR.push_back(iv);
+    else if(iv->iv_type == IV_Type::FIRSTSPATIAL)
+      secondOpS1.push_back(iv);
+    else if(iv->iv_type == IV_Type::SECONDSPATIAL)
+      secondOpS2.push_back(iv);
+  for (auto iv: firstOpIters)
+    if(iv->iv_type == IV_Type::REDUCE) 
+      firstOpR.push_back(iv);
+    else if(iv->iv_type == IV_Type::FIRSTSPATIAL)
+      firstOpS1.push_back(iv);
+    else if(iv->iv_type == IV_Type::SECONDSPATIAL)
+      firstOpS2.push_back(iv);
+  
+  if (isMapped(firstOpS2, secondOpR)){
+    // nothing to do
+  }
+  else if (isMapped(firstOpS1, secondOpR)){
+    // switch firstOpS1 with firstOpS2
+    Array<IterVar> tmp = firstOpS1;
+    firstOpS1 = firstOpS2;
+    firstOpS2 = tmp;
+    for (auto iv: firstOpS1)
+      iv->iv_type = IV_Type::FIRSTSPATIAL;
+    for (auto iv: firstOpS2)
+      iv->iv_type = IV_Type::SECONDSPATIAL;
+  }
+  else{
+    CHECK(false) << "secondOpR cannot match firstOpS";
+  }
+
+  if (isMapped(firstOpS1, secondOpS1)){
+    // nothing to do
+  }
+  else if (isMapped(firstOpS1, secondOpS2)){
+    // switch secondOpS1 with secondOpS2
+    Array<IterVar> tmp = secondOpS1;
+    secondOpS1 = secondOpS2;
+    secondOpS2 = tmp;
+    for (auto iv: secondOpS1)
+      iv->iv_type = IV_Type::FIRSTSPATIAL;
+    for (auto iv: secondOpS2)
+      iv->iv_type = IV_Type::SECONDSPATIAL;
+  }
+  else{
+    CHECK(false) << "firstOpS1 cannot match secondOpS";
+  }
+  return true;
+}
+inline IterGraph buildIterGraph(SerialFusionState sfState, Array<te::IterVar> tensorizeAxes, String path) {
   OpHyperState ops1, ops2;
   std::tie(ops1, ops2) = sfState->getCubicOpPair();
-  Array<IterVar> firstOpIters = ops1->getAllIters();
-  Array<IterVar> secondOpIters = ops2->getAllIters();
+  Array<IterVar> firstOpIters_ = ops1->getAllIters();
+  Array<IterVar> secondOpIters_ = ops2->getAllIters();
   Array<Array<tir::IterVar>> shared_axis =
       share_axis_analysis(ops1->op, ops2->op);
   std::unordered_map<tir::IterVar, IterVar> IterMap = ops1->getIterMap();
@@ -599,22 +722,42 @@ inline IterGraph buildIterGraph(SerialFusionState sfState, String path) {
     sharedIterPairs.push_back(
         Share(IterMap.at(sharePair[0]), IterMap.at(sharePair[1])));
   }
+  bool isBindingCorrect = ivBindingAndValidate(firstOpIters_, secondOpIters_, sharedIterPairs);
+  CHECK(isBindingCorrect) << "iv binding doesn't follow mlkn pattern";
+  auto isTensorize = [&tensorizeAxes](IterVar iv){
+    for (auto ax: tensorizeAxes)
+      if (ax->var.same_as(iv->originVar))
+        return true;
+    return false;
+  };
+  Array<IterVar> firstOpIters, secondOpIters, firsrOpTensorizeIters, secondOpTensorizeAxis;
+  for (auto iv: firstOpIters_){
+    if(!isTensorize(iv))
+      firstOpIters.push_back(iv);
+    else 
+      firsrOpTensorizeIters.push_back(iv);
+  }
+  for (auto iv: secondOpIters_){
+    if(!isTensorize(iv))
+      secondOpIters.push_back(iv);
+    else secondOpTensorizeAxis.push_back(iv);
+  }
   Array<AccessFunction> firstOpReadAccessFunction = ops1->ReadAccessFunctions();
   Array<AccessFunction> secondOpReadAccessFunction =
       ops2->ReadAccessFunctions();
   AccessFunction firstOpWriteAccessFunc = ops1->WriteAccessFunctions();
   AccessFunction secondOpWriteAccessFunc = ops2->WriteAccessFunctions();
-  std::cout << "op1" << std::endl;
-  std::cout << ops1->op << std::endl;
-  std::cout << "op2" << std::endl;
-  std::cout << ops2->op << std::endl;
+  // std::cout << "op1" << std::endl;
+  // std::cout << ops1->op << std::endl;
+  // std::cout << "op2" << std::endl;
+  // std::cout << ops2->op << std::endl;
   int readProducerPos = ops2->getFirstProducerPos();
   CHECK(readProducerPos >= 0)
       << readProducerPos << " Can't find a producer for the second op.";
   return IterGraph(firstOpIters, secondOpIters, sharedIterPairs,
                    firstOpReadAccessFunction, secondOpReadAccessFunction,
                    firstOpWriteAccessFunc, secondOpWriteAccessFunc,
-                   readProducerPos, ops1->op, ops2->op, path);
+                   readProducerPos, ops1->op, ops2->op, firsrOpTensorizeIters, secondOpTensorizeAxis, path);
 }
 
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
@@ -630,6 +773,12 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
       p->stream << ",\n";
       p->stream << "_secondOpIters:\t";
       p->Print(op->_secondOpIters);
+      p->stream << ",\n";
+      p->stream << "_firstOpTensorizeIters:\t";
+      p->Print(op->firstOpTensorizeIters);
+      p->stream << ",\n";
+      p->stream << "_secondOpTensorizeIters:\t";
+      p->Print(op->secondOpTensorizeIters);
       p->stream << "\n------------------------------------------";
     });
 

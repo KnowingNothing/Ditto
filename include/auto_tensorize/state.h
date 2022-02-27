@@ -43,6 +43,10 @@ public:
     v->Visit("pattern", &pattern);
   }
   /*!
+  * \brief get the 
+  */
+  void classifyVars();
+  /*!
    *  \brief get all the iters.
    *  \return  the IterVar Array. 
    */
@@ -76,8 +80,6 @@ public:
   int getFirstProducerPos(){
     int idx = 0;
     for (auto it: op->InputTensors()){
-      std::cout << "idx" << idx <<std::endl;
-      std::cout << it->op << std::endl;
       if(it->op.as<te::ComputeOpNode>())
         return idx;
       idx++;
@@ -172,10 +174,10 @@ inline SerialFusionState buildSerialFusionState(Layer layer)
 }
 
 /*!
- * \brief The SerialFusionState builder
- * \param layer The layer to schedule
+ * \brief The IterGraph builder
+ * \param 
  */
-inline IterGraph buildIterGraph(SerialFusionState sfState, String path);
+IterGraph buildIterGraph(SerialFusionState sfState, Array<te::IterVar> tensorizeAxes, String path);
 
 
 } // namespace auto_tensorize

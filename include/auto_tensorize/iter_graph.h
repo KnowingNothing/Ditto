@@ -22,8 +22,9 @@ class FusionItem;
 class FusionSpace;
 class FusionResult;
 enum class IV_Type : int {
-  SPATIAL = 0,
-  REDUCE = 1,
+  FIRSTSPATIAL = 0,
+  SECONDSPATIAL = 1,
+  REDUCE = 2,
 };
 typedef int FACTOR;
 
@@ -81,7 +82,7 @@ public:
     v->Visit("originVar", &originVar);
   }
 
-  bool isSpatial() { return iv_type == IV_Type::SPATIAL; }
+  bool isSpatial() { return iv_type == IV_Type::FIRSTSPATIAL || iv_type == IV_Type::SECONDSPATIAL; }
   bool isReduce() { return iv_type == IV_Type::REDUCE; }
   void setExt(FACTOR ext_) { ext = ext_; }
   static constexpr const char *_type_key = "ditto.auto_tensorize.IterVar";
@@ -200,6 +201,8 @@ public:
   int readProducerPos;
   Array<Split> splitRelations;
   Map<tir::Var, IntImm> bounds;
+  Array<IterVar> firstOpTensorizeIters;
+  Array<IterVar> secondOpTensorizeIters;
 
   size_t attachPos = 0; // default: independent loops
 
@@ -303,11 +306,10 @@ public:
                     Array<AccessFunction> secondOpReadAccessFuncs,
                     AccessFunction firstOpWriteAccessFunc,
                     AccessFunction secondOpWriteAccessFunc, int readProducerPos,
-                    te::Operation op1, te::Operation op2, String path = "");
+                    te::Operation op1, te::Operation op2, Array<IterVar> firstOpTensorizeIters, Array<IterVar> secondOpTensorizeIters, String path = "");
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(IterGraph, ObjectRef, IterGraphNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(IterGraphNode);
 };
-
 } // namespace auto_tensorize
 
 } // namespace ditto

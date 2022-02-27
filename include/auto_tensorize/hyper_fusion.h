@@ -35,6 +35,10 @@ public:
   Array<tir::IterVar> ordered_iters;
   /*! \brief The attach postion for compute_at */
   int attach_pos;
+  /*! \brief The best FusionItem*/
+  FusionItem fusionItem;
+  /*! \brief The analytical information */
+  FusionResult fusionResult;
 
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("first_op", &first_op);
@@ -57,7 +61,8 @@ public:
    * \param attach_pos The position to compute_at
    */
   TVM_DLL FusionChoice(te::Operation first_op, te::Operation second_op,
-                       Array<tir::IterVar> ordered_iters, int attach_pos);
+                       Array<tir::IterVar> ordered_iters, int attach_pos,
+                       FusionItem fusionItem = FusionItem(), FusionResult fusionResult = FusionResult());
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(FusionChoice, ObjectRef,
                                         FusionChoiceNode);
@@ -654,6 +659,10 @@ te::Schedule TensorizeCUDA(Layer layer, TensorizeHyperFusionState state,
 te::Schedule TensorizeCPU(Layer layer, TensorizeHyperFusionState state,
                             hardware::HardwareParam cpu_param,
                             CPUTensorizeParam tensorize_param);
+/*! build the fusion choice*/
+/*! build the fusion choice*/
+FusionChoice buildFusionChoice(te::Operation op, Array<te::Tensor> inputs, Array<te::IterVar> tensorizeAxes);
+
 } // namespace auto_tensorize
 
 } // namespace ditto
