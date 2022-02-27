@@ -1356,7 +1356,7 @@ std::pair<cost_t, FusionItem> setTemplatesAndSearch(IterGraph ig,
     size_t attachPos;
   };
 
-  the F1~F7 templates
+  // the F1~F7 templates
   FusionTemplate fusionTemplates[7] = {
       {"F1", {"S1", "S2", "R"}, 3}, {"F2", {"S1", "S2", "R"}, 2},
       {"F3", {"S1", "R", "S2"}, 2}, {"F4", {"S2", "R", "S1"}, 2},
