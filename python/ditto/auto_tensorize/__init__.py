@@ -16,3 +16,5 @@ from .searchDriver import build_search_driver
 from .searchSpace import FusionSpace, SearchSpace
 
 from .item import build_fusion_item
+
+from .auto_tiling_factor import *
