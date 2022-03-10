@@ -1,6 +1,8 @@
 import tvm
 import numpy as np
 import random
+from tvm.contrib.popen_pool import PopenPoolExecutor
+import os
 
 class ATFLogFile(object):
     """ATFLogFile object"""
@@ -13,7 +15,9 @@ class ATFLogFile(object):
 
     def write_log(self, index, cost):
         assert self.mode == "w"
-        self.file.write("%d %f\n" % (index, cost))
+        cost = str(cost)
+        self.file.write("%d %s\n" % (index, cost))
+        self.file.flush()
     
     def read_log(self):
         assert self.mode == "r"
@@ -22,7 +26,10 @@ class ATFLogFile(object):
             return -1, -1
         index, cost = s.split()
         index = int(index)
-        cost = float(cost)
+        try:
+            cost = float(cost)
+        except:
+            pass
         return index, cost
 
 
@@ -93,13 +100,39 @@ class ATFTuner(object):
         pass
 
 
+def build_func(auto_scheduler, get_task_params, tensors, ctx):
+    sch = auto_scheduler(**get_task_params)
+    func = tvm.build(sch, tensors, ctx)
+    return func
+
+def eval_func(lib_filename, index, tensors, dev, timeeval_params):
+    tensors_np = [
+        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(y.dtype)
+        for y in tensors
+    ]
+    tensors_tvm = [tvm.nd.array(x, dev) for x in tensors_np]
+    func = tvm.runtime.load_module(lib_filename+str(index)+".so")
+    evaluator = func.time_evaluator(func.entry_name, dev, **timeeval_params)
+    cost = evaluator(*tensors_tvm).mean
+    return cost
+
 class DataDrivenATFTuner(object):
     """Tune with real input"""
-    def __init__(self, task, dev, ctx, **timeeval_params):
+    def __init__(self, task, dev, ctx, build_timeout=10, run_timeout=10, **timeeval_params):
         self.task = task
         self.dev = dev
         self.ctx = ctx
         self.timeeval_params = timeeval_params
+        self.build_timeout = build_timeout
+        self.run_timeout = run_timeout
+        self.lib_filename = "tmp_lib"
+
+        self.builder = PopenPoolExecutor(
+            timeout = build_timeout
+        )
+        self.runner = PopenPoolExecutor(
+            timeout = run_timeout
+        )
 
         # for GridSearch only
         self.now_index = 0
@@ -108,19 +141,54 @@ class DataDrivenATFTuner(object):
         raise NotImplementedError()
     
     def tune(self, n_trial, log_file = "ATFLog.log"):
-        tensors_np = [
-            np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(y.dtype)
-            for y in self.task.tensors
-        ]
-        tensors_tvm = [tvm.nd.array(x, self.dev) for x in tensors_np]
         log = ATFLogFile(log_file, "w")
         for _ in range(n_trial):
             index = self.next_batch()
-            sch = self.task.auto_scheduler(**self.task.get_task_params(index))
-            func = tvm.build(sch, self.task.tensors, self.ctx)
-            evaluator = func.time_evaluator(func.entry_name, self.dev, **self.timeeval_params)
-            cost = evaluator(*tensors_tvm).mean
+
+            # build
+            # TODO: implement multiprocess builder
+            # BUG: codes below do not work
+            # build_ret = self.builder.submit(
+            #     build_func,
+            #     self.task.auto_scheduler,
+            #     self.task.get_task_params(index),
+            #     self.task.tensors,
+            #     self.ctx
+            # )
+            # try:
+            #     func = build_ret.result()
+            # except TimeoutError as ex:
+            #     func = "build timeout error"
+            # except ChildProcessError as ex:
+            #     func = "build runtime error"
+            try:
+                func = build_func(
+                    self.task.auto_scheduler,
+                    self.task.get_task_params(index),
+                    self.task.tensors,
+                    self.ctx
+                )
+            except:
+                cost = "Build_error"
+                log.write_log(index, cost)
+                continue
+            func.export_library(self.lib_filename+str(index)+".so")
+
+            # run
+            run_ret = self.runner.submit(
+                eval_func, 
+                self.lib_filename,
+                index,
+                self.task.tensors,
+                self.dev,
+                self.timeeval_params
+            )
+            try:
+                cost = run_ret.result()
+            except Exception as ex:
+                cost = "Runtime_error"
             log.write_log(index, cost)
+            os.remove(self.lib_filename+str(index)+".so")
         log.close_file()
         pass
 
@@ -132,9 +200,15 @@ class DataDrivenATFTuner(object):
             index, cost = log.read_log()
             if index == -1:
                 break
+            if isinstance(cost, float) != True:
+                continue
             if best_cost == -1 or cost < best_cost:
                 best_index, best_cost = index, cost
         log.close_file()
+        if best_index == -1:
+            raise RuntimeError(
+                "No applicable schedule found"
+            )
         return self.task.auto_scheduler(**self.task.get_task_params(best_index))
 
     def tune_and_schedule(self, n_trial, log_file = "ATFLog.log"):

@@ -136,8 +136,18 @@ def test_auto_tiling_factor():
     )
 
     tensorize_param_choices["block_rx"] = [1, 2, 4, 8]
-    tensorize_param_choices["block_ry"] = [1, 2]
-    tensorize_param_choices["warp_rx"] = [4]
+    tensorize_param_choices["block_ry"] = [1, 2, 4, 8]
+    tensorize_param_choices["block_rz"] = [1, 2, 4, 8]
+    # tensorize_param_choices["warp_rx"] = [1, 2, 4, 8]
+    # tensorize_param_choices["warp_ry"] = [1, 2, 4, 8]
+    # tensorize_param_choices["warp_rz"] = [1, 2, 4, 8]
+    # tensorize_param_choices["ty_size"] = [1, 2, 4, 8]
+    # tensorize_param_choices["tz_size"] = [1, 2, 4, 8]
+    # tensorize_param_choices["input_vector_len"] = [1, 2, 4, 8]
+    # tensorize_param_choices["serial_y"] = [1, 2, 4, 8]
+    # tensorize_param_choices["serial_z"] = [1, 2, 4, 8]
+    # tensorize_param_choices["unroll_steps"] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+
 
     print(tensorize_param_choices)
 
@@ -151,7 +161,7 @@ def test_auto_tiling_factor():
         tensorize_param = tensorize_param_choices,
     )
 
-    tuner = at.GridSearchATFTuner(
+    tuner = at.RandomATFTuner(
         task = task,
         dev = tvm.cuda(),
         ctx = "cuda",
@@ -159,7 +169,7 @@ def test_auto_tiling_factor():
     )
 
     sch = tuner.tune_and_schedule(
-        n_trial = 8,
+        n_trial = 10,
         log_file = "test_auto_tiling_factor.log",
     )
 
