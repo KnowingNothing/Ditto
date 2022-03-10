@@ -13,24 +13,27 @@ class ATFLogFile(object):
     def close_file(self):
         self.file.close()
 
-    def write_log(self, index, cost):
+    def write_log(self, trial, index, cost, msg):
         assert self.mode == "w"
         cost = str(cost)
-        self.file.write("%d %s\n" % (index, cost))
+        self.file.write("No.%d: %d %s\n" % (trial, index, cost))
+        self.file.flush()
+        self.file.write("detail: " + msg + "\n")
         self.file.flush()
     
     def read_log(self):
         assert self.mode == "r"
         s = self.file.readline()
         if s == "":
-            return -1, -1
-        index, cost = s.split()
+            return -1, -1, ""
+        msg = self.file.readline()
+        trial, index, cost = s.split()
         index = int(index)
         try:
             cost = float(cost)
         except:
             pass
-        return index, cost
+        return index, cost, msg
 
 
 
@@ -45,6 +48,13 @@ class TensorizeParamChoices(dict):
             param[key] = value[index % len(value)]
             index = index // len(value)
         return self.param_entry(**param)
+    
+    def get_param(self, index):
+        param = {}
+        for key, value in self.items():
+            param[key] = value[index % len(value)]
+            index = index // len(value)
+        return param
     
     def search_size(self):
         size = 1
@@ -92,6 +102,10 @@ class ATFTask(object):
         key = self.tensorize_param_key
         ret_task_params[key] = self.task_params[key].build_param(index)
         return ret_task_params
+    
+    def get_param_choice(self, index):
+        key = self.tensorize_param_key
+        return self.task_params[key].get_param(index)
 
 
 class ATFTuner(object):
@@ -170,7 +184,7 @@ class DataDrivenATFTuner(object):
                 )
             except:
                 cost = "Build_error"
-                log.write_log(index, cost)
+                log.write_log(_, index, cost, "")
                 continue
             func.export_library(self.lib_filename+str(index)+".so")
 
@@ -185,9 +199,11 @@ class DataDrivenATFTuner(object):
             )
             try:
                 cost = run_ret.result()
+                msg = str(self.task.get_param_choice(index))
             except Exception as ex:
                 cost = "Runtime_error"
-            log.write_log(index, cost)
+                msg = ""
+            log.write_log(_, index, cost, msg)
             os.remove(self.lib_filename+str(index)+".so")
         log.close_file()
         pass
@@ -195,20 +211,24 @@ class DataDrivenATFTuner(object):
     def schedule(self, log_file = "ATFLog.log"):
         best_index = -1
         best_cost = -1
+        best_msg = ""
         log = ATFLogFile(log_file, "r")
         while 1:
-            index, cost = log.read_log()
+            index, cost, msg = log.read_log()
             if index == -1:
                 break
             if isinstance(cost, float) != True:
                 continue
             if best_cost == -1 or cost < best_cost:
-                best_index, best_cost = index, cost
+                best_index, best_cost, best_msg = index, cost, msg
         log.close_file()
         if best_index == -1:
             raise RuntimeError(
                 "No applicable schedule found"
             )
+        print("best index: ", best_index)
+        print("best cost: ", best_cost)
+        print(best_msg)
         return self.task.auto_scheduler(**self.task.get_task_params(best_index))
 
     def tune_and_schedule(self, n_trial, log_file = "ATFLog.log"):
