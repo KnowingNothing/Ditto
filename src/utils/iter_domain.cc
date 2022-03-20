@@ -110,6 +110,72 @@ Array<Array<PrimExpr>> GetAccessIndices(te::Operation op,
   return getter.get(cop->body[0], producer);
 }
 
+class VarReplacer : public tir::ExprMutator {
+public:
+  using tir::ExprMutator::VisitExpr;
+
+  PrimExpr mutate(PrimExpr &expr, Map<tir::Var, tir::Var> map) {
+    map_ = map;
+    PrimExpr expr_ = VisitExpr(expr);
+    return expr_;
+  }
+
+protected:
+  using tir::ExprMutator::VisitExpr_;
+
+  PrimExpr VisitExpr_(const tir::VarNode *op) override {
+    tir::Var var = GetRef<tir::Var>(op);
+    if (map_.count(var)){
+      return map_[var];
+    }
+    return var;
+  }
+
+private:
+  Map<tir::Var, tir::Var> map_{nullptr};
+};
+
+PrimExpr ReplaceVars(PrimExpr expr, Map<tir::Var, tir::Var> map){
+  VarReplacer visitor;
+  return visitor.mutate(expr, map);
+}
+
+class VarsGetter : public tir::ExprVisitor {
+public:
+  using tir::ExprVisitor::VisitExpr;
+
+  Array<tir::Var> get(const PrimExpr &expr, const te::Operation &op) {
+    vars_.clear();
+    op_ = op;
+    VisitExpr(expr);
+    return vars_;
+  }
+
+protected:
+  using tir::ExprVisitor::VisitExpr_;
+
+  void VisitExpr_(const tir::ProducerLoadNode *op) override {
+    te::Tensor t = runtime::Downcast<te::Tensor>(op->producer);
+    if (t.defined() && t->op == op_) {
+      for (auto idx : op->indices)
+        this->VisitExpr(idx);
+    }
+  }
+  void VisitExpr_(const tir::VarNode * op) override{
+    this->vars_.push_back(GetRef<tir::Var>(op));
+  }
+
+private:
+  Array<tir::Var> vars_;
+  te::Operation op_{nullptr};
+};
+
+Array<tir::Var> GetAccessVars(te::Operation op, te::Operation producer){
+  const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+  CHECK(cop && cop->body.size() == 1U);
+  VarsGetter getter;
+  return getter.get(cop->body[0], producer);
+}
 class FloatOpGetter : public tir::ExprVisitor {
 public:
   using tir::ExprVisitor::VisitExpr;

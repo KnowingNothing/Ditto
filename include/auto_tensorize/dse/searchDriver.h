@@ -26,7 +26,7 @@ public:
   SearchSpace searchSpace;
   Array<Evaluator> evals;
   static constexpr const char *_type_key = "ditto.auto_tensorize.SearchAlg";
-  virtual Item search() const { return Item(); }
+  virtual std::pair<cost_t, Item> search() const { return {INFINITY, Item()}; }
   TVM_DECLARE_BASE_OBJECT_INFO(SearchAlgNode, Object);
 };
 
@@ -38,7 +38,7 @@ public:
 
 class BruteForceNode : public SearchAlgNode {
 public:
-  Item search() const override;
+  std::pair<cost_t, Item> search() const override;
   TVM_DECLARE_BASE_OBJECT_INFO(BruteForceNode, SearchAlgNode);
 };
 class BruteForce : public SearchAlg {
@@ -53,7 +53,7 @@ public:
   Array<Evaluator> evals;
   SearchSpace searchSpace;
   SearchAlg alg;
-  Item result;
+  std::pair<cost_t, Item> result;
   /*!
    *  \brief main search function
    * 0. register the searchSpace in alg; register the iterGraph in evals (move
@@ -65,6 +65,9 @@ public:
    * 5. if not, go to 1.
    */
   Item search();
+  
+  std::pair<cost_t, Item> search_with_loss();
+
   FusionSpace getFusionSpace() {
     return Downcast<FusionSpace, SearchSpace>(searchSpace);
   }
@@ -73,7 +76,7 @@ public:
     v->Visit("evals", &evals);
     v->Visit("searchSpace", &searchSpace);
     v->Visit("searchAlg", &alg);
-    v->Visit("result", &result);
+    v->Visit("result", &result.second);
   }
   static constexpr const char *_type_key = "ditto.auto_tensorize.SearchDriver";
   TVM_DECLARE_FINAL_OBJECT_INFO(SearchDriverNode, Object);

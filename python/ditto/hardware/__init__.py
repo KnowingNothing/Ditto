@@ -19,6 +19,9 @@ QUERY_FUNCS = {
 QUERY_PARAM_FUNCS = {
     "gpu": {
         "cuda": query_nvgpu_param
+    },
+    "cpu": {
+        
     }
 }
 

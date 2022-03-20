@@ -5,3 +5,5 @@ build
 .vscode
 __pycache__
 experiments
+./testing/hyper_fusion/conv.py
+python_test/auto_tensorize/dataLoader.py

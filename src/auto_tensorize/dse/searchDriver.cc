@@ -19,6 +19,10 @@ SearchDriver::SearchDriver(Array<Evaluator> evals, SearchSpace searchSpace,
 }
 Item SearchDriverNode::search() {
   result = alg->search();
+  return result.second;
+}
+std::pair<cost_t, Item> SearchDriverNode::search_with_loss() {
+  result = alg->search();
   return result;
 }
 Array<Result> SearchDriverNode::eval(Item it) {
@@ -28,7 +32,7 @@ Array<Result> SearchDriverNode::eval(Item it) {
   return ret;
 }
 TVM_REGISTER_NODE_TYPE(ResultNode);
-Item BruteForceNode::search() const {
+std::pair<cost_t, Item> BruteForceNode::search() const {
   bool has_staticAnalysis = false;
   Evaluator eval;
   for (auto eval_ : evals) {
@@ -40,17 +44,22 @@ Item BruteForceNode::search() const {
   }
   CHECK(has_staticAnalysis) << "no staticAnalysis evaluator";
   cost_t best_l = INFINITY;
-  Item best_i;
-  for (size_t i = 0; i < searchSpace->cardinal; i++) {
+  long long best_i = -1;
+  for (long long i = 0; i < (long long)searchSpace->cardinal; i++) {
     Item item = searchSpace->idxToItem(i);
 
     cost_t tmp_loss = eval->cost(item);
     if (tmp_loss < best_l) {
       best_l = tmp_loss;
-      best_i = item;
+      best_i = i;
     }
   }
-  return best_i;
+  if (best_i < 0){
+    LOG(WARNING) << "no valid candidate in current searchspace";
+    return {INFINITY, Item()};
+  }
+  Item best_item = searchSpace->idxToItem(best_i);
+  return {best_l, best_item};
 }
 BruteForce::BruteForce(SearchSpace searchSpace, Array<Evaluator> evals) {
   auto n = make_object<BruteForceNode>();
@@ -59,9 +68,10 @@ BruteForce::BruteForce(SearchSpace searchSpace, Array<Evaluator> evals) {
   n->evals = evals;
   data_ = std::move(n);
 }
-SearchDriver buildSearchDriver(IterGraph ig, Array<String> evaltypes,
-                               String searcher,
-                               hardware::HardwareParam hw_param, String dtype) {
+inline SearchDriver buildSearchDriver(IterGraph ig, Array<String> evaltypes,
+                                      String searcher,
+                                      hardware::HardwareParam hw_param,
+                                      String dtype) {
   SearchSpace searchSpace = ig->getSearchSpace();
   Array<Evaluator> evals;
   evals.push_back(StaticAnalysis(ig, hw_param, dtype));

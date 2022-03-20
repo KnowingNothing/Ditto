@@ -32,7 +32,12 @@ public:
   int num_groups;
   double fp32_peak_perf_gflops;
   double launch_latency_s;
-
+  std::vector<double> tensorWeight;
+  std::vector<double> cacheSizes;
+  std::vector<double> coresPerCacheLevel;
+  std::vector<double> cacheSizePerThread;
+  std::vector<double> cacheBandwidth;
+  std::string platform;
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("register_per_processor_kb", &register_per_processor_kb);
     v->Visit("shared_memory_per_group_kb", &shared_memory_per_group_kb);
@@ -57,7 +62,12 @@ public:
                         double global_memory_gb,
                         double global_memory_bandwidth_gbs,
                         int num_processors_per_group, int num_groups,
-                        double fp32_peak_perf_gflops, double launch_latency_s);
+                        double fp32_peak_perf_gflops, double launch_latency_s,
+                        std::vector<double> tensorWeight = {1.0, 2.0},
+                        std::vector<double> cacheSizes = std::vector<double>(),
+                        std::vector<double> bandwidth = std::vector<double>(),
+                        std::vector<double> coresPerCacheLevel = std::vector<double>(), 
+                        std::string platform = "NVGPU");
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(HardwareParam, ObjectRef,
                                         HardwareParamNode);

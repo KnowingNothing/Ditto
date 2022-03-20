@@ -18,9 +18,9 @@ def build_fusion_item(firstOpTiling: Sequence[int],
                       secondOpTiling: Sequence[int],
                       firstOpPermute: Sequence[int],
                       secondOpPermute: Sequence[int],
-                      attachPos: int):
+                      attachPos: int, fusionLevel: int):
     return _ffi_api.buildFusionItem(firstOpTiling, secondOpTiling,
-                                    firstOpPermute, secondOpPermute, attachPos)
+                                    firstOpPermute, secondOpPermute, attachPos, fusionLevel)
 
 
 @tvm.register_object("ditto.auto_tensorize.Result")

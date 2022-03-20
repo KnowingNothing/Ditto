@@ -1,2 +1,5 @@
-*.txt
+W*.txt
 *.so
+result
+*.so
+*.npz

@@ -10,11 +10,11 @@ using namespace tvm;
 namespace ditto {
 namespace auto_tensorize {
 TVM_REGISTER_NODE_TYPE(FusionResultNode);
-FusionResult::FusionResult(Map<tir::Var, IntImm> bounds, int op1MemVisit,
-                           int op1WorkLoad, int op1Buffer, int op2MemVisit,
-                           int op2WorkLoad, int op2Buffer, double locality,
-                           int parallelism, int redundancy, int n_block,
-                           bool valid) {
+FusionResult::FusionResult(Map<tir::Var, IntImm> bounds, double op1MemVisit,
+                       double op1WorkLoad, double op1Buffer, double op2MemVisit,
+                       double op2WorkLoad, double op2Buffer, double locality,
+                       double parallelism, double redundancy, double n_block,
+                       bool valid, int fusionLevel, int bytePerEle, double cacheSize) {
   auto n = make_object<FusionResultNode>();
   n->bounds = bounds;
   n->op1.dataMovementVolume = op1MemVisit;
@@ -28,12 +28,21 @@ FusionResult::FusionResult(Map<tir::Var, IntImm> bounds, int op1MemVisit,
   n->redundancy = redundancy;
   n->n_block = n_block;
   n->valid = valid;
+  n->fusionLevel = fusionLevel;
+  n->bytePerEle = bytePerEle;
+  n->workload = op1WorkLoad + op2WorkLoad;
+  n->cacheSize = cacheSize;
+  n->occupancy = std::max(op1Buffer, op2Buffer) / cacheSize;
+  n->dataMovement = (op1MemVisit + op2MemVisit) / (double) parallelism;
   data_ = n;
 }
 double FusionResultNode::getArithmeticIntensity() const {
   // the arithmetic intensity;
   return (op1.workLoad + op2.workLoad) /
          double(op1.dataMovementVolume + op2.dataMovementVolume);
+}
+double FusionResultNode::getWorkload() const{
+  return op1.workLoad + op2.workLoad;
 }
 StaticAnalysis::StaticAnalysis(IterGraph ig, hardware::HardwareParam hw_param,
                                String dtype) {
@@ -58,11 +67,13 @@ Result StaticAnalysisNode::eval(Item it) const {
 }
 cost_t StaticAnalysisNode::cost(Item it) const {
   auto fusionItem = Downcast<FusionItem, Item>(it);
+  CHECK(it.defined());
   iterGraph->setFusion(fusionItem);
   FusionResult result = iterGraph->getAnalyticalResult(hw_param, bytePerEle);
   if (!result->valid)
     return INFINITY;
-  return -result->getArithmeticIntensity();
+  double dm = (result->op1.dataMovementVolume + result->op2.dataMovementVolume) / (double)result->parallelism;
+  return dm;
 }
 Map<String, FloatImm> FusionResultNode::getLog() const {
   Map<String, FloatImm> m;
@@ -70,6 +81,7 @@ Map<String, FloatImm> FusionResultNode::getLog() const {
   m.Set("redundancy", FloatImm(DataType::Float(64), (double)redundancy));
   m.Set("parallelism", FloatImm(DataType::Float(64), (double)parallelism));
   m.Set("AI", FloatImm(DataType::Float(64), getArithmeticIntensity()));
+  m.Set("valid", FloatImm(DataType::Float(64), (double)valid));
   return m;
 }
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
@@ -93,7 +105,10 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
       p->stream << "locality: " << op->locality << "\n";
       p->stream << "redundancy: " << op->redundancy << "\n";
       p->stream << "AI: " << op->getArithmeticIntensity() << "\n";
-      p->stream << "parallelism: " << op->parallelism << " )";
+      p->stream << "parallelism: " << op->parallelism << "\n";
+      p->stream << "fusionLevel: " << op->fusionLevel << "\n";
+      p->stream << "occupancy: " << op->occupancy << "\n";
+      p->stream << "cacheSize: " << op->cacheSize <<  ")";
     });
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.getLog")
     .set_body_method<FusionResult>(&FusionResultNode::getLog);

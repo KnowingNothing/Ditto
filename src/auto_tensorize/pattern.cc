@@ -316,7 +316,8 @@ OpPattern GetOpPattern(te::Operation op) {
   } else if (IsView(op)) {
     return OpPattern::PATTERN_VIEW;
   } else {
-    CHECK(false) << "Can't judge the pattern of op:\n" << op << "\n";
+    LOG(WARNING) << "Can't judge the pattern of op";
+    return OpPattern::PATTERN_CUBIC; 
   }
 }
 

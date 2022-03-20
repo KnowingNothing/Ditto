@@ -63,13 +63,13 @@ PermuteSpace::PermuteSpace(size_t numOfLoops) {
   data_ = n;
 }
 Item PermuteSpaceNode::idxToItem(size_t idx) const {
+    size_t idx_ = idx;
   if (mandatory)
     return PermuteItem(mandatories[idx]);
   std::vector<size_t> partial_rank;
-  size_t product = 1;
   for (size_t i = 0; i < numOfLoops; i++) {
-    partial_rank.push_back(idx % product);
-    product *= (i + 1);
+    partial_rank.push_back(idx_ % (i+1));
+    idx_ /= (i + 1);
   }
   std::vector<size_t> perm;
   Array<IntImm> ret;
@@ -97,8 +97,8 @@ AttachSpace::AttachSpace(size_t numOfLoops) {
 Item AttachSpaceNode::idxToItem(size_t idx) const {
   if (mandatory)
     return AttachItem((mandatories[idx])->value);
-  CHECK(idx <= numOfLoops) << "attach range exceeded";
-  return AttachItem(idx);
+  CHECK(idx < numOfLoops) << "attach range exceeded";
+  return AttachItem(idx+1);
 }
 void AttachSpaceNode::setMandatory(Array<IntImm> mands) {
   mandatories = mands;
@@ -117,9 +117,9 @@ FusionSpace::FusionSpace(PermuteSpace firstOpPermute,
   n->firstOpTiling = firstOpTiling;
   n->secondOpTiling = secondOpTiling;
   n->name = "Fusion";
-  std::cout << firstOpPermute->cardinal << " " << secondOpPermute->cardinal
-            << " " << firstOpTiling->cardinal << " " << secondOpTiling->cardinal
-            << " " << attach->cardinal << std::endl;
+//   std::cout << firstOpPermute->cardinal << " " << secondOpPermute->cardinal
+//             << " " << firstOpTiling->cardinal << " " << secondOpTiling->cardinal
+//             << " " << attach->cardinal << std::endl;
   n->cardinal = firstOpPermute->cardinal * secondOpPermute->cardinal *
                 firstOpTiling->cardinal * secondOpTiling->cardinal *
                 attach->cardinal;
@@ -134,11 +134,9 @@ Item FusionSpaceNode::idxToItem(size_t idx) const {
   firstOpPermuteItem = Downcast<PermuteItem, Item>(
       firstOpPermute->idxToItem(idx % firstOpPermute->cardinal));
   idx /= firstOpPermute->cardinal;
-
   secondOpPermuteItem = Downcast<PermuteItem, Item>(
       secondOpPermute->idxToItem(idx % secondOpPermute->cardinal));
   idx /= secondOpPermute->cardinal;
-
   firstOpTilingItem = Downcast<TilingItem, Item>(
       firstOpTiling->idxToItem(idx % firstOpTiling->cardinal));
   idx /= firstOpTiling->cardinal;
@@ -148,9 +146,10 @@ Item FusionSpaceNode::idxToItem(size_t idx) const {
   idx /= secondOpTiling->cardinal;
 
   attachItem = Downcast<AttachItem, Item>(attach->idxToItem(idx));
-
-  return FusionItem(firstOpTilingItem, secondOpTilingItem, firstOpPermuteItem,
-                    secondOpPermuteItem, attachItem);
+   // TODO: change the fusion space to consider the fusion level
+  FusionItem item = FusionItem(firstOpTilingItem, secondOpTilingItem, firstOpPermuteItem,
+                    secondOpPermuteItem, attachItem, 2);
+  return item;
 }
 TilingItem::TilingItem(Array<IntImm> factors) {
   auto n = make_object<TilingItemNode>();
@@ -169,22 +168,24 @@ AttachItem::AttachItem(size_t attachPos) {
 }
 FusionItem::FusionItem(TilingItem firstOpTiling, TilingItem secondOpTiling,
                        PermuteItem firstOpPermute, PermuteItem secondOpPermute,
-                       AttachItem attachPos) {
+                       AttachItem attachPos, size_t fusionLevel) {
   auto n = make_object<FusionItemNode>();
   n->firstOpPermute = firstOpPermute;
   n->firstOpTiling = firstOpTiling;
   n->secondOpPermute = secondOpPermute;
   n->secondOpTiling = secondOpTiling;
   n->attachPos = attachPos;
+  n->fusionLevel = fusionLevel;
   data_ = n;
 }
-FusionItem buildFusionItem(Array<IntImm> firstOpTiling,
-                           Array<IntImm> secondOpTiling,
-                           Array<IntImm> firstOpPermute,
-                           Array<IntImm> secondOpPermute, size_t attachPos) {
+inline FusionItem buildFusionItem(Array<IntImm> firstOpTiling,
+                                  Array<IntImm> secondOpTiling,
+                                  Array<IntImm> firstOpPermute,
+                                  Array<IntImm> secondOpPermute,
+                                  size_t attachPos, size_t fusionLevel) {
   return FusionItem(TilingItem(firstOpTiling), TilingItem(secondOpTiling),
                     PermuteItem(firstOpPermute), PermuteItem(secondOpPermute),
-                    AttachItem(attachPos));
+                    AttachItem(attachPos), fusionLevel);
 }
 
 TVM_REGISTER_NODE_TYPE(ItemNode);
@@ -226,10 +227,13 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
       p->Print(op->firstOpPermute);
       p->stream << "\n";
       p->stream << "secondOpPermute:\t";
-      p->Print(op->firstOpPermute);
+      p->Print(op->secondOpPermute);
       p->stream << "\n";
       p->stream << "attachPos:\t";
       p->Print(op->attachPos);
+      p->stream << "\n";
+      p->stream << "fusionLevel:\t";
+      p->stream << op->fusionLevel;
       p->stream << "\n";
       p->stream << "-------------------------";
     });

@@ -18,6 +18,7 @@ BYTES_OF_TYPES = {
 def share_axis_analysis(
     op1: tvm.te.tensor.Operation,
     op2: tvm.te.tensor.Operation,
+    tensorizeAxes: List[tvm.tir.IterVar] = []
 ):
     """Perform the share relationship analysis.
 
@@ -43,7 +44,7 @@ def share_axis_analysis(
     Returns:
         List[List[tvm.tir.IterVar]]: share_axis_pairs
     """
-    share_axis_pairs = _ffi_api.ShareAxisAnalysis(op1, op2)
+    share_axis_pairs = _ffi_api.ShareAxisAnalysis(op1, op2, tensorizeAxes)
     return share_axis_pairs
 
 
