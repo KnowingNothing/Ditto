@@ -36,10 +36,11 @@ FusionChoice::FusionChoice(te::Operation first_op, te::Operation second_op,
   data_ = node;
 }
 
-MatchInfo::MatchInfo(Array<tir::IterVar> axis, PackedIntrinsic intrin) {
+MatchInfo::MatchInfo(Array<tir::IterVar> axis, PackedIntrinsic intrin, const tir::StringImm impl) {
   auto node = make_object<MatchInfoNode>();
   node->axis = axis;
   node->intrin = intrin;
+  node->impl = impl;
   data_ = node;
 }
 
@@ -165,6 +166,10 @@ TensorizeHyperFusionState::TensorizeHyperFusionState(
 
   node->secondOpOuterTileFactors = fuse_choice->secondOpOuterTilingFactors;
   node->secondOpOuterIndices = fuse_choice->secondOpOuterIndices;
+  CHECK(match_info.at(node->first_op)->impl.defined());
+  CHECK(match_info.at(node->second_op)->impl.defined());
+  node->impl_op1 = match_info.at(node->first_op)->impl;
+  node->impl_op2 = match_info.at(node->second_op)->impl;
   data_ = node;
 }
 
@@ -1489,8 +1494,7 @@ void setTemplatesAndSearchLightWeight(
   }
   std::vector<FusionInfo> candidates(MAX_CANDIDATES_NUMBER);
   size_t itemCnt = 0;
-  ig->setCacheSize(hw_param->cacheSizePerThread);
-  ig->setParallel(hw_param->num_groups);
+  ig->setHardwareParam(hw_param);
   std::cout << "cacheLevel_n: " << hw_param->cacheSizePerThread.size()
             << std::endl;
   const size_t n_level = hw_param->cacheSizePerThread.size();
@@ -1673,6 +1677,7 @@ void setTemplatesAndSearchLightWeight(
 FusionChoice buildFusionChoice(SerialFusionState sfs,
                                hardware::HardwareParam hw_param, String dtype,
                                String path, int simple_mode) {
+  CHECK(sfs->tensorizeAxes.defined());
   IterGraph ig = buildIterGraph(sfs, sfs->tensorizeAxes, path);
   SearchDriver searchDriver =
       buildSearchDriver(ig, {"static analysis"}, "bruteForce", hw_param, dtype);
@@ -1755,14 +1760,12 @@ FusionChoice buildFusionChoice(SerialFusionState sfs,
 
 FusionContext::FusionContext(SerialFusionState sfs,
                              std::vector<CPUTensorizeParam> schParams,
-                             Layer layer, TensorizeHyperFusionState state,
-                             tir::StringImm code, String path,
+                             Layer layer, TensorizeHyperFusionState state, String path,
                              hardware::HardwareParam hw_param, int bytePerEle) {
   auto node = make_object<FusionContextNode>();
   node->sfs = sfs;
   node->layer = layer;
   node->state = state;
-  node->code = code;
   node->path = path;
   node->hw_param = hw_param;
   node->bytePerEle = bytePerEle;
@@ -1829,7 +1832,7 @@ std::ostream &operator<<(std::ostream &o, const FusionInfo &fusionInfo) {
   return o;
 }
 FusionContext buildFusionContext(SerialFusionState sfs, Layer layer,
-                                 TensorizeHyperFusionState state, String code,
+                                 TensorizeHyperFusionState state,
                                  String path, hardware::HardwareParam hw_param,
                                  String searchType = "stochastic",
                                  String mode = "survey",
@@ -1842,6 +1845,7 @@ FusionContext buildFusionContext(SerialFusionState sfs, Layer layer,
   for (auto it : fusionInfo)
     it.valid = 0;
   std::vector<CPUTensorizeParam> schParams;
+  CHECK(sfs->tensorizeAxes.defined());
   IterGraph ig = buildIterGraph(sfs, sfs->tensorizeAxes, path);
   std::unordered_map<std::string, int32_t> m = {{"float32", 4}, {"float64", 8},
                                                 {"float16", 2}, {"int16", 2},
@@ -1883,7 +1887,7 @@ FusionContext buildFusionContext(SerialFusionState sfs, Layer layer,
             [](CPUTensorizeParam &first, CPUTensorizeParam &second) {
               return first->cost < second->cost;
             });
-  return FusionContext(sfs, schParams, layer, state, code, path, hw_param,
+  return FusionContext(sfs, schParams, layer, state, path, hw_param,
                        m[dtype]);
 }
 
@@ -1901,10 +1905,10 @@ TVM_REGISTER_GLOBAL("ditto.auto_tensorize.getPredCostList")
 
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildFusionContext")
     .set_body_typed([](SerialFusionState sfs, Layer layer,
-                       TensorizeHyperFusionState state, String code,
+                       TensorizeHyperFusionState state,
                        String data_path, hardware::HardwareParam hw_param,
                        String searchType, String mode, String dtype) {
-      return buildFusionContext(sfs, layer, state, code, data_path, hw_param,
+      return buildFusionContext(sfs, layer, state, data_path, hw_param,
                                 searchType, mode, dtype);
     });
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.FusionChoice")
@@ -1914,8 +1918,9 @@ TVM_REGISTER_GLOBAL("ditto.auto_tensorize.FusionChoice")
     });
 
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.MatchInfo")
-    .set_body_typed([](Array<tir::IterVar> axis, PackedIntrinsic intrin) {
-      return MatchInfo(axis, intrin);
+    .set_body_typed([](Array<tir::IterVar> axis, PackedIntrinsic intrin, String impl) {
+      tir::StringImm impl_ = impl;
+      return MatchInfo(axis, intrin, impl_);
     });
 
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.TensorizeHyperFusionState")

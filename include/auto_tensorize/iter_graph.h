@@ -225,7 +225,7 @@ public:
   size_t fusionLevel;
   String resultPath;
   int totalFp;
-  double parallelism_;
+  double parallelism_ = -1;
   std::unordered_map<int, IntImm> _parallelSchedule;
   Map<tir::Var, IntImm> _boundsAfterParallel;
 
@@ -317,8 +317,6 @@ public:
   size_t getFusionLevel(std::vector<double> cacheSizes);
   /*! \brief manually set the fusion level*/
   void setFusionLevel(size_t fusionLevel_);
-  /*! \brief manually set the cache size*/
-  void setCacheSize(std::vector<double> cacheSizes);
   /*! \brief get the analytical result */
   FusionResult getAnalyticalResult(hardware::HardwareParam hw_param,
                                    int bytePerEle, bool writeThrough = true);
@@ -333,8 +331,12 @@ public:
   void scheduleParallel();
   /*! \brief get the problem size after parallel */
   Map<tir::Var, IntImm> getPbsz();
-  /*! \brief set the parallelism */
-  void setParallel(double parallel) { parallelism_ = parallel; };
+  /*! \brief set hardware related param */
+  void setHardwareParam(hardware::HardwareParam hw_param){
+    cacheSizes = hw_param->cacheSizePerThread;
+    tensorWeight = hw_param->tensorWeight;
+    parallelism_ = hw_param->num_groups;
+  }
   static constexpr const char *_type_key = "ditto.auto_tensorize.IterGraph";
   TVM_DECLARE_FINAL_OBJECT_INFO(IterGraphNode, Object);
 };
@@ -350,7 +352,7 @@ public:
                     te::Operation op1, te::Operation op2,
                     Array<IterVar> firstOpTensorizeIters,
                     Array<IterVar> secondOpTensorizeIters,
-                    std::vector<double> tensorWeight, String path = "");
+                    String path = "");
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(IterGraph, ObjectRef, IterGraphNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(IterGraphNode);
 };

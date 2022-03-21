@@ -481,8 +481,7 @@ void ScheduleFirstOpCPU(te::Schedule sch, CPUTensorizeContext ctx,
 
 te::Schedule TensorizeCPU(Layer layer, TensorizeHyperFusionState state,
                           hardware::HardwareParam cpu_param,
-                          CPUTensorizeParam tensorize_param,
-                          tir::StringImm code) {
+                          CPUTensorizeParam tensorize_param) {
   te::Schedule sch = te::create_schedule(layer->ops);
   CPUTensorizeContext ctx = CPUTensorizeContext(layer, state);
   /*
@@ -530,8 +529,10 @@ te::Schedule TensorizeCPU(Layer layer, TensorizeHyperFusionState state,
   /*
    * import the intrinsic
    */
-  sch[state->second_op].pragma(ctx->secondOpOuterMostAxis, "import_llvm", code);
-  sch[state->first_op].pragma(ctx->firstOpOuterMostAxis, "import_llvm", code);
+  CHECK(state->impl_op1.defined());
+  CHECK(state->impl_op2.defined());
+  sch[state->second_op].pragma(ctx->secondOpOuterMostAxis, "import_llvm", state->impl_op2);
+  sch[state->first_op].pragma(ctx->firstOpOuterMostAxis, "import_llvm", state->impl_op1);
   return sch;
 }
 
@@ -1062,7 +1063,8 @@ ScheduleContext SingleOpSchedule(te::Operation op,
                                  hardware::HardwareParam hw_param,
                                  String searchType = "stochastic",
                                  String mode = "best") {
-  OpHyperState op_ = buildOpHyperState(op, 0, tensorizeAxes);
+  OpHyperState op_ = buildOpHyperState(op, 0);
+  op_->registerTensorizeAxes(tensorizeAxes);
   Map<tir::Var, IntImm> bounds;
   for (auto iv : op_->getAllIters())
     bounds.Set(iv->originVar, IntImm(DataType::Int(32), iv->ext));
@@ -1114,7 +1116,7 @@ te::Schedule FusionContextNode::run(int i, te::Schedule sch, bool verbose) {
     std::cout << std::endl;
     std::cout << schParam << std::endl;
   }
-  return TensorizeCPU(layer, state, hw_param, schParam, code);
+  return TensorizeCPU(layer, state, hw_param, schParam);
 }
 
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
@@ -1219,8 +1221,9 @@ TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildCPUTensorizeParam")
       fusionInfo.parallelism = fusionChoice->fusionResult->parallelism;
       fusionInfo.valid = true;
       fusionInfo.bounds = fusionChoice->fusionResult->bounds;
+      CHECK(sfs->tensorizeAxes.defined());
       IterGraph ig = buildIterGraph(sfs, sfs->tensorizeAxes, "");
-      ig->setParallel(hw_param->num_groups);
+      ig->setHardwareParam(hw_param);
       ig->setFusionLevel(fusionInfo.fusionLevel);
       ig->setFusion(fusionChoice->fusionItem);
       ig->scheduleParallel();
@@ -1235,9 +1238,8 @@ TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildCPUTensorizeParam")
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.TensorizeCPU")
     .set_body_typed([](Layer layer, TensorizeHyperFusionState state,
                        hardware::HardwareParam cpu_param,
-                       CPUTensorizeParam tensorize_param, String code) {
-      tir::StringImm code_ = code;
-      return TensorizeCPU(layer, state, cpu_param, tensorize_param, code_);
+                       CPUTensorizeParam tensorize_param) {
+      return TensorizeCPU(layer, state, cpu_param, tensorize_param);
     });
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.SingleOpSchedule")
     .set_body_typed([](te::Operation op, Array<tir::IterVar> tensorizeAxes,

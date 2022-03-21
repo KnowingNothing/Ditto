@@ -32,7 +32,7 @@ std::pair<bool, std::string> validate(SerialFusionState state) {
 
 LayerAndSchedule auto_schedule(Layer layer, hardware::Hardware hw) {
   LayerAndSchedule ret;
-  SerialFusionState state(layer, {});
+  SerialFusionState state(layer);
   // first step, verify the layer pattern
   /*
    * Expected layer pattern:

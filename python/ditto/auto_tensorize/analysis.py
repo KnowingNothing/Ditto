@@ -3,6 +3,9 @@ from typing import *
 from ditto import hardware as hw
 from ditto import utils
 from . import _ffi_api
+from tvm.runtime import Object
+from .iter_graph import IterGraph
+from ditto.hardware.hw_param import HardwareParam
 
 
 BYTES_OF_TYPES = {
@@ -47,101 +50,7 @@ def share_axis_analysis(
     share_axis_pairs = _ffi_api.ShareAxisAnalysis(op1, op2, tensorizeAxes)
     return share_axis_pairs
 
-
-class AnalyticalResult(object):
-    def __init__(self, locality, parallelism, recompute, valid):
-        self.locality = locality
-        self.parallelism = parallelism
-        self.recompute = recompute
-        self.valid = valid
-
-
-def calculate_metrics(
-    first_op_types: Tuple[str, str, str],
-    second_op_types: Tuple[str, str, str],
-    common_factors: List[Tuple[str, int]],
-    first_op_factors: List[Tuple[str, int]],
-    second_op_factors: List[Tuple[str, int]],
-    first_op_read_data_size: List[List[int]],
-    first_op_write_data_size: int,
-    second_op_read_data_size: List[List[int]],
-    second_op_write_data_size: int,
-    first_op_second_op_relate_pos: int,
-    redundant_common_factors: List[int],
-    hw_param: hw.HardwareParam,
-):
-    """Function to calculate the metrics locality, parallelism, and recompute.
-
-    Args:
-        first_op_types (Tuple[str, str, str]): input, output, compute types
-        second_op_types (Tuple[str, str, str]): input, output, compute types
-        common_factors (List[Tuple[str, int]]): e.g., [("S", 2), ("R", 4)]
-        first_op_factors (List[Tuple[str, int]]):
-        second_op_factors (List[Tuple[str, int]]):
-        first_op_read_data_size (List[List[int]]):
-        first_op_write_data_size (int):
-        second_op_read_data_size (List[List[int]]):
-        second_op_write_data_size (int):
-        first_op_second_op_relate_pos (int):
-        hw_param (hw.HardwareParam):
-    """
-    valid = True
-    first_inp_byte = BYTES_OF_TYPES[first_op_types[0]]
-    first_out_byte = BYTES_OF_TYPES[first_op_types[1]]
-    second_inp_byte = BYTES_OF_TYPES[second_op_types[0]]
-    second_out_byte = BYTES_OF_TYPES[second_op_types[1]]
-    # the estimated shared memory usage for inputs
-    # has already removed the effect of outer private reduce loops
-    first_op_read_shared_memory_usage = utils.accumulate(
-        [utils.accumulate(x) for x in first_op_read_data_size]
-    )
-    first_op_write_shared_memory_usage = first_op_write_data_size[0]
-    second_op_read_shared_memory_usage = utils.accumulate(
-        [utils.accumulate(x) for x in second_op_read_data_size]
-    )
-    # there is no need to cache the data for final outputs
-    second_op_write_shared_memory_usage = 0
-    assert first_op_second_op_relate_pos < len(second_op_read_data_size)
-    # because of the fusion, there is no need to re-load the input for
-    # the second op if it has already been produced from the first op
-    second_op_read_shared_memory_usage -= utils.accumulate(
-        second_op_read_data_size[first_op_second_op_relate_pos]
-    )
-
-    total_shared_memory_usage = (
-        first_op_read_shared_memory_usage * first_inp_byte
-        + first_op_write_shared_memory_usage * first_out_byte
-        + second_op_read_shared_memory_usage * second_inp_byte
-        + second_op_write_shared_memory_usage * second_out_byte
-    )
-
-    valid = valid and (
-        total_shared_memory_usage < hw_param.shared_memory_per_group_kb * 1e3
-    )
-
-    # reduce factors in common iters can't be ignored because
-    # we always do reduction within one block (not parallel)
-    first_op_compute = utils.product(
-        [1 if x[0] == "S" else x[1] for x in common_factors]
-        + [x[1] for x in first_op_factors]
-    )
-    second_op_compute = utils.product(
-        [1 if x[0] == "S" else x[1] for x in common_factors]
-        + [x[1] for x in second_op_factors]
-    )
-
-    locality = (first_op_compute + second_op_compute) / (
-        first_op_read_shared_memory_usage * first_inp_byte
-        + second_op_read_shared_memory_usage
-        + second_inp_byte
-    )
-    sw_parallelism = utils.product([1 if x[0] == "R" else x[1] for x in common_factors])
-    parallelism = min(
-        sw_parallelism,
-        # occupancy
-        (hw_param.shared_memory_per_group_kb * 1e3 // total_shared_memory_usage)
-        * hw_param.num_groups,
-    )
-    recompute = utils.product(redundant_common_factors) * first_op_compute
-
-    return AnalyticalResult(locality, parallelism, recompute, valid)
+@tvm._ffi.register_object("ditto.auto_tensorize.FusionResult")
+class FusionResult(Object):
+    def getLog(self):
+        return _ffi_api.getLog(self)

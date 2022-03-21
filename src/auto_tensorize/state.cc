@@ -135,14 +135,12 @@ Map<tir::Var, IntImm> OpHyperStateNode::getBounds() {
   return bounds;
 }
 
-OpHyperState::OpHyperState(te::Operation op, size_t index,
-                           Array<tir::IterVar> tensorizeAxes) {
+OpHyperState::OpHyperState(te::Operation op, size_t index) {
   auto node = make_object<OpHyperStateNode>();
   CHECK(op.as<te::ComputeOpNode>() != nullptr);
   node->op = op;
   node->pattern = GetOpPattern(op);
   node->index = index;
-  node->tensorizeAxes = tensorizeAxes;
   data_ = std::move(node);
 }
 
@@ -203,29 +201,29 @@ int SerialFusionStateNode::CountOp(OpPattern pattern) {
   return counter;
 }
 
-SerialFusionState::SerialFusionState(Layer layer,
-                                     Array<tir::IterVar> tensorizeAxes,
-                                     std::vector<double> tensorWeight) {
+SerialFusionState::SerialFusionState(Layer layer) {
   auto node = make_object<SerialFusionStateNode>();
   node->layer_state = LayerState(layer);
   size_t idx = 0;
-  node->tensorizeAxes = tensorizeAxes;
   for (auto op : layer->GetAllOps()) {
     // we only consider compute op
     const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
     if (cop != nullptr) {
       node->ops.push_back(op);
-      node->op_hyper_states[op] = OpHyperState(op, idx, tensorizeAxes);
+      node->op_hyper_states[op] = OpHyperState(op, idx);
     }
     idx++;
   }
-  node->tensorWeight = tensorWeight;
+  OpHyperState op1, op2;
+  std::tie(op1, op2) = node->getCubicOpPair();
+  node->first_op = op1->op;
+  node->second_op = op2->op;
   data_ = node;
 }
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.build_serial_fusion_state")
     .set_body_typed(buildSerialFusionState);
-TVM_REGISTER_GLOBAL("ditto.auto_tensorize.build_op_hyper_state")
-    .set_body_typed(buildOpHyperState);
+TVM_REGISTER_GLOBAL("ditto.auto_tensorize.registerTensorizeAxes")
+    .set_body_method<SerialFusionState>(&SerialFusionStateNode::registerTensorizeAxes);
 } // namespace auto_tensorize
 
 } // namespace ditto

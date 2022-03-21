@@ -1,6 +1,6 @@
 import tvm
 from . import _ffi_api
-from .iter_graph_ import IterGraph
+from .iter_graph import IterGraph
 from tvm.runtime import Object
 from typing import Sequence
 from .item import Item

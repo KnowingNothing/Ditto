@@ -40,8 +40,8 @@ class MatchInfo(Object):
         return str(self)
 
 
-def match_info(axis: List[tvm.tir.IterVar], intrin: tvm.te.tensor_intrin.TensorIntrin):
-    return _ffi_api.MatchInfo(axis, intrin)
+def match_info(axis: List[tvm.tir.IterVar], intrin: tvm.te.tensor_intrin.TensorIntrin, impl: str):
+    return _ffi_api.MatchInfo(axis, intrin, impl)
 
 
 @tvm._ffi.register_object("ditto.auto_tensorize.TensorizeHyperFusionState")
@@ -257,9 +257,8 @@ def tensorize_cpu(
     state: TensorizeHyperFusionState,
     cpu_param: hardware.HardwareParam,
     tensorize_param: CPUTensorizeParam,
-    code,
 ):
-    return _ffi_api.TensorizeCPU(layer, state, cpu_param, tensorize_param, code)
+    return _ffi_api.TensorizeCPU(layer, state, cpu_param, tensorize_param)
 
 
 def build_fusion_choice(

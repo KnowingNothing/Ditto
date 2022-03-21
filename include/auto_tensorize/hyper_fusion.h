@@ -100,7 +100,8 @@ public:
   Array<tir::IterVar> axis;
   /*! \brief The intrinsic to use */
   PackedIntrinsic intrin;
-
+  /*! \brief The implementation */
+  tir::StringImm impl;
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("axis", &axis);
     v->Visit("intrin", &intrin);
@@ -117,7 +118,7 @@ public:
    * \param axis The axis to tensorize
    * \param intrin The intrinsic to use
    */
-  TVM_DLL MatchInfo(Array<tir::IterVar> axis, PackedIntrinsic intrin);
+  TVM_DLL MatchInfo(Array<tir::IterVar> axis, PackedIntrinsic intrin, const tir::StringImm impl);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(MatchInfo, ObjectRef, MatchInfoNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(MatchInfoNode);
@@ -154,6 +155,10 @@ public:
   Array<IntImm> secondOpOuterTileFactors;
   /*! \brief the outer indices for the second op*/
   Array<IntImm> secondOpOuterIndices;
+  /*! \brief the implementation of first op's intrinsic */
+  tir::StringImm impl_op1;
+  /*! \brief the implementation of first op's intrinsic */
+  tir::StringImm impl_op2;
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("layer", &layer);
     v->Visit("first_op", &first_op);
@@ -711,7 +716,6 @@ class FusionContextNode : public Object {
 public:
   std::vector<CPUTensorizeParam> schParams;
   int size;
-  tir::StringImm code;
   hardware::HardwareParam hw_param;
   int bytePerEle;
   Layer layer;
@@ -738,8 +742,7 @@ class FusionContext : public ObjectRef {
 public:
   TVM_DLL
   FusionContext(SerialFusionState sfs, std::vector<CPUTensorizeParam> schParams,
-                Layer layer, TensorizeHyperFusionState state,
-                tir::StringImm code, String path,
+                Layer layer, TensorizeHyperFusionState state, String path,
                 hardware::HardwareParam hw_param, int bytePerEle);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(FusionContext, ObjectRef,
@@ -752,8 +755,7 @@ te::Schedule TensorizeCUDA(Layer layer, TensorizeHyperFusionState state,
                            CUDATensorizeParam tensorize_param);
 te::Schedule TensorizeCPU(Layer layer, TensorizeHyperFusionState state,
                           hardware::HardwareParam cpu_param,
-                          CPUTensorizeParam tensorize_param,
-                          const tir::StringImm code);
+                          CPUTensorizeParam tensorize_param);
 
 /*! build the fusion choice*/
 FusionChoice buildFusionChoice(SerialFusionState sfs,

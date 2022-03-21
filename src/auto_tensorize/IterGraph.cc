@@ -186,7 +186,7 @@ IterGraph::IterGraph(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters,
                      int readProducerPos, te::Operation op1, te::Operation op2,
                      Array<IterVar> firstOpTensorizeIters,
                      Array<IterVar> secondOpTensorizeIters,
-                     std::vector<double> tensorWeight, String path) {
+                     String path) {
   auto n = make_object<IterGraphNode>();
   n->_firstOpIters = firstOpIters;
   n->_secondOpIters = secondOpIters;
@@ -207,7 +207,6 @@ IterGraph::IterGraph(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters,
   n->readProducerPos = readProducerPos;
   n->op1 = op1;
   n->op2 = op2;
-  n->tensorWeight = tensorWeight;
   n->resultPath = path;
   Map<tir::Var, IntImm> bounds;
 
@@ -516,6 +515,7 @@ double IterGraphNode::getNumOfBlocks() const {
 }
 
 double IterGraphNode::getParallelism() const {
+  CHECK(parallelism_ > 0);
   double ret = 1;
   for (auto iv : commonIters) {
     if (iv->iv_type == IV_Type::REDUCE)
@@ -535,6 +535,7 @@ double IterGraphNode::getRedundancy() const {
 
 /*! \brief get the first Op's memvisit*/
 double IterGraphNode::getFirstOpDataVolume() const {
+  CHECK(tensorWeight.size() == 2);
   double n_block = getNumOfBlocks();
 
   double fp = 0;
@@ -569,6 +570,7 @@ double IterGraphNode::getFirstOpBufferSize(bool considerWrite) const {
 
 /*! \brief get the second Op's memvisit*/
 double IterGraphNode::getSecondOpDataVolume() const {
+  CHECK(tensorWeight.size() == 2);
   double n_block = getNumOfBlocks();
   double fp = 0;
   for (auto acf : secondOpReadAccessFuncs)
@@ -696,10 +698,6 @@ size_t IterGraphNode::getFusionLevel(std::vector<double> cacheSizes) {
   fusionLevel--;
   return fusionLevel;
 }
-void IterGraphNode::setCacheSize(std::vector<double> cacheSizes_) {
-  cacheSizes = cacheSizes_;
-  return;
-}
 
 void IterGraphNode::setFusionLevel(size_t fusionLevel_) {
   fusionLevel = fusionLevel_;
@@ -749,7 +747,7 @@ std::pair<bool, double> IterGraphNode::getDM(int bytePerEle, bool writeThrough,
                                              double *occupancy) {
   applyAll();
   bounds = inferBound();
-
+  CHECK(cacheSizes.size() > fusionLevel);
   double cacheSize = cacheSizes[fusionLevel];
   double firstOpDataVolume = getFirstOpDataVolume() * bytePerEle;
   double firstOpBufferSize = getFirstOpBufferSize(true) * bytePerEle;
@@ -895,7 +893,8 @@ bool ivBindingAndValidate(Array<IterVar> firstOpIters,
   return true;
 }
 inline IterGraph buildIterGraph(SerialFusionState sfState,
-                                Array<te::IterVar> tensorizeAxes, String path) {
+                                Array<te::IterVar> tensorizeAxes, 
+                                String path) {
   OpHyperState ops1, ops2;
   std::tie(ops1, ops2) = sfState->getCubicOpPair();
   Array<IterVar> firstOpIters_ = ops1->getAllIters();
@@ -944,7 +943,7 @@ inline IterGraph buildIterGraph(SerialFusionState sfState,
                    firstOpReadAccessFunction, secondOpReadAccessFunction,
                    firstOpWriteAccessFunc, secondOpWriteAccessFunc,
                    readProducerPos, ops1->op, ops2->op, firsrOpTensorizeIters,
-                   secondOpTensorizeAxis, sfState->tensorWeight, path);
+                   secondOpTensorizeAxis, path);
 }
 
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
