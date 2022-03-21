@@ -77,8 +77,15 @@ bool IntrinMatcher::_match(Tensor target, Operation capsule,
     }
     if (innermost) {
       bool innermost_failed = false;
-      Array<IterVar> intrin_axes_ = _extract_axes_from_op(intrin_op, false);
-      Array<IterVar> target_axes_ = _extract_axes_from_op(target_op, false);
+      Array<IterVar> intrin_axes_ = intrin_op->axis;
+      Array<IterVar> target_axes_ = target_op->axis;
+      for (size_t i = 0; i < intrin_axes_.size(); i++) {
+        if (pim.count(target_axes_[target_axes_.size() - i - 1]) == 0) {
+          innermost_failed = true;
+        }
+      }
+      intrin_axes_ = intrin_op->reduce_axis;
+      target_axes_ = target_op->reduce_axis;
       for (size_t i = 0; i < intrin_axes_.size(); i++) {
         if (pim.count(target_axes_[target_axes_.size() - i - 1]) == 0) {
           innermost_failed = true;

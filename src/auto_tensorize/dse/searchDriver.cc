@@ -68,7 +68,8 @@ BruteForce::BruteForce(SearchSpace searchSpace, Array<Evaluator> evals) {
   n->evals = evals;
   data_ = std::move(n);
 }
-inline SearchDriver buildSearchDriver(IterGraph ig, Array<String> evaltypes,
+
+SearchDriver buildSearchDriver(IterGraph ig, Array<String> evaltypes,
                                       String searcher,
                                       hardware::HardwareParam hw_param,
                                       String dtype) {

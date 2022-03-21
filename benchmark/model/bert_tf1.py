@@ -32,18 +32,18 @@ def run_benchmark(batch_size, seq_len):
             session.run(output_layer)
             end_time = time.time()
             records.append(end_time - start_time)
-        print("Average inference latency {} ms".format(1000. * np.mean(records)))
-        print("Median inference latency {} ms".format(1000. * np.median(records)))
+        print("Average inference latency {} ms".format(1000.0 * np.mean(records)))
+        print("Median inference latency {} ms".format(1000.0 * np.median(records)))
 
 
 bert_configs = [
     # seq-len
-    (512, )
+    (512,)
 ]
 
 
 if __name__ == "__main__":
-    batches = [2**i for i in range(1)]
+    batches = [2 ** i for i in range(1)]
     for batch in batches:
         for i, config in enumerate(bert_configs):
             run_benchmark(batch, *config)

@@ -25,31 +25,31 @@ def main(profile):
         for y in [[12, 512, 64], [12, 64, 512], [12, 512, 64]]
     ]
 
-    inputs_torch = [torch.tensor(x).cuda() for x in inputs_np]
     if profile:
+        inputs_torch = [torch.tensor(x).cuda() for x in inputs_np]
         output = torch_bmm_softmax_bmm_cuda(*inputs_torch)
     else:
+        inputs_torch = [
+            [torch.tensor(x).cuda() for x in inputs_np] for i in range(repeat)
+        ]
         # measure time
         # warm up
-        output = torch_bmm_softmax_bmm_cuda(*inputs_torch)
-        if not profile:
-            records = []
-            for i in range(repeat):
-                start = torch.cuda.Event(enable_timing=True)
-                end = torch.cuda.Event(enable_timing=True)
-                torch.cuda.synchronize()
-                # beg = time.time()
-                start.record()
-                output = torch_bmm_softmax_bmm_cuda(*inputs_torch)
-                assert output is not None
-                end.record()
-                torch.cuda.synchronize()
-                # stop = time.time()
-                total = start.elapsed_time(end)
-                records.append(total)
-
-            cost = np.mean(records)
-            print(f"Average time cost is {cost} ms.")
+        for i in range(repeat):
+            output = torch_bmm_softmax_bmm_cuda(*inputs_torch[i])
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        torch.cuda.synchronize()
+        # beg = time.time()
+        start.record()
+        for i in range(repeat):
+            output = torch_bmm_softmax_bmm_cuda(*inputs_torch[i])
+            assert output is not None
+        end.record()
+        torch.cuda.synchronize()
+        # stop = time.time()
+        total = start.elapsed_time(end)
+        cost = total / repeat
+        print(f"Average time cost is {cost} ms.")
 
 
 if __name__ == "__main__":

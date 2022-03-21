@@ -180,7 +180,8 @@ FusionItem::FusionItem(TilingItem firstOpTiling, TilingItem secondOpTiling,
   n->fusionLevel = fusionLevel;
   data_ = n;
 }
-inline FusionItem buildFusionItem(Array<IntImm> firstOpTiling,
+
+FusionItem buildFusionItem(Array<IntImm> firstOpTiling,
                                   Array<IntImm> secondOpTiling,
                                   Array<IntImm> firstOpPermute,
                                   Array<IntImm> secondOpPermute,

@@ -10,16 +10,17 @@ class HardwareParam(Object):
     """HardwareParam object"""
 
 
+# TODO: add more params such as Tensor Core related metrics.
 def hardware_param(
-    register_per_processor_kb: float,
-    shared_memory_per_group_kb: float,
-    shared_memory_bandwidth_gbs: float,
-    global_memory_gb: float,
-    global_memory_bandwidth_gbs: float,
-    num_processors_per_group: int,
-    num_groups: int,
-    fp32_peak_perf_gflops: float,
-    launch_latency_s: float,
+    register_per_processor_kb: float = -1,
+    shared_memory_per_group_kb: float = -1,
+    shared_memory_bandwidth_gbs: float = -1,
+    global_memory_gb: float = -1,
+    global_memory_bandwidth_gbs: float = -1,
+    num_processors_per_group: int = -1,
+    num_groups: int = -1,
+    fp32_peak_perf_gflops: float = -1,
+    launch_latency_s: float = -1,
     tensorWeight: Sequence[float] = [1.0, 1.0],
     cacheSizes: Sequence[float] = [],
     bandwidth: Sequence[float] = [],

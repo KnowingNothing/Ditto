@@ -1044,7 +1044,7 @@ void ScheduleFirstOpLocality(te::Schedule sch, CUDATensorizeContext ctx,
       << "Only expect one output from first op.\n";
   te::Tensor first_out = first_op.output(0);
   te::Operation consumer;
-  if (ctx->HasEpilogue()) {
+  if (ctx->HasInterPath()) {
     Array<te::Operation> path_ops = ctx->InterPathNonRootOps();
     if (path_ops.size() > 0U) {
       consumer = path_ops[0];
@@ -1315,7 +1315,9 @@ te::Schedule TensorizeCUDA(Layer layer, TensorizeHyperFusionState state,
   /*
    * Schedule inter path
    */
-  ScheduleInterPath(sch, ctx, tensorize_param);
+  if (ctx->HasInterPath()) {
+    ScheduleInterPath(sch, ctx, tensorize_param);
+  }
   /*
    * Schedule first op
    */

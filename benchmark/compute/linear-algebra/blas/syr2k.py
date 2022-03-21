@@ -6,7 +6,7 @@ syr2k_configs = {
     "small": (60, 80),
     "medium": (200, 240),
     "large": (1000, 1200),
-    "extra": (2000, 2600)
+    "extra": (2000, 2600),
 }
 
 
@@ -16,35 +16,24 @@ def syr2k(M, N):
     C = tvm.te.placeholder([N, N], name="C", dtype="float32")
     alpha = tvm.tir.Var("alpha", "float32")
     beta = tvm.tir.Var("beta", "float32")
-    
+
     D = tvm.te.compute(
         [N, N],
-        lambda i, j:
-            tvm.tir.if_then_else(
-                j <= i,
-                C[i, j] * beta,
-                C[i, j]
-            ),
-        name="D"
+        lambda i, j: tvm.tir.if_then_else(j <= i, C[i, j] * beta, C[i, j]),
+        name="D",
     )
-        
+
     rm = tvm.te.reduce_axis([0, M], name="rm")
     tmp = tvm.te.compute(
         [N, N],
-        lambda i, j:
-            tvm.te.sum(A[j, rm] * B[i, rm] + B[j, rm] * A[i, rm], axis=rm),
-        name="tmp"
+        lambda i, j: tvm.te.sum(A[j, rm] * B[i, rm] + B[j, rm] * A[i, rm], axis=rm),
+        name="tmp",
     )
-    
+
     E = tvm.te.compute(
         [N, N],
-        lambda i, j:
-            tvm.tir.if_then_else(
-                j <= i,
-                D[i, j] + alpha * tmp[i, j],
-                D[i, j]
-            ),
-        name="E"
+        lambda i, j: tvm.tir.if_then_else(j <= i, D[i, j] + alpha * tmp[i, j], D[i, j]),
+        name="E",
     )
 
     return [E], [A, B, C, alpha, beta]
@@ -53,8 +42,7 @@ def syr2k(M, N):
 if __name__ == "__main__":
     M, N = syr2k_configs["large"]
     outs, ins = syr2k(M, N)
-    E, = outs
+    (E,) = outs
     A, B, C, alpha, beta = ins
     sch = tvm.te.create_schedule(E.op)
     print(tvm.lower(sch, [A, B, C, alpha, beta, E], simple_mode=True))
-    

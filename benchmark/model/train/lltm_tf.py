@@ -16,7 +16,8 @@ class LLTMCell(tf.keras.layers.Layer):
         h_tm1, c_tm1 = states
 
         i, o, c = tf.split(
-            self.fc(tf.concat([h_tm1, inputs], axis=1)), num_or_size_splits=3, axis=1)
+            self.fc(tf.concat([h_tm1, inputs], axis=1)), num_or_size_splits=3, axis=1
+        )
         i = activations.sigmoid(i)
         o = activations.sigmoid(o)
         c = activations.elu(c) * i + c_tm1
@@ -29,8 +30,7 @@ class LLTMCell(tf.keras.layers.Layer):
 def test_train_perf(batch_size):
     model = LLTMCell(128, 10)
 
-    data = tf.convert_to_tensor(
-        np.random.randn(batch_size, 28 * 28), np.float32)
+    data = tf.convert_to_tensor(np.random.randn(batch_size, 28 * 28), np.float32)
     old_h = tf.convert_to_tensor(np.random.randn(batch_size, 128), np.float32)
     old_c = tf.convert_to_tensor(np.random.randn(batch_size, 128), np.float32)
     labels = tf.convert_to_tensor(np.random.randn(batch_size, 10), np.float32)
@@ -38,8 +38,7 @@ def test_train_perf(batch_size):
     @tf.function(experimental_compile=USE_XLA)
     def model_loss(data, states, labels):
         logits, _ = model(data, states)
-        loss = tf.nn.softmax_cross_entropy_with_logits(
-            labels=labels, logits=logits)
+        loss = tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
         return loss
 
     model_loss(data, [old_h, old_c], labels)
@@ -58,19 +57,17 @@ def test_train_perf(batch_size):
             gradients = tape.gradient(loss, model.trainable_variables)
             end_time = time.time()
 
-            optimizer.apply_gradients(
-                zip(gradients, model.trainable_variables))
+            optimizer.apply_gradients(zip(gradients, model.trainable_variables))
             records.append(end_time - start_time)
-        print("Average training latency {} ms".format(1000. * np.mean(records)))
-        print("Median training latency {} ms".format(1000. * np.median(records)))
+        print("Average training latency {} ms".format(1000.0 * np.mean(records)))
+        print("Median training latency {} ms".format(1000.0 * np.median(records)))
     print("batch = ", batch_size)
 
 
 def test_infer_perf(batch_size):
     model = LLTMCell(128, 10)
 
-    data = tf.convert_to_tensor(
-        np.random.randn(batch_size, 28 * 28), np.float32)
+    data = tf.convert_to_tensor(np.random.randn(batch_size, 28 * 28), np.float32)
     old_h = tf.convert_to_tensor(np.random.randn(batch_size, 128), np.float32)
     old_c = tf.convert_to_tensor(np.random.randn(batch_size, 128), np.float32)
     labels = tf.convert_to_tensor(np.random.randn(batch_size, 10), np.float32)
@@ -79,6 +76,7 @@ def test_infer_perf(batch_size):
     def model_func(data, states):
         out = model(data, states)
         return out
+
     model_func(data, [old_h, old_c])
 
     number = 10
@@ -92,9 +90,8 @@ def test_infer_perf(batch_size):
             end_time = time.time()
 
             records.append(end_time - start_time)
-        print("Average inference latency {} ms".format(1000. * np.mean(records)))
-        print("Median inference latency {} ms".format(
-            1000. * np.median(records)))
+        print("Average inference latency {} ms".format(1000.0 * np.mean(records)))
+        print("Median inference latency {} ms".format(1000.0 * np.median(records)))
     print("batch = ", batch_size)
 
 
@@ -103,7 +100,7 @@ if __name__ == "__main__":
     for xla in [True, False]:
         for batch in [1, 16, 32, 64]:
             USE_XLA = xla
-            with tf.device('GPU:'+str(device)):
+            with tf.device("GPU:" + str(device)):
                 test_train_perf(batch)
                 test_infer_perf(batch)
                 print("use XLA:", xla)

@@ -252,7 +252,7 @@ public:
                                         FusionSpaceNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(FusionSpaceNode);
 };
-inline FusionItem buildFusionItem(Array<IntImm> firstOpTiling,
+FusionItem buildFusionItem(Array<IntImm> firstOpTiling,
                                   Array<IntImm> secondOpTiling,
                                   Array<IntImm> firstOpPermute,
                                   Array<IntImm> secondOpPermute,

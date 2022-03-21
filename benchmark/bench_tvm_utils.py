@@ -65,16 +65,15 @@ def tune_tasks(
 def tune_and_evaluate(tuning_opt, mod, params, input_shapes, target, dtype="float32"):
     # extract workloads from relay program
     print("Extract tasks...")
-    tasks = autotvm.task.extract_from_program(
-        mod["main"], target=target, params=params
-    )
+    tasks = autotvm.task.extract_from_program(mod["main"], target=target, params=params)
     print("All tasks")
-    for t in tasks: print(t)
+    for t in tasks:
+        print(t)
 
     # run tuning tasks
     print("Tuning...")
     tune_tasks(tasks, **tuning_opt)
-    
+
     # compile kernels with history best records
     with autotvm.apply_history_best(tuning_opt["log_filename"]):
         print("Compile...")
@@ -116,7 +115,9 @@ def bench_network(model, input_shapes, model_name="model", n_trial=2000):
         "early_stopping": 600,
         "measure_option": autotvm.measure_option(
             builder=autotvm.LocalBuilder(timeout=10),
-            runner=autotvm.LocalRunner(number=20, repeat=3, timeout=4, min_repeat_ms=150),
+            runner=autotvm.LocalRunner(
+                number=20, repeat=3, timeout=4, min_repeat_ms=150
+            ),
         ),
     }
     tune_and_evaluate(tuning_opt, mod, params, input_shapes, target=target)

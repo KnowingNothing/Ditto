@@ -12,11 +12,11 @@ from bench_tvm_utils import bench_network
 batch_size = 1
 
 
-""" MILSTM """ 
+""" MILSTM """
 
 
 class MILSTM_Cell(nn.Module):
-    def __init__(self, input_size=28*28, hidden_size=1024):
+    def __init__(self, input_size=28 * 28, hidden_size=1024):
         super(MILSTM_Cell, self).__init__()
 
         self.hidden_size = hidden_size
@@ -30,40 +30,51 @@ class MILSTM_Cell(nn.Module):
         self.weight_zx = nn.Linear(input_size, hidden_size)
         self.weight_ox = nn.Linear(input_size, hidden_size)
         # alphas and betas
-        self.alpha_f = nn.Parameter(torch.ones(1,hidden_size))
-        self.beta_f1 = nn.Parameter(torch.ones(1,hidden_size))
-        self.beta_f2 = nn.Parameter(torch.ones(1,hidden_size))
-        
-        self.alpha_i = nn.Parameter(torch.ones(1,hidden_size))
-        self.beta_i1 = nn.Parameter(torch.ones(1,hidden_size))
-        self.beta_i2 = nn.Parameter(torch.ones(1,hidden_size))
-        
-        self.alpha_o = nn.Parameter(torch.ones(1,hidden_size))
-        self.beta_o1 = nn.Parameter(torch.ones(1,hidden_size))
-        self.beta_o2 = nn.Parameter(torch.ones(1,hidden_size))
-        
-        self.alpha_z = nn.Parameter(torch.ones(1,hidden_size))
-        self.alpha_z = nn.Parameter(torch.ones(1,hidden_size))
-        self.beta_z1 = nn.Parameter(torch.ones(1,hidden_size))
-        self.beta_z2 = nn.Parameter(torch.ones(1,hidden_size))
+        self.alpha_f = nn.Parameter(torch.ones(1, hidden_size))
+        self.beta_f1 = nn.Parameter(torch.ones(1, hidden_size))
+        self.beta_f2 = nn.Parameter(torch.ones(1, hidden_size))
 
+        self.alpha_i = nn.Parameter(torch.ones(1, hidden_size))
+        self.beta_i1 = nn.Parameter(torch.ones(1, hidden_size))
+        self.beta_i2 = nn.Parameter(torch.ones(1, hidden_size))
+
+        self.alpha_o = nn.Parameter(torch.ones(1, hidden_size))
+        self.beta_o1 = nn.Parameter(torch.ones(1, hidden_size))
+        self.beta_o2 = nn.Parameter(torch.ones(1, hidden_size))
+
+        self.alpha_z = nn.Parameter(torch.ones(1, hidden_size))
+        self.alpha_z = nn.Parameter(torch.ones(1, hidden_size))
+        self.beta_z1 = nn.Parameter(torch.ones(1, hidden_size))
+        self.beta_z2 = nn.Parameter(torch.ones(1, hidden_size))
 
     def forward(self, inp, h_0, c_0):
         # inp : [batch, 28*28]
         # gates : [batch, hidden_size]
 
         # forget gate
-        f_g = torch.sigmoid(self.alpha_f * self.weight_fx(inp) * self.weight_fh(h_0) +
-                       (self.beta_f1 * self.weight_fx(inp)) + (self.beta_f2 * self.weight_fh(h_0)))
+        f_g = torch.sigmoid(
+            self.alpha_f * self.weight_fx(inp) * self.weight_fh(h_0)
+            + (self.beta_f1 * self.weight_fx(inp))
+            + (self.beta_f2 * self.weight_fh(h_0))
+        )
         # input gate
-        i_g = torch.sigmoid(self.alpha_i * self.weight_ix(inp) * self.weight_ih(h_0) +
-                       (self.beta_i1 * self.weight_ix(inp)) + (self.beta_i2 * self.weight_ih(h_0)))
+        i_g = torch.sigmoid(
+            self.alpha_i * self.weight_ix(inp) * self.weight_ih(h_0)
+            + (self.beta_i1 * self.weight_ix(inp))
+            + (self.beta_i2 * self.weight_ih(h_0))
+        )
         # output gate
-        o_g = torch.sigmoid(self.alpha_o * self.weight_ox(inp) * self.weight_oh(h_0) +
-                       (self.beta_o1 * self.weight_ox(inp)) + (self.beta_o2 * self.weight_oh(h_0)))
+        o_g = torch.sigmoid(
+            self.alpha_o * self.weight_ox(inp) * self.weight_oh(h_0)
+            + (self.beta_o1 * self.weight_ox(inp))
+            + (self.beta_o2 * self.weight_oh(h_0))
+        )
         # block input
-        z_t = torch.tanh(self.alpha_z * self.weight_zx(inp) * self.weight_zh(h_0) +
-                    (self.beta_z1 * self.weight_zx(inp)) + (self.beta_z2 * self.weight_zh(h_0)))
+        z_t = torch.tanh(
+            self.alpha_z * self.weight_zx(inp) * self.weight_zh(h_0)
+            + (self.beta_z1 * self.weight_zx(inp))
+            + (self.beta_z2 * self.weight_zh(h_0))
+        )
         # current cell state
         cx = f_g * c_0 + i_g * z_t
         # hidden state
@@ -72,12 +83,12 @@ class MILSTM_Cell(nn.Module):
         return hx, cx
 
 
-# NOTE(yicheng): disabled internal state updating of RNN for TorchScript tracing, 
+# NOTE(yicheng): disabled internal state updating of RNN for TorchScript tracing,
 # should not affect the accuracy of benchmarking. same for other RNN models
 
 
 class MILSTM(nn.Module):
-    def __init__(self, input_size=28*28, hidden_size=1024, n_class=10):
+    def __init__(self, input_size=28 * 28, hidden_size=1024, n_class=10):
         super(MILSTM, self).__init__()
         self.n_class = n_class
         self.hidden_size = hidden_size
@@ -102,7 +113,7 @@ class MILSTM(nn.Module):
 
 
 class SCRNNCell(nn.Module):
-    def __init__(self, input_size = 28*28, num_units = 128, context_units = 64, alpha = 0.5):
+    def __init__(self, input_size=28 * 28, num_units=128, context_units=64, alpha=0.5):
         super(SCRNNCell, self).__init__()
         self._input_size = input_size
         self._num_units = num_units
@@ -111,7 +122,9 @@ class SCRNNCell(nn.Module):
         self.B = nn.Parameter(torch.empty(input_size, context_units))
         self.V = nn.Parameter(torch.empty(context_units, num_units))
         self.U = nn.Parameter(torch.empty(num_units, num_units))
-        self.fc = nn.Linear(context_units + input_size + num_units, num_units, bias=False)
+        self.fc = nn.Linear(
+            context_units + input_size + num_units, num_units, bias=False
+        )
         self.reset_parameters()
 
     def forward(self, inputs, state_h, state_c):
@@ -152,10 +165,11 @@ class SCRNN(nn.Module):
 
 
 class ConvLayer(nn.Module):
-    
     def __init__(self, in_channels=1, out_channels=256):
         super(ConvLayer, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=9, stride=1, padding=0)
+        self.conv = nn.Conv2d(
+            in_channels, out_channels, kernel_size=9, stride=1, padding=0
+        )
 
     def forward(self, x):
         conved = self.conv(x)
@@ -164,32 +178,43 @@ class ConvLayer(nn.Module):
 
 
 class PrimaryCaps(nn.Module):
-    
     def __init__(self, num_capsules=8, in_channels=256, out_channels=32):
         super(PrimaryCaps, self).__init__()
-        self.capsules = nn.ModuleList([
-            nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
-                      kernel_size=9, stride=2, padding=0)
-            for _ in range(num_capsules)])
-    
+        self.capsules = nn.ModuleList(
+            [
+                nn.Conv2d(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=9,
+                    stride=2,
+                    padding=0,
+                )
+                for _ in range(num_capsules)
+            ]
+        )
+
     def forward(self, x):
         # get batch size of inputs
         u = [capsule(x).view(batch_size, 32 * 6 * 6, 1) for capsule in self.capsules]
         u = torch.cat(u, dim=-1)
         u_squash = self.squash(u)
         return u_squash
-    
+
     def squash(self, input_tensor):
         squared_norm = (input_tensor ** 2).sum(dim=-1, keepdim=True)
-        scale = squared_norm / (1 + squared_norm) # normalization coeff
-        output_tensor = scale * input_tensor / torch.sqrt(squared_norm)    
+        scale = squared_norm / (1 + squared_norm)  # normalization coeff
+        output_tensor = scale * input_tensor / torch.sqrt(squared_norm)
         return output_tensor
-    
+
 
 def softmax(input_tensor, dim=2):
     transposed_input = input_tensor.transpose(dim, len(input_tensor.size()) - 1)
-    softmaxed_output = F.softmax(transposed_input.contiguous().view(-1, transposed_input.size(-1)), dim=-1)
-    return softmaxed_output.view(*transposed_input.size()).transpose(dim, len(input_tensor.size()) - 1)
+    softmaxed_output = F.softmax(
+        transposed_input.contiguous().view(-1, transposed_input.size(-1)), dim=-1
+    )
+    return softmaxed_output.view(*transposed_input.size()).transpose(
+        dim, len(input_tensor.size()) - 1
+    )
 
 
 def dynamic_routing(b_ij, u_hat, squash, routing_iterations=3):
@@ -204,16 +229,21 @@ def dynamic_routing(b_ij, u_hat, squash, routing_iterations=3):
 
 
 class DigitCaps(nn.Module):
-    
-    def __init__(self, num_capsules=10, previous_layer_nodes=32*6*6, 
-                 in_channels=8, out_channels=16):
+    def __init__(
+        self,
+        num_capsules=10,
+        previous_layer_nodes=32 * 6 * 6,
+        in_channels=8,
+        out_channels=16,
+    ):
         super(DigitCaps, self).__init__()
         self.num_capsules = num_capsules
         self.previous_layer_nodes = previous_layer_nodes
         self.in_channels = in_channels
 
-        self.W = nn.Parameter(torch.randn(num_capsules, previous_layer_nodes, 
-                                          in_channels, out_channels))
+        self.W = nn.Parameter(
+            torch.randn(num_capsules, previous_layer_nodes, in_channels, out_channels)
+        )
 
     def forward(self, u):
         u = u[None, :, :, None, :]
@@ -223,32 +253,31 @@ class DigitCaps(nn.Module):
         # This is not properly handled by relay and will cause errors during model conversion.
         # Thus we explicitly perform broadcast here.
         u = u.expand(W.shape[0], -1, -1, -1, -1)
-        
+
         u_hat = torch.matmul(u, W)
         b_ij = torch.zeros_like(u_hat)
 
         v_j = dynamic_routing(b_ij, u_hat, self.squash, routing_iterations=3)
 
         return v_j
-    
+
     def squash(self, input_tensor):
         squared_norm = (input_tensor ** 2).sum(dim=-1, keepdim=True)
         scale = squared_norm / (1 + squared_norm)
-        output_tensor = scale * input_tensor / torch.sqrt(squared_norm)    
+        output_tensor = scale * input_tensor / torch.sqrt(squared_norm)
         return output_tensor
 
 
 class CapsuleNetwork(nn.Module):
-    
     def __init__(self):
         super(CapsuleNetwork, self).__init__()
         self.conv_layer = ConvLayer()
         self.primary_capsules = PrimaryCaps()
         self.digit_capsules = DigitCaps()
-                
+
     def forward(self, images):
         primary_caps_output = self.primary_capsules(self.conv_layer(images))
-        caps_output = self.digit_capsules(primary_caps_output).squeeze().transpose(0,1)
+        caps_output = self.digit_capsules(primary_caps_output).squeeze().transpose(0, 1)
         # squeeze can will delete all 1 in dims, which is unexpected
         if batch_size == 1:
             caps_output = caps_output.reshape(batch_size, 10, 16)
@@ -266,7 +295,8 @@ class LLTM(torch.nn.Module):
         # 3 * state_size for input gate, output gate and candidate cell gate.
         # input_features + state_size because we will multiply with [input, h].
         self.weights = torch.nn.Parameter(
-            torch.Tensor(3 * state_size, input_features + state_size))
+            torch.Tensor(3 * state_size, input_features + state_size)
+        )
         self.bias = torch.nn.Parameter(torch.Tensor(1, 3 * state_size))
         self.reset_parameters()
 
@@ -298,12 +328,15 @@ class LLTM(torch.nn.Module):
 
 
 class RnnLLTM(nn.Module):
-    def __init__(self, in_dim=28*28, hidden_dim=128, n_class=10):
+    def __init__(self, in_dim=28 * 28, hidden_dim=128, n_class=10):
         super(RnnLLTM, self).__init__()
         self.hidden_dim = hidden_dim
         self.lstm = LLTM(in_dim, hidden_dim)
         self.classifier = nn.Linear(hidden_dim, n_class)
-        self.hx = (torch.zeros(batch_size, self.hidden_dim), torch.zeros(batch_size, self.hidden_dim))        
+        self.hx = (
+            torch.zeros(batch_size, self.hidden_dim),
+            torch.zeros(batch_size, self.hidden_dim),
+        )
 
     def forward(self, x):
         # if self.hx is None:
@@ -329,8 +362,7 @@ def shuffle_channels(x, groups):
     assert channels % groups == 0
     channels_per_group = channels // groups
     # split into groups
-    x = x.view(batch_size, groups, channels_per_group,
-               height, width)
+    x = x.view(batch_size, groups, channels_per_group, height, width)
     # transpose 1, 2 axis
     x = x.transpose(1, 2).contiguous()
     # reshape into orignal
@@ -340,23 +372,36 @@ def shuffle_channels(x, groups):
 
 class ShuffleNetUnitA(nn.Module):
     """ShuffleNet unit for stride=1"""
+
     def __init__(self, in_channels, out_channels, groups=3):
         super(ShuffleNetUnitA, self).__init__()
         assert in_channels == out_channels
         assert out_channels % 4 == 0
         bottleneck_channels = out_channels // 4
         self.groups = groups
-        self.group_conv1 = nn.Conv2d(in_channels, bottleneck_channels,
-                                        1, groups=groups, stride=1)
-        self.bn2 = nn.BatchNorm2d(bottleneck_channels, track_running_stats=bn_track_running_stats)
-        self.depthwise_conv3 = nn.Conv2d(bottleneck_channels,
-                                         bottleneck_channels,
-                                         3, padding=1, stride=1,
-                                         groups=bottleneck_channels)
-        self.bn4 = nn.BatchNorm2d(bottleneck_channels, track_running_stats=bn_track_running_stats)
-        self.group_conv5 = nn.Conv2d(bottleneck_channels, out_channels,
-                                     1, stride=1, groups=groups)
-        self.bn6 = nn.BatchNorm2d(out_channels, track_running_stats=bn_track_running_stats)
+        self.group_conv1 = nn.Conv2d(
+            in_channels, bottleneck_channels, 1, groups=groups, stride=1
+        )
+        self.bn2 = nn.BatchNorm2d(
+            bottleneck_channels, track_running_stats=bn_track_running_stats
+        )
+        self.depthwise_conv3 = nn.Conv2d(
+            bottleneck_channels,
+            bottleneck_channels,
+            3,
+            padding=1,
+            stride=1,
+            groups=bottleneck_channels,
+        )
+        self.bn4 = nn.BatchNorm2d(
+            bottleneck_channels, track_running_stats=bn_track_running_stats
+        )
+        self.group_conv5 = nn.Conv2d(
+            bottleneck_channels, out_channels, 1, stride=1, groups=groups
+        )
+        self.bn6 = nn.BatchNorm2d(
+            out_channels, track_running_stats=bn_track_running_stats
+        )
 
     def forward(self, x):
         out = self.group_conv1(x)
@@ -372,23 +417,36 @@ class ShuffleNetUnitA(nn.Module):
 
 class ShuffleNetUnitB(nn.Module):
     """ShuffleNet unit for stride=2"""
+
     def __init__(self, in_channels, out_channels, groups=3):
         super(ShuffleNetUnitB, self).__init__()
         out_channels -= in_channels
         assert out_channels % 4 == 0
         bottleneck_channels = out_channels // 4
         self.groups = groups
-        self.group_conv1 = nn.Conv2d(in_channels, bottleneck_channels,
-                                     1, groups=groups, stride=1)
-        self.bn2 = nn.BatchNorm2d(bottleneck_channels, track_running_stats=bn_track_running_stats)
-        self.depthwise_conv3 = nn.Conv2d(bottleneck_channels,
-                                         bottleneck_channels,
-                                         3, padding=1, stride=2,
-                                         groups=bottleneck_channels)
-        self.bn4 = nn.BatchNorm2d(bottleneck_channels, track_running_stats=bn_track_running_stats)
-        self.group_conv5 = nn.Conv2d(bottleneck_channels, out_channels,
-                                     1, stride=1, groups=groups)
-        self.bn6 = nn.BatchNorm2d(out_channels, track_running_stats=bn_track_running_stats)
+        self.group_conv1 = nn.Conv2d(
+            in_channels, bottleneck_channels, 1, groups=groups, stride=1
+        )
+        self.bn2 = nn.BatchNorm2d(
+            bottleneck_channels, track_running_stats=bn_track_running_stats
+        )
+        self.depthwise_conv3 = nn.Conv2d(
+            bottleneck_channels,
+            bottleneck_channels,
+            3,
+            padding=1,
+            stride=2,
+            groups=bottleneck_channels,
+        )
+        self.bn4 = nn.BatchNorm2d(
+            bottleneck_channels, track_running_stats=bn_track_running_stats
+        )
+        self.group_conv5 = nn.Conv2d(
+            bottleneck_channels, out_channels, 1, stride=1, groups=groups
+        )
+        self.bn6 = nn.BatchNorm2d(
+            out_channels, track_running_stats=bn_track_running_stats
+        )
 
     def forward(self, x):
         out = self.group_conv1(x)
@@ -405,18 +463,22 @@ class ShuffleNetUnitB(nn.Module):
 
 class ShuffleNet(nn.Module):
     """ShuffleNet for groups=3"""
+
     def __init__(self, groups=3, in_channels=3, num_classes=1000):
         super(ShuffleNet, self).__init__()
 
         self.conv1 = nn.Conv2d(in_channels, 24, 3, stride=2, padding=1)
-        stage2_seq = [ShuffleNetUnitB(24, 240, groups=3)] + \
-            [ShuffleNetUnitA(240, 240, groups=3) for i in range(3)]
+        stage2_seq = [ShuffleNetUnitB(24, 240, groups=3)] + [
+            ShuffleNetUnitA(240, 240, groups=3) for i in range(3)
+        ]
         self.stage2 = nn.Sequential(*stage2_seq)
-        stage3_seq = [ShuffleNetUnitB(240, 480, groups=3)] + \
-            [ShuffleNetUnitA(480, 480, groups=3) for i in range(7)]
+        stage3_seq = [ShuffleNetUnitB(240, 480, groups=3)] + [
+            ShuffleNetUnitA(480, 480, groups=3) for i in range(7)
+        ]
         self.stage3 = nn.Sequential(*stage3_seq)
-        stage4_seq = [ShuffleNetUnitB(480, 960, groups=3)] + \
-                     [ShuffleNetUnitA(960, 960, groups=3) for i in range(3)]
+        stage4_seq = [ShuffleNetUnitB(480, 960, groups=3)] + [
+            ShuffleNetUnitA(960, 960, groups=3) for i in range(3)
+        ]
         self.stage4 = nn.Sequential(*stage4_seq)
         self.fc = nn.Linear(960, num_classes)
 
@@ -437,16 +499,14 @@ class ShuffleNet(nn.Module):
 
 
 class subLSTM(torch.nn.Module):
-    def __init__(self, input_size=28*28, state_size=128):
+    def __init__(self, input_size=28 * 28, state_size=128):
         super(subLSTM, self).__init__()
         self.input_size = input_size
         self.state_size = state_size
-        self.weight_ih = torch.nn.Parameter(
-            torch.Tensor(4*state_size, input_size))
-        self.weight_hh = torch.nn.Parameter(
-            torch.Tensor(4*state_size, state_size))
-        self.bias_ih = torch.nn.Parameter(torch.Tensor(4*state_size))
-        self.bias_hh = torch.nn.Parameter(torch.Tensor(4*state_size))
+        self.weight_ih = torch.nn.Parameter(torch.Tensor(4 * state_size, input_size))
+        self.weight_hh = torch.nn.Parameter(torch.Tensor(4 * state_size, state_size))
+        self.bias_ih = torch.nn.Parameter(torch.Tensor(4 * state_size))
+        self.bias_hh = torch.nn.Parameter(torch.Tensor(4 * state_size))
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -456,7 +516,9 @@ class subLSTM(torch.nn.Module):
 
     def forward(self, input, state):
         old_h, old_c = state
-        gates = F.linear(input, self.weight_ih, self.bias_ih) + F.linear(old_h, self.weight_hh, self.bias_hh)
+        gates = F.linear(input, self.weight_ih, self.bias_ih) + F.linear(
+            old_h, self.weight_hh, self.bias_hh
+        )
         gates = torch.sigmoid(gates)
         in_gate, forget_gate, cell_gate, out_gate = gates.chunk(4, dim=1)
 
@@ -467,12 +529,15 @@ class subLSTM(torch.nn.Module):
 
 
 class RnnsubLSTM(nn.Module):
-    def __init__(self, in_dim=28*28, hidden_dim=128, n_class=10):
+    def __init__(self, in_dim=28 * 28, hidden_dim=128, n_class=10):
         super(RnnsubLSTM, self).__init__()
         self.hidden_dim = hidden_dim
         self.lstm = subLSTM(in_dim, hidden_dim)
         self.classifier = nn.Linear(hidden_dim, n_class)
-        self.hx = (torch.zeros(batch_size, self.hidden_dim), torch.zeros(batch_size, self.hidden_dim))        
+        self.hx = (
+            torch.zeros(batch_size, self.hidden_dim),
+            torch.zeros(batch_size, self.hidden_dim),
+        )
 
     def forward(self, x):
         # if self.hx is None:
@@ -489,12 +554,12 @@ class RnnsubLSTM(nn.Module):
 
 MODEL_FACTORY = {
     # model-name: (model-class, input-shapes),
-    "milstm": (MILSTM, [(batch_size, 28*28)]), 
-    "scrnn": (SCRNN, [(batch_size, 28*28)]), 
-    "capsule": (CapsuleNetwork, [(batch_size, 1, 28, 28)]), 
-    "lltm": (RnnLLTM, [(batch_size, 28*28)]), 
-    "shufflenet": (ShuffleNet, [(batch_size, 3, 224, 224)]), 
-    "sublstm": (RnnsubLSTM, [(batch_size, 28*28)]), 
+    "milstm": (MILSTM, [(batch_size, 28 * 28)]),
+    "scrnn": (SCRNN, [(batch_size, 28 * 28)]),
+    "capsule": (CapsuleNetwork, [(batch_size, 1, 28, 28)]),
+    "lltm": (RnnLLTM, [(batch_size, 28 * 28)]),
+    "shufflenet": (ShuffleNet, [(batch_size, 3, 224, 224)]),
+    "sublstm": (RnnsubLSTM, [(batch_size, 28 * 28)]),
 }
 
 
@@ -506,7 +571,7 @@ if __name__ == "__main__":
 
     model_name = args.model
     assert model_name in MODEL_FACTORY, f"Unsupported model: {model_name}"
-    
+
     ModelClass, input_shapes = MODEL_FACTORY[model_name]
     model = ModelClass().eval()  # initialize model on CPU for tracing only
     bench_network(model, input_shapes, model_name, n_trial=args.trial)
