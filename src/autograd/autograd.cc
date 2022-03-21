@@ -181,8 +181,10 @@ Graph grad_graph(const Graph &graph, bool reserve_forward) {
           // List[grad_to_weights]] kv.second is the input ordinal number for
           // kv.first
           LayerTensor lt = tmp_grad->output_layer_tensors_[kv.second];
-          te::Tensor t = te::placeholder(lt->tensor->shape, lt->tensor->dtype, lt->tensor->op->name + "_out");
-          LayerTensor new_lt = LayerTensor(lt->name, lt->layer, t, lt->value_idx);
+          te::Tensor t = te::placeholder(lt->tensor->shape, lt->tensor->dtype,
+                                         lt->tensor->op->name + "_out");
+          LayerTensor new_lt =
+              LayerTensor(lt->name, lt->layer, t, lt->value_idx);
           grad_to_this_output.push_back(new_lt);
           grad_tensors_to_this_output.push_back(new_lt->tensor);
           grad_to_this_output_to_combine.push_back({new_lt->tensor});
@@ -213,8 +215,9 @@ Graph grad_graph(const Graph &graph, bool reserve_forward) {
           // Array<te::Tensor> new_te_inputs;
           // std::vector<LayerTensor> new_tensors_inputs;
           // for (auto inp : grads_to_outputs[i]) {
-          //   te::Tensor t = te::placeholder(inp->tensor->shape, inp->tensor->dtype, inp->tensor->op->name + "_out");
-          //   LayerTensor lt = LayerTensor(inp->name, inp->layer, t, inp->value_idx);
+          //   te::Tensor t = te::placeholder(inp->tensor->shape,
+          //   inp->tensor->dtype, inp->tensor->op->name + "_out"); LayerTensor
+          //   lt = LayerTensor(inp->name, inp->layer, t, inp->value_idx);
           //   new_te_inputs.push_back(t);
           //   new_tensors_inputs.push_back(lt);
           // }

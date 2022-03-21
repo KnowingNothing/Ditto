@@ -1,19 +1,9 @@
 from .gpu_base import TensorCoreGPU
-from .cuda_param import (
-    V100_16GB_param, V100_32GB_param
-)
+from .cuda_param import V100_16GB_param, V100_32GB_param
 
-V100_16GB = TensorCoreGPU(
-    "V100-16GB",
-    "sm70",
-    V100_16GB_param
-)
+V100_16GB = TensorCoreGPU("V100-16GB", "sm70", V100_16GB_param)
 
-V100_32GB = TensorCoreGPU(
-    "V100-32GB",
-    "sm70",
-    V100_32GB_param
-)
+V100_32GB = TensorCoreGPU("V100-32GB", "sm70", V100_32GB_param)
 
 SUPPORTED_GPUS = {
     "V100-16GB": V100_16GB,

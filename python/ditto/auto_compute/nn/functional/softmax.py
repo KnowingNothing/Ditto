@@ -19,16 +19,9 @@ def softmax(x, dim=-1):
             else:
                 real_args.append(args[j])
                 j += 1
-        return tvm.te.sum(
-            tvm.te.exp(x(*real_args)),
-            axis=[r]
-        )
+        return tvm.te.sum(tvm.te.exp(x(*real_args)), axis=[r])
 
-    sum_val = tvm.te.compute(
-        sum_shape,
-        _inner_sum,
-        "sum_val"
-    )
+    sum_val = tvm.te.compute(sum_shape, _inner_sum, "sum_val")
 
     def _inner(*args):
         real_args = []
@@ -37,10 +30,6 @@ def softmax(x, dim=-1):
                 real_args.append(xx)
         return tvm.te.exp(x(*args)) / sum_val(*real_args)
 
-    outputs = tvm.te.compute(
-        x.shape,
-        _inner,
-        "softmax"
-    )
+    outputs = tvm.te.compute(x.shape, _inner, "softmax")
 
     return outputs

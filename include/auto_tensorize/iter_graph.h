@@ -227,7 +227,7 @@ public:
   int totalFp;
   double parallelism_;
   std::unordered_map<int, IntImm> _parallelSchedule;
-  Map<tir::Var, IntImm>  _boundsAfterParallel;
+  Map<tir::Var, IntImm> _boundsAfterParallel;
 
   void VisitAttrs(AttrVisitor *v) {
     v->Visit("init_firstOpIters", &_firstOpIters);
@@ -323,8 +323,8 @@ public:
   FusionResult getAnalyticalResult(hardware::HardwareParam hw_param,
                                    int bytePerEle, bool writeThrough = true);
   /*! \brief get the data movement*/
-  std::pair<bool, double> getDM(int bytePerEle,
-                                bool writeThrough, double * occupancy = NULL);
+  std::pair<bool, double> getDM(int bytePerEle, bool writeThrough,
+                                double *occupancy = NULL);
   /*! \brief looplike lightweight visualize */
   void visualize();
   /*! \brief write result */
@@ -334,7 +334,7 @@ public:
   /*! \brief get the problem size after parallel */
   Map<tir::Var, IntImm> getPbsz();
   /*! \brief set the parallelism */
-  void setParallel(double parallel){parallelism_ = parallel;};
+  void setParallel(double parallel) { parallelism_ = parallel; };
   static constexpr const char *_type_key = "ditto.auto_tensorize.IterGraph";
   TVM_DECLARE_FINAL_OBJECT_INFO(IterGraphNode, Object);
 };

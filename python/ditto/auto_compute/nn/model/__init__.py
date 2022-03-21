@@ -22,7 +22,7 @@ all_models = {
     "res152": resnet152,
     "sc": SCRNN,
     "shuffle": ShuffleNet,
-    "sub": subLSTM
+    "sub": subLSTM,
 }
 
 model_inputs_shape = {
@@ -38,7 +38,7 @@ model_inputs_shape = {
     "res152": [[1, 3, 224, 224]],
     "sc": [[1, 28 * 28], [1, 128], [1, 64]],
     "shuffle": [[1, 3, 224, 224]],
-    "sub": [[1, 28 * 28], [1, 128], [1, 128]]
+    "sub": [[1, 28 * 28], [1, 128], [1, 128]],
 }
 
 

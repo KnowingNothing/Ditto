@@ -6,7 +6,7 @@ from typing import Sequence
 from .item import Item
 
 
-@tvm.register_object('ditto.auto_tensorize.SearchDriver')
+@tvm.register_object("ditto.auto_tensorize.SearchDriver")
 class SearchDriver(Object):
     def search(self):
         """
@@ -41,5 +41,7 @@ class SearchDriver(Object):
         return _ffi_api.getFusionSpace(self)
 
 
-def build_search_driver(ig: IterGraph, evals: Sequence[str], searcherType: str, hw_param, dtype):
+def build_search_driver(
+    ig: IterGraph, evals: Sequence[str], searcherType: str, hw_param, dtype
+):
     return _ffi_api.buildSearchDriver(ig, evals, searcherType, hw_param, dtype)

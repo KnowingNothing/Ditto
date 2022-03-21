@@ -5,7 +5,6 @@ namespace ditto {
 
 namespace auto_compute {
 
-
 Array<Pattern> FindGroupingPattern(const te::Operation &op) {
   std::vector<Pattern> ret;
   const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
@@ -44,8 +43,10 @@ Array<Pattern> FindGroupingPattern(const te::Operation &op) {
               cond &= !sv_exist_d.check_exist(cop->body[0]);
 
               if (cond) {
-                Array<IntImm> tensors = {make_int(count_data), make_int(count_weight)};
-                Array<IntImm> iter_vars = {make_int(count_siv), make_int(count_riv)};
+                Array<IntImm> tensors = {make_int(count_data),
+                                         make_int(count_weight)};
+                Array<IntImm> iter_vars = {make_int(count_siv),
+                                           make_int(count_riv)};
                 Array<IntImm> access_dim = {make_int(rv_access_dim)};
                 Array<Array<IntImm>> iter_vars_array = {iter_vars, access_dim};
                 Pattern p(tensors, iter_vars_array);

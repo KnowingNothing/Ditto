@@ -12,11 +12,11 @@ class SearchSpace(Object):
 @tvm.register_object("ditto.auto_tensorize.FusionSpace")
 class FusionSpace(SearchSpace):
     def set_first_op_tiling_mandatory(self, factors: Sequence[int]):
-        '''
-        factors: 
-            user given tiling factor 
+        """
+        factors:
+            user given tiling factor
             -1 indicates the axis is not set, other means the mandatary value
-        '''
+        """
         _ffi_api.setFirstOpTilingMandatory(self, factors)
 
     def set_second_op_tiling_mandatory(self, factors: Sequence[int]):

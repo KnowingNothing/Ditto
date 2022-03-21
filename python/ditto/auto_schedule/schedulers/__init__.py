@@ -6,5 +6,5 @@ from .dispatch import (
     ScheduleOption,
     retrieve_schedule,
     retrieve_schedule_model,
-    retrieve_schedule_tasks
+    retrieve_schedule_tasks,
 )

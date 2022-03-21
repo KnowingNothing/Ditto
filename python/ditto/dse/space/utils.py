@@ -73,6 +73,5 @@ def remap_factors(factor_lst):
     sorted_factors = sorted(number_count[0])
     factor_map = {x: i for i, x in enumerate(sorted_factors)}
     reverse_map = {i: x for i, x in enumerate(sorted_factors)}
-    ret = list(map(lambda factors: [factor_map[x]
-               for x in factors], factor_lst))
+    ret = list(map(lambda factors: [factor_map[x] for x in factors], factor_lst))
     return ret, reverse_map, dim, num_factors - 1

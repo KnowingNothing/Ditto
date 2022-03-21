@@ -17,6 +17,7 @@ def _WORKER(x):
 
 class BaseItem(object):
     """The base item for search space."""
+
     pass
 
 

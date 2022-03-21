@@ -14,9 +14,8 @@ namespace runtime {
 PackedFunc GraphEngine::GetFunction(const std::string &name,
                                     const ObjectPtr<Object> &sptr_to_self) {
   if (name == "init") {
-    return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue *rv) {
-      this->Init();
-    });
+    return PackedFunc(
+        [sptr_to_self, this](TVMArgs args, TVMRetValue *rv) { this->Init(); });
   } else if (name == "set_inputs") {
     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue *rv) {
       this->SetInputs(args[0]);

@@ -56,18 +56,16 @@ public:
 
 class HardwareParam : public ObjectRef {
 public:
-  TVM_DLL HardwareParam(double register_per_processor_kb,
-                        double shared_memory_per_group_kb,
-                        double shared_memory_bandwidth_gbs,
-                        double global_memory_gb,
-                        double global_memory_bandwidth_gbs,
-                        int num_processors_per_group, int num_groups,
-                        double fp32_peak_perf_gflops, double launch_latency_s,
-                        std::vector<double> tensorWeight = {1.0, 2.0},
-                        std::vector<double> cacheSizes = std::vector<double>(),
-                        std::vector<double> bandwidth = std::vector<double>(),
-                        std::vector<double> coresPerCacheLevel = std::vector<double>(), 
-                        std::string platform = "NVGPU");
+  TVM_DLL HardwareParam(
+      double register_per_processor_kb, double shared_memory_per_group_kb,
+      double shared_memory_bandwidth_gbs, double global_memory_gb,
+      double global_memory_bandwidth_gbs, int num_processors_per_group,
+      int num_groups, double fp32_peak_perf_gflops, double launch_latency_s,
+      std::vector<double> tensorWeight = {1.0, 2.0},
+      std::vector<double> cacheSizes = std::vector<double>(),
+      std::vector<double> bandwidth = std::vector<double>(),
+      std::vector<double> coresPerCacheLevel = std::vector<double>(),
+      std::string platform = "NVGPU");
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(HardwareParam, ObjectRef,
                                         HardwareParamNode);

@@ -5,11 +5,11 @@ def design(layer):
     """
     Design a new layer compute according to
     the original layer compute
-    
+
     Args:
     ---
     layer_state: ditto.auto_compute.graph.LayerState
-    
+
     Returns:
     ---
     action
@@ -27,6 +27,5 @@ def design(layer):
 
 
 def auto_compute(layer_state, action):
-    """
-    """
+    """ """
     return layer_state

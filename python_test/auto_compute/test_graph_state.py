@@ -12,18 +12,19 @@ TEST_CASES = OrderedDict()
 def register_test(func):
     name = func.__name__
     prefix = "test"
-    assert name[:len(prefix)] == prefix
+    assert name[: len(prefix)] == prefix
     try:
-        number = int(name[len(prefix):])
+        number = int(name[len(prefix) :])
 
         def _inner(*args, **kwargs):
             print(func.__doc__)
             func(*args, **kwargs)
+
         assert number not in TEST_CASES, "Repeated test case number %d" % number
         TEST_CASES[number] = _inner
     except ValueError as e:
         print(e)
-        print("Can't convert to number", name[len(prefix):])
+        print("Can't convert to number", name[len(prefix) :])
 
 
 def _2mm(M, L, K, N):
@@ -34,25 +35,14 @@ def _2mm(M, L, K, N):
 
     rk = tvm.te.reduce_axis([0, K], name="rk")
     tmp = tvm.te.compute(
-        [M, L],
-        lambda m, l:
-            tvm.te.sum(A[m, rk] * B[rk, l], axis=rk),
-        name="tmp"
+        [M, L], lambda m, l: tvm.te.sum(A[m, rk] * B[rk, l], axis=rk), name="tmp"
     )
 
     rl = tvm.te.reduce_axis([0, L], name="rl")
     E = tvm.te.compute(
-        [M, N],
-        lambda m, n:
-            tvm.te.sum(tmp[m, rl] * C[rl, n], axis=rl),
-        name="E"
+        [M, N], lambda m, n: tvm.te.sum(tmp[m, rl] * C[rl, n], axis=rl), name="E"
     )
-    F = tvm.te.compute(
-        [M, N],
-        lambda m, n:
-            0.5 * E[m, n] + 0.5 * D[m, n],
-        name="F"
-    )
+    F = tvm.te.compute([M, N], lambda m, n: 0.5 * E[m, n] + 0.5 * D[m, n], name="F")
     return [F], [A, B, C, D]
 
 
@@ -138,6 +128,7 @@ def test4():
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--case", help="test case", type=int, default=1)
     parser.add_argument("--all", help="test all", action="store_true")
@@ -150,7 +141,6 @@ if __name__ == "__main__":
             v()
             print("Pass!")
     else:
-        assert args.case in TEST_CASES, "Can't find case %s." % (
-            str(args.case))
+        assert args.case in TEST_CASES, "Can't find case %s." % (str(args.case))
         case = TEST_CASES[args.case]
         case()

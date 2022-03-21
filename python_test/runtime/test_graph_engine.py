@@ -19,18 +19,19 @@ TEST_CASES = OrderedDict()
 def register_test(func):
     name = func.__name__
     prefix = "test"
-    assert name[:len(prefix)] == prefix
+    assert name[: len(prefix)] == prefix
     try:
-        number = int(name[len(prefix):])
+        number = int(name[len(prefix) :])
 
         def _inner(*args, **kwargs):
             print(func.__doc__)
             func(*args, **kwargs)
+
         assert number not in TEST_CASES, "Repeated test case number %d" % number
         TEST_CASES[number] = _inner
     except ValueError as e:
         print(e)
-        print("Can't convert to number", name[len(prefix):])
+        print("Can't convert to number", name[len(prefix) :])
 
 
 @register_test
@@ -45,9 +46,13 @@ def test1():
     runner = "local"
 
     schedule_option = auto_schedule.ScheduleOption(
-        target, target_host=target_host,
-        trials=trials, task_name=task_name,
-        log_file=log_file, builder=builder, runner=runner
+        target,
+        target_host=target_host,
+        trials=trials,
+        task_name=task_name,
+        log_file=log_file,
+        builder=builder,
+        runner=runner,
     )
     schedules = auto_schedule.retrieve_schedule_model([A], lenet5, schedule_option)
     built_mods = {}
@@ -55,14 +60,16 @@ def test1():
     for (key, (sch, args)) in schedules.items():
         mod = tvm.build(sch, args, target, target_host)
         built_mods[key] = mod
-        
+
         arg_vs = []
         for arg in args:
-            np_v = np.random.uniform(-1, 1, [int(x) for x in arg.shape]).astype("float32")
+            np_v = np.random.uniform(-1, 1, [int(x) for x in arg.shape]).astype(
+                "float32"
+            )
             tvm_v = tvm.nd.array(np_v, dev)
             arg_vs.append(tvm_v)
         mod(*arg_vs)
-    
+
     model = lenet5()
     outputs = model(A)
 
@@ -87,6 +94,7 @@ def test1():
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--case", help="test case", type=int, default=1)
     parser.add_argument("--all", help="test all", action="store_true")
@@ -99,7 +107,6 @@ if __name__ == "__main__":
             v()
             print("Pass!")
     else:
-        assert args.case in TEST_CASES, "Can't find case %s." % (
-            str(args.case))
+        assert args.case in TEST_CASES, "Can't find case %s." % (str(args.case))
         case = TEST_CASES[args.case]
         case()

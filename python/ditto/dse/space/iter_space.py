@@ -4,8 +4,7 @@ from .utils import any_factor_split
 
 
 class SplitItem(BaseItem):
-    """SplitItem for tiling one iterator
-    """
+    """SplitItem for tiling one iterator"""
 
     def __init__(self, factors):
         """
@@ -30,8 +29,7 @@ class SplitItem(BaseItem):
 
 
 class SplitSpace(BaseSpace):
-    """SplitSpace for tiling one iterator.
-    """
+    """SplitSpace for tiling one iterator."""
 
     def __init__(self, extent=None, parts=None, mandatory_choices=None):
         """
@@ -44,8 +42,7 @@ class SplitSpace(BaseSpace):
         if mandatory_choices is not None:
             choices = []
             for it in mandatory_choices:
-                assert len(
-                    it) == parts, f"Expect {parts} parts, but get {len(it)}."
+                assert len(it) == parts, f"Expect {parts} parts, but get {len(it)}."
                 if isinstance(it, SplitItem):
                     choices.append(it)
                 else:

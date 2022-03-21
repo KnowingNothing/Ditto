@@ -65,8 +65,7 @@ class ApplyHistoryBest(auto_scheduler.DispatchContext):
             if res.error_no != 0:
                 continue
 
-            costs = [x.value for x in res.costs if isinstance(
-                x, tvm.tir.FloatImm)]
+            costs = [x.value for x in res.costs if isinstance(x, tvm.tir.FloatImm)]
             cost = np.mean(costs)
             key = json.loads(inp.task.workload_key)[0]
             if key in self.records:
@@ -100,9 +99,7 @@ def auto_schedule(compute, schedule_option):
     auto_scheduler.register_workload(schedule_option.task_name, f=compute)
 
     target = tvm.target.Target(schedule_option.target)
-    task = auto_scheduler.SearchTask(
-        schedule_option.task_name, args=(), target=target
-    )
+    task = auto_scheduler.SearchTask(schedule_option.task_name, args=(), target=target)
 
     log_file = schedule_option.log_file
     tune_option = auto_scheduler.TuningOptions(
@@ -132,9 +129,7 @@ def retrieve_schedule(compute, schedule_option):
     auto_scheduler.register_workload(schedule_option.task_name, f=compute)
 
     target = tvm.target.Target(schedule_option.target)
-    task = auto_scheduler.SearchTask(
-        schedule_option.task_name, args=(), target=target
-    )
+    task = auto_scheduler.SearchTask(schedule_option.task_name, args=(), target=target)
 
     log_file = schedule_option.log_file
 
@@ -198,15 +193,14 @@ def auto_schedule_tasks(tasks, schedule_option):
             layer = tasks[wkl_key][0]
             all_tensors = layer.schedule_tensors
             return all_tensors
+
         return _inner
 
     for i, (wkl_key, layers) in enumerate(tasks.items()):
         auto_scheduler.register_workload(wkl_key, f=fget_tasks(wkl_key))
 
         target = tvm.target.Target(target)
-        tune_task = auto_scheduler.SearchTask(
-            wkl_key, target=target
-        )
+        tune_task = auto_scheduler.SearchTask(wkl_key, target=target)
         tune_tasks.append(tune_task)
         task_weights.append(len(layers))
 
@@ -226,8 +220,7 @@ def auto_schedule_build_tasks(tasks, schedule_option):
     target = schedule_option.target
     target_host = schedule_option.target_host
     log_file = schedule_option.log_file
-    target, target_host = Target.check_and_update_host_consist(
-        target, target_host)
+    target, target_host = Target.check_and_update_host_consist(target, target_host)
 
     schedules = {}
     with ApplyHistoryBest(log_file):
@@ -237,12 +230,16 @@ def auto_schedule_build_tasks(tasks, schedule_option):
             layer = layers[0]
             outputs = layer.ops
             output_tensors = [op.output(0) for op in outputs]
-            relay_io_tensors, has_layout_free, has_complex_op = auto_scheduler.relay_integration.traverse_to_get_io_tensors(
-                output_tensors)
+            (
+                relay_io_tensors,
+                has_layout_free,
+                has_complex_op,
+            ) = auto_scheduler.relay_integration.traverse_to_get_io_tensors(
+                output_tensors
+            )
             io_tensors = layer.schedule_tensors
             dag = auto_scheduler.ComputeDAG(io_tensors)
-            state = dispatcher.query(
-                target, wkl_key, has_complex_op, dag, None)
+            state = dispatcher.query(target, wkl_key, has_complex_op, dag, None)
 
             if state is not None:
                 schedule, tensors = dag.apply_steps_from_state(state)

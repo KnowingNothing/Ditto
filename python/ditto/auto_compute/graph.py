@@ -55,8 +55,7 @@ class Layer(Object):
     def __call__(self, *inputs):
         ninp = self.num_inputs
         if len(inputs) != ninp:
-            raise ValueError(
-                f"Need to provide {ninp} inputs, but get {len(inputs)}.")
+            raise ValueError(f"Need to provide {ninp} inputs, but get {len(inputs)}.")
         for inp in inputs:
             assert isinstance(inp, LayerTensor)
         ret = _ffi_api.ProduceOutputs(self, inputs)
@@ -94,12 +93,12 @@ class Layer(Object):
         outputs = self.ops
         output_tensors = [op.output(0) for op in outputs]
         all_tensors = [
-                *self.inputs,
-                *self.weights,
-                *self.const_scalars,
-                *self.const_tensors,
-                *output_tensors
-            ]
+            *self.inputs,
+            *self.weights,
+            *self.const_scalars,
+            *self.const_tensors,
+            *output_tensors,
+        ]
         return all_tensors
 
     def __str__(self) -> str:
@@ -134,8 +133,15 @@ class Layer(Object):
         return str(self)
 
 
-def layer(ops, inputs=None, weights=None, const_scalars=None,
-          const_tensors=None, requires_grad=False, name="layer"):
+def layer(
+    ops,
+    inputs=None,
+    weights=None,
+    const_scalars=None,
+    const_tensors=None,
+    requires_grad=False,
+    name="layer",
+):
     """Make a network layer through IR.
 
     Parameters
@@ -191,10 +197,10 @@ def layer(ops, inputs=None, weights=None, const_scalars=None,
         const_scalars = []
     if const_tensors is None:
         const_tensors = []
-    const_tensors = [x.tensor if isinstance(
-        x, LayerTensor) else x for x in const_tensors]
-    return _ffi_api.MakeLayer(name, ops, inputs, weights,
-                              const_scalars, const_tensors)
+    const_tensors = [
+        x.tensor if isinstance(x, LayerTensor) else x for x in const_tensors
+    ]
+    return _ffi_api.MakeLayer(name, ops, inputs, weights, const_scalars, const_tensors)
 
 
 # @tvm._ffi.register_object("ditto.auto_compute.Block")

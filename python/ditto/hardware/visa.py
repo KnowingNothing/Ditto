@@ -148,7 +148,9 @@ def scalar_binary_mod(latency, lhs_type, rhs_type, res_type, name="scalar_binary
     return _ffi_api.ScalarBinaryMod(name, latency, lhs_type, rhs_type, res_type)
 
 
-def scalar_multiply_add(latency, lhs_type, rhs_type, res_type, name="scalar_multiply_add"):
+def scalar_multiply_add(
+    latency, lhs_type, rhs_type, res_type, name="scalar_multiply_add"
+):
     """Get a scalar ISA
 
     Args:

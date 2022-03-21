@@ -26,7 +26,7 @@ class GroupingActor(Actor):
         # pattern contains IntImm, not int
         data_id, weight_id = pattern.tensor_ids
         siv_id, riv_id = pattern.iter_ids_array[0]
-        rv_access_dim, = pattern.iter_ids_array[1]
+        (rv_access_dim,) = pattern.iter_ids_array[1]
         all_ops = layer_state.get_current_ops()
         cur_op = all_ops[op_id]
         inputs = layer_state[cur_op].op.input_tensors
@@ -51,17 +51,33 @@ class GroupingActor(Actor):
         groups = int(parameter.groups)
         s_extent = int(siv.dom.extent)
         r_extent = int(riv.dom.extent)
-        s_factor = (s_extent+groups-1)//groups
-        r_factor = (r_extent+groups-1)//groups
+        s_factor = (s_extent + groups - 1) // groups
+        r_factor = (r_extent + groups - 1) // groups
 
-        r1 = TransformRecord(op_id, [siv_id.value], "fold", json.dumps(
-            {"explicit": explicit, "factor": s_factor}))
-        r2 = TransformRecord(op_id, [riv_id.value + num_axis], "fold",
-                             json.dumps({"explicit": explicit, "factor": r_factor}))
-        r3 = TransformRecord(op_id, [riv_id.value + num_axis + 1], "eliminate",
-                             json.dumps({"explicit": explicit, "factor": s_factor}))
-        r4 = TransformRecord(weight_op_id, [rv_access_dim.value], "eliminate", json.dumps(
-            {"explicit": explicit, "factor": r_factor}))
+        r1 = TransformRecord(
+            op_id,
+            [siv_id.value],
+            "fold",
+            json.dumps({"explicit": explicit, "factor": s_factor}),
+        )
+        r2 = TransformRecord(
+            op_id,
+            [riv_id.value + num_axis],
+            "fold",
+            json.dumps({"explicit": explicit, "factor": r_factor}),
+        )
+        r3 = TransformRecord(
+            op_id,
+            [riv_id.value + num_axis + 1],
+            "eliminate",
+            json.dumps({"explicit": explicit, "factor": s_factor}),
+        )
+        r4 = TransformRecord(
+            weight_op_id,
+            [rv_access_dim.value],
+            "eliminate",
+            json.dumps({"explicit": explicit, "factor": r_factor}),
+        )
 
         # new_fsm_state = fsm_state.proceed_transform([r1, r2, r3, r4])
         # for r in [r1, r2, r3, r4]:
@@ -72,8 +88,7 @@ class GroupingActor(Actor):
 
 class GroupingParameterSpace(ParameterSpace):
     def __init__(self, layer_state, op_id, pattern):
-        super(GroupingParameterSpace, self).__init__(
-            layer_state, op_id, pattern)
+        super(GroupingParameterSpace, self).__init__(layer_state, op_id, pattern)
         siv_id, riv_id = pattern.iter_ids_array[0]
         all_ops = layer_state.get_current_ops()
         cur_op = all_ops[op_id]
@@ -108,12 +123,19 @@ class GroupingParameter(Parameter):
 
 class GroupingAction(Action):
     def __init__(self, layer_state, op_id, pattern):
-        super(GroupingAction, self).__init__("grouping", layer_state, op_id,
-                                             pattern, GroupingParameterSpace(layer_state, op_id, pattern))
+        super(GroupingAction, self).__init__(
+            "grouping",
+            layer_state,
+            op_id,
+            pattern,
+            GroupingParameterSpace(layer_state, op_id, pattern),
+        )
 
     @staticmethod
     def applicable(layer_state, op_id):
         return GroupingGuarder.applicable(layer_state, op_id)
 
     def apply(self, parameter):
-        return GroupingActor.apply(self.layer_state, self.op_id, self.pattern, parameter)
+        return GroupingActor.apply(
+            self.layer_state, self.op_id, self.pattern, parameter
+        )

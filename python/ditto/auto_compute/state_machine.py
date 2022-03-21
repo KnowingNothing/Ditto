@@ -36,18 +36,9 @@ class State(object):
 class StateMachnie(object):
     def __init__(self, init_states):
         self.init_states = init_states
-        self.action_classes = [
-            GroupingAction,
-            NopAction
-        ]
-        self.allow_combines = {
-            GroupingAction: [],
-            NopAction: []
-        }
-        self.op_id_shift = {
-            GroupingAction: 1,
-            NopAction: 1
-        }
+        self.action_classes = [GroupingAction, NopAction]
+        self.allow_combines = {GroupingAction: [], NopAction: []}
+        self.op_id_shift = {GroupingAction: 1, NopAction: 1}
 
     def run_op(self, state, op_id):
         new_states = []
@@ -55,7 +46,7 @@ class StateMachnie(object):
         def _traverse(action_class, cur_state):
             layer_state = cur_state.replay()
             applicable, patterns = action_class.applicable(layer_state, op_id)
-            if (applicable):
+            if applicable:
                 for pattern in patterns:
                     action = action_class(layer_state, op_id, pattern)
                     # random parameter just to proceed the generation

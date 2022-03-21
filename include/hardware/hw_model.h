@@ -4,9 +4,6 @@
 
 namespace ditto {
 
-namespace hardware {
-
-
-} // namespace hardware
+namespace hardware {} // namespace hardware
 
 } // namespace ditto

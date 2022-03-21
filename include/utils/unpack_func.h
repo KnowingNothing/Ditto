@@ -175,7 +175,7 @@ public:
       call_func_21(f, v);
       break;
     default:
-      std::cout << "need " << num_args << "arguments.\n"; 
+      std::cout << "need " << num_args << "arguments.\n";
       call_func_any(f, v);
     }
   }

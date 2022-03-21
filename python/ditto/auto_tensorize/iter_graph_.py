@@ -53,5 +53,7 @@ class IterGraph(Object):
         return _ffi_api.display(self)
 
 
-def build_iter_graph(sfstate: SerialFusionState, tensorizeItervars: List[tvm.tir.IterVar], path: str):
+def build_iter_graph(
+    sfstate: SerialFusionState, tensorizeItervars: List[tvm.tir.IterVar], path: str
+):
     return _ffi_api.build_iter_graph(sfstate, tensorizeItervars, path)

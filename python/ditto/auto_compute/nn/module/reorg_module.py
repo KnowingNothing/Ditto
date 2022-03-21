@@ -13,12 +13,15 @@ class ShuffleChannel(Module):
         inputs = self.preprocess(inputs)
         outputs = shuffle_channels(inputs.tensor, self.groups)
 
-        shuffle_layer = layer(outputs.op, inputs=[inputs.tensor],
-                              weights=None,
-                              const_scalars=None,
-                              const_tensors=None,
-                              requires_grad=self.training,
-                              name="shuffle_channel_layer")
+        shuffle_layer = layer(
+            outputs.op,
+            inputs=[inputs.tensor],
+            weights=None,
+            const_scalars=None,
+            const_tensors=None,
+            requires_grad=self.training,
+            name="shuffle_channel_layer",
+        )
         return shuffle_layer(inputs)
 
 
@@ -30,12 +33,15 @@ class BatchFlatten(Module):
         inputs = self.preprocess(inputs)
         outputs = batch_flatten(inputs.tensor)
 
-        flatten_layer = layer(outputs.op, inputs=[inputs.tensor],
-                              weights=None,
-                              const_scalars=None,
-                              const_tensors=None,
-                              requires_grad=self.training,
-                              name="batch_flatten_layer")
+        flatten_layer = layer(
+            outputs.op,
+            inputs=[inputs.tensor],
+            weights=None,
+            const_scalars=None,
+            const_tensors=None,
+            requires_grad=self.training,
+            name="batch_flatten_layer",
+        )
         return flatten_layer(inputs)
 
 
@@ -47,10 +53,13 @@ class CatChannel(Module):
         A, B = self.preprocess(A, B)
         outputs = cat_channel(A.tensor, B.tensor)
 
-        cat_layer = layer(outputs.op, inputs=[A.tensor, B.tensor],
-                          weights=None,
-                          const_scalars=None,
-                          const_tensors=None,
-                          requires_grad=self.training,
-                          name="cat_channel_layer")
+        cat_layer = layer(
+            outputs.op,
+            inputs=[A.tensor, B.tensor],
+            weights=None,
+            const_scalars=None,
+            const_tensors=None,
+            requires_grad=self.training,
+            name="cat_channel_layer",
+        )
         return cat_layer(A, B)

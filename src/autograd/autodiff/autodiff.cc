@@ -3,13 +3,13 @@
 #include <tvm/topi/elemwise.h>
 #include <tvm/topi/transform.h>
 
-#include <vector>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <autograd/autodiff/autodiff.h>
-#include <utils/logging.h>
 #include <utils/fingerprint.h>
+#include <utils/logging.h>
 
 namespace ditto {
 using namespace utils;
@@ -27,8 +27,7 @@ Tensor ones_like(const Tensor &tensor) {
   for (auto s : shape) {
     axis.push_back(IterVar(Range(0, s), Var(""), IterVarType::kDataPar));
   }
-  std::string tag =
-      GetFingerPrint(axis, {make_const(tensor->dtype, 1)});
+  std::string tag = GetFingerPrint(axis, {make_const(tensor->dtype, 1)});
   return te::compute(shape, func, "ones_" + tensor->op->name, tag, {});
 }
 
@@ -129,7 +128,8 @@ Array<Tensor> Gradient(const Tensor &output, const Array<Tensor> &weights,
       // Here the gradient hasn't been computed yet
       Tensor tensor_grad;
       // if (!tensor->requires_grad) {
-      //   LOG(WARNING) << "grad to tensor that doesn't requires grad: " << tensor
+      //   LOG(WARNING) << "grad to tensor that doesn't requires grad: " <<
+      //   tensor
       //                << ".\n";
       //   tensor_grad = zeros_like(tensor);
       //   grad_map[tensor] = tensor_grad;
@@ -171,14 +171,15 @@ TVM_REGISTER_GLOBAL("ditto.autograd.GetFingerPrint")
       return GetFingerPrint(axis, body);
     });
 
-TVM_REGISTER_GLOBAL("ditto.autograd.Gradient").set_body([](TVMArgs args, TVMRetValue *ret) {
-  // LOG(WARNING) << "tg.Gradient is an experimental feature.";
-  if (args.size() == 2) {
-    *ret = Gradient(args[0], args[1]);
-  } else if (args.size() == 3) {
-    *ret = Gradient(args[0], args[1], args[2]);
-  }
-});
+TVM_REGISTER_GLOBAL("ditto.autograd.Gradient")
+    .set_body([](TVMArgs args, TVMRetValue *ret) {
+      // LOG(WARNING) << "tg.Gradient is an experimental feature.";
+      if (args.size() == 2) {
+        *ret = Gradient(args[0], args[1]);
+      } else if (args.size() == 3) {
+        *ret = Gradient(args[0], args[1], args[2]);
+      }
+    });
 
 } // namespace autograd
 } // namespace ditto

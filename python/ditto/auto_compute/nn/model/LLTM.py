@@ -1,9 +1,5 @@
 import tvm
-from ..module import (
-    Module,
-    Parameter,
-    Linear
-)
+from ..module import Module, Parameter, Linear
 
 from ...graph import layer
 
@@ -17,16 +13,20 @@ class ELU(Module):
         outputs = tvm.te.compute(
             inputs.shape,
             lambda i, j: tvm.te.if_then_else(
-                inputs[i, j] > 0, inputs[i, j], tvm.tir.exp(inputs[i, j]) - 1),
-            name="elu"
+                inputs[i, j] > 0, inputs[i, j], tvm.tir.exp(inputs[i, j]) - 1
+            ),
+            name="elu",
         )
 
-        d_layer = layer(outputs.op, inputs=[inputs.tensor],
-                        weights=None,
-                        const_scalars=None,
-                        const_tensors=None,
-                        requires_grad=self.training,
-                        name="elu_layer")
+        d_layer = layer(
+            outputs.op,
+            inputs=[inputs.tensor],
+            weights=None,
+            const_scalars=None,
+            const_tensors=None,
+            requires_grad=self.training,
+            name="elu_layer",
+        )
         return d_layer(inputs)
 
 
@@ -42,16 +42,20 @@ class CatLayer(Module):
         outputs = tvm.te.compute(
             [batch_size, cat_size],
             lambda i, j: tvm.te.if_then_else(
-                j < input_size, input[i, j], old_h[i, j-input_size]),
-            name="cat"
+                j < input_size, input[i, j], old_h[i, j - input_size]
+            ),
+            name="cat",
         )
 
-        d_layer = layer(outputs.op, inputs=[old_h.tensor, input.tensor],
-                        weights=None,
-                        const_scalars=None,
-                        const_tensors=None,
-                        requires_grad=self.training,
-                        name="cat_layer")
+        d_layer = layer(
+            outputs.op,
+            inputs=[old_h.tensor, input.tensor],
+            weights=None,
+            const_scalars=None,
+            const_tensors=None,
+            requires_grad=self.training,
+            name="cat_layer",
+        )
         return d_layer(old_h, input)
 
 
@@ -69,20 +73,21 @@ class SSELayer(Module):
                 j < two_stsz,
                 tvm.te.sigmoid(gates[i, j]),
                 tvm.te.if_then_else(
-                    gates[i, j] > 0,
-                    gates[i, j],
-                    tvm.tir.exp(gates[i, j]) - 1
-                )
+                    gates[i, j] > 0, gates[i, j], tvm.tir.exp(gates[i, j]) - 1
+                ),
             ),
-            name="sse"
+            name="sse",
         )
 
-        d_layer = layer(outputs.op, inputs=[gates.tensor],
-                        weights=None,
-                        const_scalars=None,
-                        const_tensors=None,
-                        requires_grad=self.training,
-                        name="sse_layer")
+        d_layer = layer(
+            outputs.op,
+            inputs=[gates.tensor],
+            weights=None,
+            const_scalars=None,
+            const_tensors=None,
+            requires_grad=self.training,
+            name="sse_layer",
+        )
         return d_layer(gates)
 
 
@@ -96,17 +101,19 @@ class NewCLayer(Module):
         two_stsz = state_size * 2
         outputs = tvm.te.compute(
             [batch_size, state_size],
-            lambda i, j: old_c[i, j] +
-            gates_act[i, j + two_stsz] * gates_act[i, j],
-            name="new_c_lltm"
+            lambda i, j: old_c[i, j] + gates_act[i, j + two_stsz] * gates_act[i, j],
+            name="new_c_lltm",
         )
 
-        d_layer = layer(outputs.op, inputs=[gates_act.tensor, old_c.tensor],
-                        weights=None,
-                        const_scalars=None,
-                        const_tensors=None,
-                        requires_grad=self.training,
-                        name="new_c_layer")
+        d_layer = layer(
+            outputs.op,
+            inputs=[gates_act.tensor, old_c.tensor],
+            weights=None,
+            const_scalars=None,
+            const_tensors=None,
+            requires_grad=self.training,
+            name="new_c_layer",
+        )
         return d_layer(gates_act, old_c)
 
 
@@ -119,27 +126,33 @@ class NewHLayer(Module):
         batch_size, state_size = new_c.shape
         outputs = tvm.te.compute(
             [batch_size, state_size],
-            lambda i, j: tvm.te.tanh(
-                new_c[i, j]) * gates_act[i, j + state_size],
-            name="new_h_lltm"
+            lambda i, j: tvm.te.tanh(new_c[i, j]) * gates_act[i, j + state_size],
+            name="new_h_lltm",
         )
 
-        d_layer = layer(outputs.op, inputs=[new_c.tensor, gates_act.tensor],
-                        weights=None,
-                        const_scalars=None,
-                        const_tensors=None,
-                        requires_grad=self.training,
-                        name="new_h_layer")
+        d_layer = layer(
+            outputs.op,
+            inputs=[new_c.tensor, gates_act.tensor],
+            weights=None,
+            const_scalars=None,
+            const_tensors=None,
+            requires_grad=self.training,
+            name="new_h_layer",
+        )
         return d_layer(new_c, gates_act)
 
 
 class LLTM(Module):
-    def __init__(self, state_size=128, input_size=28*28, dtype="float32"):
+    def __init__(self, state_size=128, input_size=28 * 28, dtype="float32"):
         super(LLTM, self).__init__()
-        self.l1 = Linear(state_size + input_size, 3 * state_size,
-                         bias=True, dtype=dtype, out_dtype=dtype)
-        self.out = Linear(state_size, 10, bias=True,
-                          dtype=dtype, out_dtype=dtype)
+        self.l1 = Linear(
+            state_size + input_size,
+            3 * state_size,
+            bias=True,
+            dtype=dtype,
+            out_dtype=dtype,
+        )
+        self.out = Linear(state_size, 10, bias=True, dtype=dtype, out_dtype=dtype)
         self.cat = CatLayer()
         self.sse = SSELayer()
         self.new_c = NewCLayer()

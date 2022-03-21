@@ -16,7 +16,7 @@ def is_cubic(op, substantial=SUBSTANTIAL):
         op (tvm.tensor.Operation): the operation to judge
         substantial (int): the threshhold to judge if a dimension is large enough
     """
-    return (_ffi_api.IsCubic(op, substantial) or ac.nn.pattern.PATTERN_CUBIC in op.tag)
+    return _ffi_api.IsCubic(op, substantial) or ac.nn.pattern.PATTERN_CUBIC in op.tag
 
 
 def is_allred(op, substantial=SUBSTANTIAL):
@@ -25,7 +25,7 @@ def is_allred(op, substantial=SUBSTANTIAL):
     Args:
         op (tvm.tensor.Operation): the operation to judge
     """
-    return (_ffi_api.IsAllred(op, substantial) or ac.nn.pattern.PATTERN_ALLRED in op.tag)
+    return _ffi_api.IsAllred(op, substantial) or ac.nn.pattern.PATTERN_ALLRED in op.tag
 
 
 def is_shuffle(op):
@@ -34,7 +34,7 @@ def is_shuffle(op):
     Args:
         op (tvm.tensor.Operation): the operation to judge
     """
-    return (_ffi_api.IsShuffle(op) or ac.nn.pattern.PATTERN_SHUFFLE in op.tag)
+    return _ffi_api.IsShuffle(op) or ac.nn.pattern.PATTERN_SHUFFLE in op.tag
 
 
 def is_local(op, substantial=SUBSTANTIAL):
@@ -43,7 +43,7 @@ def is_local(op, substantial=SUBSTANTIAL):
     Args:
         op (tvm.tensor.Operation): the operation to judge
     """
-    return (_ffi_api.IsLocal(op, substantial) or ac.nn.pattern.PATTERN_LOCAL in op.tag)
+    return _ffi_api.IsLocal(op, substantial) or ac.nn.pattern.PATTERN_LOCAL in op.tag
 
 
 def is_view(op):
@@ -52,7 +52,7 @@ def is_view(op):
     Args:
         op (tvm.tensor.Operation): the operation to judge
     """
-    return (_ffi_api.IsView(op) or ac.nn.pattern.PATTERN_VIEW in op.tag)
+    return _ffi_api.IsView(op) or ac.nn.pattern.PATTERN_VIEW in op.tag
 
 
 def get_op_pattern(op):

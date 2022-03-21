@@ -11,14 +11,14 @@ BYTES_OF_TYPES = {
     "float64": 8,
     "int8": 1,
     "int32": 4,
-    "int64": 8
+    "int64": 8,
 }
 
 
 def share_axis_analysis(
     op1: tvm.te.tensor.Operation,
     op2: tvm.te.tensor.Operation,
-    tensorizeAxes: List[tvm.tir.IterVar] = []
+    tensorizeAxes: List[tvm.tir.IterVar] = [],
 ):
     """Perform the share relationship analysis.
 
@@ -56,18 +56,20 @@ class AnalyticalResult(object):
         self.valid = valid
 
 
-def calculate_metrics(first_op_types: Tuple[str, str, str],
-                      second_op_types: Tuple[str, str, str],
-                      common_factors: List[Tuple[str, int]],
-                      first_op_factors: List[Tuple[str, int]],
-                      second_op_factors: List[Tuple[str, int]],
-                      first_op_read_data_size: List[List[int]],
-                      first_op_write_data_size: int,
-                      second_op_read_data_size: List[List[int]],
-                      second_op_write_data_size: int,
-                      first_op_second_op_relate_pos: int,
-                      redundant_common_factors: List[int],
-                      hw_param: hw.HardwareParam):
+def calculate_metrics(
+    first_op_types: Tuple[str, str, str],
+    second_op_types: Tuple[str, str, str],
+    common_factors: List[Tuple[str, int]],
+    first_op_factors: List[Tuple[str, int]],
+    second_op_factors: List[Tuple[str, int]],
+    first_op_read_data_size: List[List[int]],
+    first_op_write_data_size: int,
+    second_op_read_data_size: List[List[int]],
+    second_op_write_data_size: int,
+    first_op_second_op_relate_pos: int,
+    redundant_common_factors: List[int],
+    hw_param: hw.HardwareParam,
+):
     """Function to calculate the metrics locality, parallelism, and recompute.
 
     Args:
@@ -103,46 +105,43 @@ def calculate_metrics(first_op_types: Tuple[str, str, str],
     # because of the fusion, there is no need to re-load the input for
     # the second op if it has already been produced from the first op
     second_op_read_shared_memory_usage -= utils.accumulate(
-        second_op_read_data_size[first_op_second_op_relate_pos])
-
-    total_shared_memory_usage = (
-        first_op_read_shared_memory_usage * first_inp_byte +
-        first_op_write_shared_memory_usage * first_out_byte +
-        second_op_read_shared_memory_usage * second_inp_byte +
-        second_op_write_shared_memory_usage * second_out_byte
+        second_op_read_data_size[first_op_second_op_relate_pos]
     )
 
-    valid = valid and (total_shared_memory_usage <
-                       hw_param.shared_memory_per_group_kb * 1e3)
+    total_shared_memory_usage = (
+        first_op_read_shared_memory_usage * first_inp_byte
+        + first_op_write_shared_memory_usage * first_out_byte
+        + second_op_read_shared_memory_usage * second_inp_byte
+        + second_op_write_shared_memory_usage * second_out_byte
+    )
+
+    valid = valid and (
+        total_shared_memory_usage < hw_param.shared_memory_per_group_kb * 1e3
+    )
 
     # reduce factors in common iters can't be ignored because
     # we always do reduction within one block (not parallel)
     first_op_compute = utils.product(
-        [1 if x[0] == "S" else x[1] for x in common_factors] + [x[1]
-                                                                for x in first_op_factors]
+        [1 if x[0] == "S" else x[1] for x in common_factors]
+        + [x[1] for x in first_op_factors]
     )
     second_op_compute = utils.product(
-        [1 if x[0] == "S" else x[1] for x in common_factors] + [x[1]
-                                                                for x in second_op_factors]
+        [1 if x[0] == "S" else x[1] for x in common_factors]
+        + [x[1] for x in second_op_factors]
     )
 
-    locality = ((first_op_compute + second_op_compute) /
-                (first_op_read_shared_memory_usage * first_inp_byte + second_op_read_shared_memory_usage + second_inp_byte))
-    sw_parallelism = utils.product(
-        [1 if x[0] == "R" else x[1] for x in common_factors]
+    locality = (first_op_compute + second_op_compute) / (
+        first_op_read_shared_memory_usage * first_inp_byte
+        + second_op_read_shared_memory_usage
+        + second_inp_byte
     )
+    sw_parallelism = utils.product([1 if x[0] == "R" else x[1] for x in common_factors])
     parallelism = min(
         sw_parallelism,
         # occupancy
-        (hw_param.shared_memory_per_group_kb * 1e3 //
-         total_shared_memory_usage) * hw_param.num_groups
+        (hw_param.shared_memory_per_group_kb * 1e3 // total_shared_memory_usage)
+        * hw_param.num_groups,
     )
-    recompute = utils.product(redundant_common_factors) * \
-        first_op_compute
+    recompute = utils.product(redundant_common_factors) * first_op_compute
 
-    return AnalyticalResult(
-        locality,
-        parallelism,
-        recompute,
-        valid
-    )
+    return AnalyticalResult(locality, parallelism, recompute, valid)

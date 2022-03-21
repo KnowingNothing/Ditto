@@ -50,7 +50,8 @@ bool IsCubic(te::Operation op, int substantial) {
 
     return -1;
   };
-  // iv is in outer_ivs iff it appears in non-reduction axes and belongs to single input tensor
+  // iv is in outer_ivs iff it appears in non-reduction axes and belongs to
+  // single input tensor
   std::vector<tir::IterVar> outer_ivs;
   // the input tensor id that has a outer_iv
   std::unordered_set<int> outer_input_pos;
@@ -71,7 +72,8 @@ bool IsCubic(te::Operation op, int substantial) {
       break;
     }
   }
-  // iv is in inner_ivs iff iv is an reduce_axis and it appears in all input tensors
+  // iv is in inner_ivs iff iv is an reduce_axis and it appears in all input
+  // tensors
   std::vector<tir::IterVar> inner_ivs;
   for (auto iv : cop->reduce_axis) {
     const tir::IntImmNode *as_int = iv->dom->extent.as<tir::IntImmNode>();
@@ -317,7 +319,7 @@ OpPattern GetOpPattern(te::Operation op) {
     return OpPattern::PATTERN_VIEW;
   } else {
     LOG(WARNING) << "Can't judge the pattern of op";
-    return OpPattern::PATTERN_CUBIC; 
+    return OpPattern::PATTERN_CUBIC;
   }
 }
 

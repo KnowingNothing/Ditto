@@ -11,10 +11,12 @@ namespace ditto {
 namespace auto_tensorize {
 TVM_REGISTER_NODE_TYPE(FusionResultNode);
 FusionResult::FusionResult(Map<tir::Var, IntImm> bounds, double op1MemVisit,
-                       double op1WorkLoad, double op1Buffer, double op2MemVisit,
-                       double op2WorkLoad, double op2Buffer, double locality,
-                       double parallelism, double redundancy, double n_block,
-                       bool valid, int fusionLevel, int bytePerEle, double cacheSize) {
+                           double op1WorkLoad, double op1Buffer,
+                           double op2MemVisit, double op2WorkLoad,
+                           double op2Buffer, double locality,
+                           double parallelism, double redundancy,
+                           double n_block, bool valid, int fusionLevel,
+                           int bytePerEle, double cacheSize) {
   auto n = make_object<FusionResultNode>();
   n->bounds = bounds;
   n->op1.dataMovementVolume = op1MemVisit;
@@ -33,7 +35,7 @@ FusionResult::FusionResult(Map<tir::Var, IntImm> bounds, double op1MemVisit,
   n->workload = op1WorkLoad + op2WorkLoad;
   n->cacheSize = cacheSize;
   n->occupancy = std::max(op1Buffer, op2Buffer) / cacheSize;
-  n->dataMovement = (op1MemVisit + op2MemVisit) / (double) parallelism;
+  n->dataMovement = (op1MemVisit + op2MemVisit) / (double)parallelism;
   data_ = n;
 }
 double FusionResultNode::getArithmeticIntensity() const {
@@ -41,7 +43,7 @@ double FusionResultNode::getArithmeticIntensity() const {
   return (op1.workLoad + op2.workLoad) /
          double(op1.dataMovementVolume + op2.dataMovementVolume);
 }
-double FusionResultNode::getWorkload() const{
+double FusionResultNode::getWorkload() const {
   return op1.workLoad + op2.workLoad;
 }
 StaticAnalysis::StaticAnalysis(IterGraph ig, hardware::HardwareParam hw_param,
@@ -72,7 +74,9 @@ cost_t StaticAnalysisNode::cost(Item it) const {
   FusionResult result = iterGraph->getAnalyticalResult(hw_param, bytePerEle);
   if (!result->valid)
     return INFINITY;
-  double dm = (result->op1.dataMovementVolume + result->op2.dataMovementVolume) / (double)result->parallelism;
+  double dm =
+      (result->op1.dataMovementVolume + result->op2.dataMovementVolume) /
+      (double)result->parallelism;
   return dm;
 }
 Map<String, FloatImm> FusionResultNode::getLog() const {
@@ -108,7 +112,7 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
       p->stream << "parallelism: " << op->parallelism << "\n";
       p->stream << "fusionLevel: " << op->fusionLevel << "\n";
       p->stream << "occupancy: " << op->occupancy << "\n";
-      p->stream << "cacheSize: " << op->cacheSize <<  ")";
+      p->stream << "cacheSize: " << op->cacheSize << ")";
     });
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.getLog")
     .set_body_method<FusionResult>(&FusionResultNode::getLog);

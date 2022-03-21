@@ -34,14 +34,10 @@ def gradient(output, inputs, head=None):
 
 
 def expr_equal(a, b):
-    """check expr equal
-
-    """
+    """check expr equal"""
     return _ffi_api.expr_equal(a, b)
 
 
 def grad_op(a, b, c):
-    """grad op
-
-    """
+    """grad op"""
     return _ffi_api.grad_op(a, b, c)

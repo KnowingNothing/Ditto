@@ -164,7 +164,7 @@ def test_tensorize_cuda():
     for choice_ in first_match_info_choices:
         if set(choice_) == set([mi, li, rki]):
             choice = choice_
-            
+
     first_match_info = at.match_info(choice, first_packed)
 
     second_packed = at.cuda_wmma(scope="global")
@@ -235,7 +235,9 @@ def test_build_match_info_with_restrictions():
 
     first_packed = at.cuda_wmma(scope="shared")
 
-    first_match_info_choices = at.intrinsic_match(D_frag, first_packed, ["InnerMost", "SameRange"])
+    first_match_info_choices = at.intrinsic_match(
+        D_frag, first_packed, ["InnerMost", "SameRange"]
+    )
 
     choice = first_match_info_choices[0]
 
@@ -243,7 +245,9 @@ def test_build_match_info_with_restrictions():
 
     second_packed = at.cuda_wmma(scope="global")
 
-    second_match_info_choices = at.intrinsic_match(E_frag, second_packed, ["InnerMost", "SameRange"])
+    second_match_info_choices = at.intrinsic_match(
+        E_frag, second_packed, ["InnerMost", "SameRange"]
+    )
 
     choice = second_match_info_choices[0]
 
@@ -271,7 +275,9 @@ def test_tensorize_cuda_with_restrictions():
 
     first_packed = at.cuda_wmma(scope="shared")
 
-    first_match_info_choices = at.intrinsic_match(D_frag, first_packed, ["InnerMost", "SameRange"])
+    first_match_info_choices = at.intrinsic_match(
+        D_frag, first_packed, ["InnerMost", "SameRange"]
+    )
 
     choice = first_match_info_choices[0]
 
@@ -279,7 +285,9 @@ def test_tensorize_cuda_with_restrictions():
 
     second_packed = at.cuda_wmma(scope="global")
 
-    second_match_info_choices = at.intrinsic_match(E_frag, second_packed, ["InnerMost", "SameRange"])
+    second_match_info_choices = at.intrinsic_match(
+        E_frag, second_packed, ["InnerMost", "SameRange"]
+    )
 
     choice = second_match_info_choices[0]
 

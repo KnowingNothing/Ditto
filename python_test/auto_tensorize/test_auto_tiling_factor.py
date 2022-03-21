@@ -94,6 +94,7 @@ def BatchGemmSoftmaxGemm(
 
     return [A, B, C], [F]
 
+
 def test_auto_tiling_factor():
     ins, outs = BatchGemmSoftmaxGemm()
     A, B, C = ins
@@ -110,7 +111,9 @@ def test_auto_tiling_factor():
 
     first_packed = at.cuda_wmma(scope="shared")
 
-    first_match_info_choices = at.intrinsic_match(D_frag, first_packed, ["InnerMost", "SameRange"])
+    first_match_info_choices = at.intrinsic_match(
+        D_frag, first_packed, ["InnerMost", "SameRange"]
+    )
 
     choice = first_match_info_choices[0]
 
@@ -118,7 +121,9 @@ def test_auto_tiling_factor():
 
     second_packed = at.cuda_wmma(scope="global")
 
-    second_match_info_choices = at.intrinsic_match(E_frag, second_packed, ["InnerMost", "SameRange"])
+    second_match_info_choices = at.intrinsic_match(
+        E_frag, second_packed, ["InnerMost", "SameRange"]
+    )
 
     choice = second_match_info_choices[0]
 
@@ -132,7 +137,7 @@ def test_auto_tiling_factor():
     V100 = hw.query_hw_param("gpu.cuda.V100")
 
     tensorize_param_choices = at.TensorizeParamChoices(
-        param_entry = at.cuda_tensorize_param,
+        param_entry=at.cuda_tensorize_param,
     )
 
     tensorize_param_choices["block_rx"] = [1, 2, 4, 8]
@@ -148,29 +153,28 @@ def test_auto_tiling_factor():
     # tensorize_param_choices["serial_z"] = [1, 2, 4, 8]
     # tensorize_param_choices["unroll_steps"] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
 
-
     print(tensorize_param_choices)
 
     task = at.ATFTask(
-        auto_scheduler = at.tensorize_cuda,
-        tensors = layer.schedule_tensors,
+        auto_scheduler=at.tensorize_cuda,
+        tensors=layer.schedule_tensors,
         # below: params for tensorize_cuda()
-        layer = layer,
-        state = tensorize_state,
-        cuda_param = V100,
-        tensorize_param = tensorize_param_choices,
+        layer=layer,
+        state=tensorize_state,
+        cuda_param=V100,
+        tensorize_param=tensorize_param_choices,
     )
 
     tuner = at.RandomATFTuner(
-        task = task,
-        dev = tvm.cuda(),
-        ctx = "cuda",
+        task=task,
+        dev=tvm.cuda(),
+        ctx="cuda",
         min_repeat_ms=600,
     )
 
     sch = tuner.tune_and_schedule(
-        n_trial = 10,
-        log_file = "test_auto_tiling_factor.log",
+        n_trial=10,
+        log_file="test_auto_tiling_factor.log",
     )
 
     print(tvm.lower(sch, layer.schedule_tensors, simple_mode=True))
@@ -192,6 +196,7 @@ def test_auto_tiling_factor():
     evaluator = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=600)
     cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
     print(f"Our code uses {cost} ms")
+
 
 if __name__ == "__main__":
     test_auto_tiling_factor()

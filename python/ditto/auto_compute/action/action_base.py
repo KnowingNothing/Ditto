@@ -56,7 +56,8 @@ class Action(object):
 
     def to_record(self):
         return ActionRecord(
-            self.op_id, self.action_id, json.dumps(self.pattern.to_json()))
+            self.op_id, self.action_id, json.dumps(self.pattern.to_json())
+        )
 
     def apply(self, parameter):
         raise NotImplementedError()
@@ -64,8 +65,7 @@ class Action(object):
 
 class NopParameterSpace(ParameterSpace):
     def __init__(self, layer_state, op_id, pattern):
-        super(NopParameterSpace, self).__init__(
-            layer_state, op_id, pattern)
+        super(NopParameterSpace, self).__init__(layer_state, op_id, pattern)
         self.space = []
 
     def random_get(self):
@@ -88,8 +88,13 @@ class NopParameter(Parameter):
 
 class NopAction(Action):
     def __init__(self, layer_state, op_id, pattern):
-        super(NopAction, self).__init__("nop", layer_state, op_id,
-                                        pattern, NopParameterSpace(layer_state, op_id, pattern))
+        super(NopAction, self).__init__(
+            "nop",
+            layer_state,
+            op_id,
+            pattern,
+            NopParameterSpace(layer_state, op_id, pattern),
+        )
 
     @staticmethod
     def applicable(layer_state, op_id):

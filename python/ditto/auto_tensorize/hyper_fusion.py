@@ -261,9 +261,13 @@ def tensorize_cpu(
 ):
     return _ffi_api.TensorizeCPU(layer, state, cpu_param, tensorize_param, code)
 
+
 def build_fusion_choice(
-    sfs, hw_param: hardware.HardwareParam, 
-    dtype = "float32", path: str = "", simple_mode = -1
+    sfs,
+    hw_param: hardware.HardwareParam,
+    dtype="float32",
+    path: str = "",
+    simple_mode=-1,
 ):
     """Build the fusion choice.
 
@@ -274,7 +278,7 @@ def build_fusion_choice(
     simple_mode:
         1: a random pick
         0: the heavy search method
-        -1: the pruned search method 
+        -1: the pruned search method
     Returns
     -------
     The fusion choice
@@ -282,10 +286,8 @@ def build_fusion_choice(
     -------
     .. code-block:: python
     """
-    return _ffi_api.buildFusionChoice(sfs, hw_param,  
-                              dtype, path, simple_mode)
+    return _ffi_api.buildFusionChoice(sfs, hw_param, dtype, path, simple_mode)
 
-def build_cpu_tensorize_param(
-    sfs, fusion_choice, hw_param, bytePerEle
-):
+
+def build_cpu_tensorize_param(sfs, fusion_choice, hw_param, bytePerEle):
     return _ffi_api.buildCPUTensorizeParam(sfs, fusion_choice, hw_param, bytePerEle)

@@ -1,5 +1,10 @@
 from .activation import ReLU, GELU
-from .convolution import conv2d, conv2d_with_bias_nchw, conv2d_with_group_nchw, conv2d_capsule_nchw
+from .convolution import (
+    conv2d,
+    conv2d_with_bias_nchw,
+    conv2d_with_group_nchw,
+    conv2d_capsule_nchw,
+)
 from .elementwise import add
 from .linear import linear
 from .normalization import batch_norm2d_nchw_v1, batch_norm2d_nchw_v2

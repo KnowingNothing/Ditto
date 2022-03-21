@@ -1,3 +1,11 @@
-from .space import (BaseItem, BaseSpace, BaseCartSpace, SplitItem,
-                    SplitSpace, ChooseItem, ChooseSpace,
-                    PermuteItem, PermuteSpace)
+from .space import (
+    BaseItem,
+    BaseSpace,
+    BaseCartSpace,
+    SplitItem,
+    SplitSpace,
+    ChooseItem,
+    ChooseSpace,
+    PermuteItem,
+    PermuteSpace,
+)

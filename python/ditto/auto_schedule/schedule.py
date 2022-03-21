@@ -4,7 +4,7 @@ from .schedulers import (
     auto_schedule_dispatch,
     auto_schedule_model_dispatch,
     auto_schedule_tasks_dispatch,
-    ScheduleOption
+    ScheduleOption,
 )
 
 
@@ -28,7 +28,6 @@ def auto_schedule(compute, schedule_option):
 
 
 def auto_schedule_layer(fget_layer, schedule_option):
-
     def compute():
         layer = fget_layer()
         all_tensors = layer.schedule_tensors

@@ -125,7 +125,7 @@ protected:
 
   PrimExpr VisitExpr_(const tir::VarNode *op) override {
     tir::Var var = GetRef<tir::Var>(op);
-    if (map_.count(var)){
+    if (map_.count(var)) {
       return map_[var];
     }
     return var;
@@ -135,7 +135,7 @@ private:
   Map<tir::Var, tir::Var> map_{nullptr};
 };
 
-PrimExpr ReplaceVars(PrimExpr expr, Map<tir::Var, tir::Var> map){
+PrimExpr ReplaceVars(PrimExpr expr, Map<tir::Var, tir::Var> map) {
   VarReplacer visitor;
   return visitor.mutate(expr, map);
 }
@@ -161,7 +161,7 @@ protected:
         this->VisitExpr(idx);
     }
   }
-  void VisitExpr_(const tir::VarNode * op) override{
+  void VisitExpr_(const tir::VarNode *op) override {
     this->vars_.push_back(GetRef<tir::Var>(op));
   }
 
@@ -170,7 +170,7 @@ private:
   te::Operation op_{nullptr};
 };
 
-Array<tir::Var> GetAccessVars(te::Operation op, te::Operation producer){
+Array<tir::Var> GetAccessVars(te::Operation op, te::Operation producer) {
   const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
   CHECK(cop && cop->body.size() == 1U);
   VarsGetter getter;

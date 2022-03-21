@@ -1,7 +1,14 @@
 """The space definition for tiling and fusion"""
 from ..dse import (
-    BaseItem, BaseCartSpace, SplitItem, SplitSpace, ChooseItem, ChooseSpace,
-    PermuteItem, PermuteSpace)
+    BaseItem,
+    BaseCartSpace,
+    SplitItem,
+    SplitSpace,
+    ChooseItem,
+    ChooseSpace,
+    PermuteItem,
+    PermuteSpace,
+)
 from .iter_graph import IterGraph
 
 
@@ -29,8 +36,9 @@ class FusionTileSpace(BaseCartSpace):
         for iv in self.first_op_iters:
             if (iv in shared_iters) or (iv.ext < substantial):
                 if iv.isSpatial():
-                    self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(iv.ext, 2,
-                                                                           mandatory_choices=[(iv.ext, 1)])
+                    self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(
+                        iv.ext, 2, mandatory_choices=[(iv.ext, 1)]
+                    )
                 elif iv.isReduce():
                     self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(
                         iv.ext, 2, mandatory_choices=[(1, iv.ext)]
@@ -42,8 +50,9 @@ class FusionTileSpace(BaseCartSpace):
         for i, iv in enumerate(self.second_op_iters):
             if iv.ext < substantial:
                 if iv.isSpatial():
-                    self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(iv.ext, 2,
-                                                                           mandatory_choices=[(iv.ext, 1)])
+                    self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(
+                        iv.ext, 2, mandatory_choices=[(iv.ext, 1)]
+                    )
                 elif iv.isReduce():
                     self.subspaces[f"split-{iv}({hash(iv)})"] = SplitSpace(
                         iv.ext, 2, mandatory_choices=[(1, iv.ext)]
@@ -57,7 +66,8 @@ class FusionTileSpace(BaseCartSpace):
 
         # reorder
         self.subspaces["reorder"] = PermuteSpace(
-            num_elems=len(self.second_op_iters), hit_mask=attach_pos_list)  # why?
+            num_elems=len(self.second_op_iters), hit_mask=attach_pos_list
+        )  # why?
 
     @property
     def all_iter_graphs(self):

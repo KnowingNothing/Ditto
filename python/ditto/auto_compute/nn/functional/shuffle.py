@@ -20,6 +20,7 @@ def transpose(x, r, c):
     ---
     tvm.te.Tensor
     """
+
     def _inner(*idx):
         indices = []
         for i, iv in enumerate(idx):
@@ -30,5 +31,5 @@ def transpose(x, r, c):
             else:
                 indices.append(iv)
         return x(*indices)
-    return tvm.te.compute(x.shape, _inner, name="transpose", tag=PATTERN_SHUFFLE)
 
+    return tvm.te.compute(x.shape, _inner, name="transpose", tag=PATTERN_SHUFFLE)

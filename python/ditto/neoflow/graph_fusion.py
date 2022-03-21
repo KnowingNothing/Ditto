@@ -28,14 +28,19 @@ def default_fusion_cost_func(to_fuse, fused, hw_param):
     new_data_transfer = fused.data_transfer_amount + fused_grad.data_transfer_amount
     new_gflops = fused.gflops + fused_grad.gflops
 
-    R = (original_data_transfer - new_data_transfer) * bytes_of_dtype / 1e9 / bandwidth + \
-        (original_gflops - new_gflops) / peak_perf + \
-        (len(to_fuse) * 2 - 2) * launch_latency
+    R = (
+        (original_data_transfer - new_data_transfer) * bytes_of_dtype / 1e9 / bandwidth
+        + (original_gflops - new_gflops) / peak_perf
+        + (len(to_fuse) * 2 - 2) * launch_latency
+    )
     return R
 
 
-def graph_fusion(graph, cost_func=default_fusion_cost_func,
-                 hw_param=hw.query_hw_param("gpu.cuda.V100")):
+def graph_fusion(
+    graph,
+    cost_func=default_fusion_cost_func,
+    hw_param=hw.query_hw_param("gpu.cuda.V100"),
+):
     state = ac.create_graph_state(graph)
 
     all_layers = []
@@ -59,8 +64,7 @@ def graph_fusion(graph, cost_func=default_fusion_cost_func,
         if len(to_fuse) > 0:
             fused = state.fuse_layer(cur_layer, all_layers[tail], modify=False)
             if cost_func(to_fuse, fused, hw_param):
-                fused = state.fuse_layer(
-                    cur_layer, all_layers[tail], modify=True)
+                fused = state.fuse_layer(cur_layer, all_layers[tail], modify=True)
                 fused_layers.append(fused)
                 cur_layer = fused
             else:

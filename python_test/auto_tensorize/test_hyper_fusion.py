@@ -14,8 +14,9 @@ WARP_SIZE = 32
 IN_VEC = 4
 OUT_VEC = 4
 
+
 class MicroKernel:
-    def __init__(self, N=1,K=4,H=3,W=8,C=1, R=3,S=3) -> None:
+    def __init__(self, N=1, K=4, H=3, W=8, C=1, R=3, S=3) -> None:
         self.N = N
         self.K = K
         self.H = H
@@ -23,11 +24,28 @@ class MicroKernel:
         self.C = C
         self.R = R
         self.S = S
-    def RoundUp(self, N,K,H,W,C,R,S):
+
+    def RoundUp(self, N, K, H, W, C, R, S):
         f = lambda a, b: (a + b - 1) // b * b
-        return [f(N, self.N), f(K, self.K), f(H, self.H), f(W, self.W), f(C, self.C), f(R, self.R), f(S, self.S)]
-    def Verify(self, N,K,H,W,C,R,S):
-        return N % self.N == 0 and K % self.K==0 and H % self.H == 0 and W % self.W == 0 and R % self.R ==0 and S % self.S == 0
+        return [
+            f(N, self.N),
+            f(K, self.K),
+            f(H, self.H),
+            f(W, self.W),
+            f(C, self.C),
+            f(R, self.R),
+            f(S, self.S),
+        ]
+
+    def Verify(self, N, K, H, W, C, R, S):
+        return (
+            N % self.N == 0
+            and K % self.K == 0
+            and H % self.H == 0
+            and W % self.W == 0
+            and R % self.R == 0
+            and S % self.S == 0
+        )
 
 
 def conv_relu_conv(
@@ -43,18 +61,18 @@ def conv_relu_conv(
     S2,
     padding1=0,
     padding2=0,
-    stride1 =1,
-    stride2 =1,
+    stride1=1,
+    stride2=1,
     in_dtype="float32",
     acc_dtype="float32",
-    mk1 = MicroKernel(),
-    mk2 = MicroKernel()
+    mk1=MicroKernel(),
+    mk2=MicroKernel(),
 ):
-    '''
+    """
             N K  H  W  C R S
     Conv1   N C1 P0 Q0 C0 R1 S1
-    Conv1   N C2 P1 Q1 C1 R2 S2 
-    '''
+    Conv1   N C2 P1 Q1 C1 R2 S2
+    """
     P1 = (P0 + 2 * padding1 - R1) // stride1 + 1
     Q1 = (Q0 + 2 * padding1 - S1) // stride1 + 1
     P2 = (P1 + 2 * padding2 - R2) // stride2 + 1
@@ -72,128 +90,255 @@ def conv_relu_conv(
     Weight1 = tvm.te.placeholder([C1, C0, R1, S1], dtype=in_dtype, name="Weight1")
     Weight2 = tvm.te.placeholder([C2, C1, R2, S2], dtype=in_dtype, name="Weight2")
 
-    Pad1 = tvm.te.compute([N, C0, P0 + 2 * padding1, Q0 + 2 * padding1], 
-        lambda n,c,p,q: tvm.tir.if_then_else(tvm.tir.all(p >= padding1, p < P0+padding1, q >= padding1, q < Q0 + padding1),Img[n,c,p-padding1,q-padding1],tvm.tir.const(0, in_dtype)),
-        name = "pad1"
+    Pad1 = tvm.te.compute(
+        [N, C0, P0 + 2 * padding1, Q0 + 2 * padding1],
+        lambda n, c, p, q: tvm.tir.if_then_else(
+            tvm.tir.all(
+                p >= padding1, p < P0 + padding1, q >= padding1, q < Q0 + padding1
+            ),
+            Img[n, c, p - padding1, q - padding1],
+            tvm.tir.const(0, in_dtype),
+        ),
+        name="pad1",
     )
 
-    r1 = tvm.te.reduce_axis((0, R1), name = 'rr1')
-    s1 = tvm.te.reduce_axis((0, S1), name = 'rs1')
-    co1 = tvm.te.reduce_axis((0, C0 // mk1.C), name = 'rco1')
-    ci1 = tvm.te.reduce_axis((0, mk1.C), name = 'rci1')
-    Conv1 = tvm.te.compute([N//mk1.N,mk1.N,C1//mk1.K,mk1.K,P1//mk1.H,mk1.H,Q1//mk1.W,mk1.W], 
-    lambda no1,ni1,ko1,ki1,ho1,hi1,wo1,wi1:tvm.te.sum(
-            Pad1[no1 * mk1.N + ni1, co1 * mk1.C + ci1, ho1 * mk1.H + hi1 +r1, wo1 * mk1.W + wi1 +s1]*
-            Weight1[ko1 * mk1.K + ki1, co1 * mk1.C + ci1,r1,s1], axis=[co1, ci1, r1, s1]), 
-        name = 'conv1'
+    r1 = tvm.te.reduce_axis((0, R1), name="rr1")
+    s1 = tvm.te.reduce_axis((0, S1), name="rs1")
+    co1 = tvm.te.reduce_axis((0, C0 // mk1.C), name="rco1")
+    ci1 = tvm.te.reduce_axis((0, mk1.C), name="rci1")
+    Conv1 = tvm.te.compute(
+        [N // mk1.N, mk1.N, C1 // mk1.K, mk1.K, P1 // mk1.H, mk1.H, Q1 // mk1.W, mk1.W],
+        lambda no1, ni1, ko1, ki1, ho1, hi1, wo1, wi1: tvm.te.sum(
+            Pad1[
+                no1 * mk1.N + ni1,
+                co1 * mk1.C + ci1,
+                ho1 * mk1.H + hi1 + r1,
+                wo1 * mk1.W + wi1 + s1,
+            ]
+            * Weight1[ko1 * mk1.K + ki1, co1 * mk1.C + ci1, r1, s1],
+            axis=[co1, ci1, r1, s1],
+        ),
+        name="conv1",
     )
-    Conv1_rfact = tvm.te.compute([N, C1, P1, Q1], lambda n,c,p,q:
-        Conv1[n // mk1.N, n % mk1.N, c // mk1.K, c % mk1.K, p // mk1.H, p % mk1.H, q // mk1.W, q % mk1.W],
-        name = "conv1_unfactored"
+    Conv1_rfact = tvm.te.compute(
+        [N, C1, P1, Q1],
+        lambda n, c, p, q: Conv1[
+            n // mk1.N,
+            n % mk1.N,
+            c // mk1.K,
+            c % mk1.K,
+            p // mk1.H,
+            p % mk1.H,
+            q // mk1.W,
+            q % mk1.W,
+        ],
+        name="conv1_unfactored",
     )
-    Conv1_relu = tvm.te.compute([N,C1,P1,Q1], 
-    lambda n,c,p,q: tvm.tir.if_then_else(Conv1_rfact[n,c,p,q] > 0, 
-        Conv1_rfact[n,c,p,q], tvm.tir.const(0, in_dtype)), 
-        name = 'relu'
-    )
-    
-    Pad2 = tvm.te.compute([N, C1, P1 + 2 * padding2, Q1 + 2 * padding2], 
-        lambda n,c,p,q: tvm.tir.if_then_else(tvm.tir.all(p >= padding2, p < P0+padding2, q >= padding2, q < Q0 + padding2),Conv1_relu[n,c,p-padding2,q-padding2],tvm.tir.const(0, in_dtype)),
-        name = "pad2"
+    Conv1_relu = tvm.te.compute(
+        [N, C1, P1, Q1],
+        lambda n, c, p, q: tvm.tir.if_then_else(
+            Conv1_rfact[n, c, p, q] > 0,
+            Conv1_rfact[n, c, p, q],
+            tvm.tir.const(0, in_dtype),
+        ),
+        name="relu",
     )
 
-    r2 = tvm.te.reduce_axis((0, R2), name = 'rr2')
-    s2 = tvm.te.reduce_axis((0, S2), name = 'rs2')
-    co2 = tvm.te.reduce_axis((0, C1 // mk2.C), name = 'rco2')
-    ci2 = tvm.te.reduce_axis((0, mk2.C), name = 'rci2')
-    Conv2_fact = tvm.te.compute([N//mk2.N,mk2.N,C2//mk2.K, mk2.K,P2//mk2.H,mk2.H,Q2// mk2.W, mk2.W], 
-        lambda no2,ni2,ko2,ki2,ho2,hi2,wo2,wi2:
-        tvm.te.sum(Pad2[no2 * mk2.N+ ni2, co2 * mk2.C + ci2, ho2 * mk2.H + hi2 + r2,wo2 * mk2.W + wi2 + s2]
-        *Weight2[ko2*mk2.K+ki2,co2*mk2.C+ci2,r2,s2], axis=[co2,ci2,r2,s2]), 
-        name = 'conv2_fact'
+    Pad2 = tvm.te.compute(
+        [N, C1, P1 + 2 * padding2, Q1 + 2 * padding2],
+        lambda n, c, p, q: tvm.tir.if_then_else(
+            tvm.tir.all(
+                p >= padding2, p < P0 + padding2, q >= padding2, q < Q0 + padding2
+            ),
+            Conv1_relu[n, c, p - padding2, q - padding2],
+            tvm.tir.const(0, in_dtype),
+        ),
+        name="pad2",
     )
-    Conv2 = tvm.te.compute([N,C2,P2,Q2], lambda n,c,p,q:
-    Conv2_fact[n // mk2.N, n % mk2.N, c // mk2.C, c % mk2.C,p // mk2.H, p % mk2.H, q // mk2.W, q % mk2.W], name = 'conv2')
+
+    r2 = tvm.te.reduce_axis((0, R2), name="rr2")
+    s2 = tvm.te.reduce_axis((0, S2), name="rs2")
+    co2 = tvm.te.reduce_axis((0, C1 // mk2.C), name="rco2")
+    ci2 = tvm.te.reduce_axis((0, mk2.C), name="rci2")
+    Conv2_fact = tvm.te.compute(
+        [N // mk2.N, mk2.N, C2 // mk2.K, mk2.K, P2 // mk2.H, mk2.H, Q2 // mk2.W, mk2.W],
+        lambda no2, ni2, ko2, ki2, ho2, hi2, wo2, wi2: tvm.te.sum(
+            Pad2[
+                no2 * mk2.N + ni2,
+                co2 * mk2.C + ci2,
+                ho2 * mk2.H + hi2 + r2,
+                wo2 * mk2.W + wi2 + s2,
+            ]
+            * Weight2[ko2 * mk2.K + ki2, co2 * mk2.C + ci2, r2, s2],
+            axis=[co2, ci2, r2, s2],
+        ),
+        name="conv2_fact",
+    )
+    Conv2 = tvm.te.compute(
+        [N, C2, P2, Q2],
+        lambda n, c, p, q: Conv2_fact[
+            n // mk2.N,
+            n % mk2.N,
+            c // mk2.C,
+            c % mk2.C,
+            p // mk2.H,
+            p % mk2.H,
+            q // mk2.W,
+            q % mk2.W,
+        ],
+        name="conv2",
+    )
     # return (N,C0,P0,Q0,C1,R1,S1,C2,R2,S2,P1,Q1,P2,Q2),(Img, Weight1, Weight2), (Pad1, Conv1, Conv1_rfact, Conv1_relu, Pad2, Conv2)
     return [Img, Weight1, Weight2], [Conv2], [Conv1, Conv2_fact]
 
 
 def intrin_conv(mk):
-        """
+    """
         In = tvm.te.placeholder([N, C, H + R - 1, W + S - 1], dtype=in_dtype, name='In' + surfix)
     Weight = tvm.te.placeholder([K, C, R, S], dtype=in_dtype, name='Weight' + surfix)
-    r = tvm.te.reduce_axis((0, R), name='rr' + surfix) 
-    s = tvm.te.reduce_axis((0, S), name='rs' + surfix) 
+    r = tvm.te.reduce_axis((0, R), name='rr' + surfix)
+    s = tvm.te.reduce_axis((0, S), name='rs' + surfix)
     c = tvm.te.reduce_axis((0, C), name='rc' + surfix)
-    Out = tvm.te.compute([N, K, H, W], lambda n,k,h,w: 
+    Out = tvm.te.compute([N, K, H, W], lambda n,k,h,w:
         tvm.te.sum(In[n,c,h+r,w+s] * Weight[k,c,r,s], axis=[c,r,s]),
         name = 'Ou' + surfix
-    )   """
-        N_,K_,H_,W_,C_,R_,S_ = mk.N, mk.K, mk.H, mk.W, mk.C, mk.R, mk.S
-        assert N_ == 1
-        assert K_ == 4
-        assert H_ == 3
-        assert W_ == 8
-        assert R_ == 3
-        assert S_ == 3
-        in_dtype = "float32"
-        In_ = te.placeholder([N_, C_, H_ + R_ - 1, W_ + S_-1], name='in', dtype=in_dtype)
-        Weight_ = te.placeholder([K_, C_, R_, S_], name = 'weight', dtype=in_dtype)
-        r_ = tvm.te.reduce_axis((0, R_), name='rr') 
-        s_ = tvm.te.reduce_axis((0, S_), name='rs')
-        co = tvm.te.reduce_axis((0, 1), name='rco') 
-        c_ = tvm.te.reduce_axis((0, C_), name='rci')
-        Out_ = te.compute([1, N_, 1, K_, 1, H_, 1, W_], lambda no, n_, ko, k_, ho, h_, wo, w_:
-            te.sum(In_[n_, c_, h_ + r_, w_+s_] * Weight_[k_, c_, r_, s_], axis=[co, c_,r_,s_]), name='out') 
-        #  [21119070, 158790, 402, 1],  value [350, 50, 10, 1],
-        varnames = ['chrws','hrws','ws','crs','rs','s', 'khw','hw','w','_nkhw','_khw','_hw','_w']
-        vars = {varname: tvm.te.var(varname) for varname in varnames}
-        In_b = tvm.tir.decl_buffer(In_.shape, In_.dtype, name='In', offset_factor=1, strides=[vars['chrws'], vars['hrws'], vars['ws'], 1])  # N C H+R-1 W+S-1
-        Weight_b = tvm.tir.decl_buffer(Weight_.shape, Weight_.dtype, name='Weight', offset_factor=1, strides=[vars['crs'],vars['rs'],vars['s'],1]) # K C R S
-        Out_b = tvm.tir.decl_buffer(Out_.shape, Out_.dtype, name='Out', offset_factor=1, strides=[vars['_nkhw'], vars['khw'], vars['_khw'], vars['hw'], vars['_hw'], vars['w'], vars['_w'], 1]) # N K H W
-        
-        def intrin_func(ins, outs):
-            In__, Weight__ = ins
-            Out__ = outs[0]
+    )"""
+    N_, K_, H_, W_, C_, R_, S_ = mk.N, mk.K, mk.H, mk.W, mk.C, mk.R, mk.S
+    assert N_ == 1
+    assert K_ == 4
+    assert H_ == 3
+    assert W_ == 8
+    assert R_ == 3
+    assert S_ == 3
+    in_dtype = "float32"
+    In_ = te.placeholder([N_, C_, H_ + R_ - 1, W_ + S_ - 1], name="in", dtype=in_dtype)
+    Weight_ = te.placeholder([K_, C_, R_, S_], name="weight", dtype=in_dtype)
+    r_ = tvm.te.reduce_axis((0, R_), name="rr")
+    s_ = tvm.te.reduce_axis((0, S_), name="rs")
+    co = tvm.te.reduce_axis((0, 1), name="rco")
+    c_ = tvm.te.reduce_axis((0, C_), name="rci")
+    Out_ = te.compute(
+        [1, N_, 1, K_, 1, H_, 1, W_],
+        lambda no, n_, ko, k_, ho, h_, wo, w_: te.sum(
+            In_[n_, c_, h_ + r_, w_ + s_] * Weight_[k_, c_, r_, s_],
+            axis=[co, c_, r_, s_],
+        ),
+        name="out",
+    )
+    #  [21119070, 158790, 402, 1],  value [350, 50, 10, 1],
+    varnames = [
+        "chrws",
+        "hrws",
+        "ws",
+        "crs",
+        "rs",
+        "s",
+        "khw",
+        "hw",
+        "w",
+        "_nkhw",
+        "_khw",
+        "_hw",
+        "_w",
+    ]
+    vars = {varname: tvm.te.var(varname) for varname in varnames}
+    In_b = tvm.tir.decl_buffer(
+        In_.shape,
+        In_.dtype,
+        name="In",
+        offset_factor=1,
+        strides=[vars["chrws"], vars["hrws"], vars["ws"], 1],
+    )  # N C H+R-1 W+S-1
+    Weight_b = tvm.tir.decl_buffer(
+        Weight_.shape,
+        Weight_.dtype,
+        name="Weight",
+        offset_factor=1,
+        strides=[vars["crs"], vars["rs"], vars["s"], 1],
+    )  # K C R S
+    Out_b = tvm.tir.decl_buffer(
+        Out_.shape,
+        Out_.dtype,
+        name="Out",
+        offset_factor=1,
+        strides=[
+            vars["_nkhw"],
+            vars["khw"],
+            vars["_khw"],
+            vars["hw"],
+            vars["_hw"],
+            vars["w"],
+            vars["_w"],
+            1,
+        ],
+    )  # N K H W
 
-            def _body():
-                ib = tvm.tir.ir_builder.create()
-                # extern "C" int conv_update_avx2(float *In, float *Weight, float *Out, int HW_s_, int W_s_, int C_in_, 
-                # int HRWS_s_, int WS_s_, int CRS_s_, int RS_s_, int S_s_){
-                ib.emit(
-                    tvm.tir.call_extern(
-                        "int32",
-                        "conv_update_avx2",
-                        In__.access_ptr('r'),
-                        Weight__.access_ptr('r'),
-                        Out__.access_ptr('w'),
-                        vars['hw'],vars['w'],C_,vars['hrws'],vars['ws'],vars['crs'],vars['rs'],vars['s']
+    def intrin_func(ins, outs):
+        In__, Weight__ = ins
+        Out__ = outs[0]
+
+        def _body():
+            ib = tvm.tir.ir_builder.create()
+            # extern "C" int conv_update_avx2(float *In, float *Weight, float *Out, int HW_s_, int W_s_, int C_in_,
+            # int HRWS_s_, int WS_s_, int CRS_s_, int RS_s_, int S_s_){
+            ib.emit(
+                tvm.tir.call_extern(
+                    "int32",
+                    "conv_update_avx2",
+                    In__.access_ptr("r"),
+                    Weight__.access_ptr("r"),
+                    Out__.access_ptr("w"),
+                    vars["hw"],
+                    vars["w"],
+                    C_,
+                    vars["hrws"],
+                    vars["ws"],
+                    vars["crs"],
+                    vars["rs"],
+                    vars["s"],
                 )
                 # extern "C" int conv_update(float *In, float *Weight, float *Out, int KHW, int HW, int W, int CHRWS, int HRWS, int WS, int CRS, int RS, int S,
-# int N_, int K_, int H_, int W_, int C_, int R_, int S_)
-                    # tvm.tir.call_extern(
-                    #     "int32",
-                    #     "conv_update",
-                    #     In__.access_ptr('r'),
-                    #     Weight__.access_ptr('r'),
-                    #     Out__.access_ptr('w'),
-                    #     vars['khw'], vars['hw'], vars['w'], vars['chrws'], vars['hrws'], vars['ws'], vars['crs'],vars['rs'],vars['s'],C_
-                    # )
-                )
-                return ib.get()
-            def _reduce_reset():
-                # long long conv_reset(float *Out, long long K, long long H, long long W,
-                #            long long N_, long long K_, long long H_, long long W_)
-                ib = tvm.tir.ir_builder.create()
-                ib.emit(tvm.tir.call_extern("int32", "conv_reset", Out__.access_ptr('w'), vars['khw'],vars['hw'],vars['w'],N_,K_,H_,W_))
-                return ib.get()
+                # int N_, int K_, int H_, int W_, int C_, int R_, int S_)
+                # tvm.tir.call_extern(
+                #     "int32",
+                #     "conv_update",
+                #     In__.access_ptr('r'),
+                #     Weight__.access_ptr('r'),
+                #     Out__.access_ptr('w'),
+                #     vars['khw'], vars['hw'], vars['w'], vars['chrws'], vars['hrws'], vars['ws'], vars['crs'],vars['rs'],vars['s'],C_
+                # )
+            )
+            return ib.get()
 
-            def _reduce_update():
-                return _body()
-            
-            return _body(), _reduce_reset(), _reduce_update()
-        return te.decl_tensor_intrin(Out_.op, intrin_func, binds={In_: In_b, Weight_: Weight_b, Out_: Out_b})
-    
+        def _reduce_reset():
+            # long long conv_reset(float *Out, long long K, long long H, long long W,
+            #            long long N_, long long K_, long long H_, long long W_)
+            ib = tvm.tir.ir_builder.create()
+            ib.emit(
+                tvm.tir.call_extern(
+                    "int32",
+                    "conv_reset",
+                    Out__.access_ptr("w"),
+                    vars["khw"],
+                    vars["hw"],
+                    vars["w"],
+                    N_,
+                    K_,
+                    H_,
+                    W_,
+                )
+            )
+            return ib.get()
+
+        def _reduce_update():
+            return _body()
+
+        return _body(), _reduce_reset(), _reduce_update()
+
+    return te.decl_tensor_intrin(
+        Out_.op, intrin_func, binds={In_: In_b, Weight_: Weight_b, Out_: Out_b}
+    )
+
 
 def BatchGemmSoftmaxGemm(
     batch=12, M=512, N=64, K=64, L=512, in_dtype="float16", acc_dtype="float32"
@@ -605,18 +750,24 @@ def test_build_tensorize_hyper_fusion_state():
 
 
 def test_build_tensorize_hyper_fusion_state_cpu():
-    ins, outs, [conv1, conv2] = conv_relu_conv(1,128,384,384,64,3,3,64,3,3,padding1=1,padding2=1)
+    ins, outs, [conv1, conv2] = conv_relu_conv(
+        1, 128, 384, 384, 64, 3, 3, 64, 3, 3, padding1=1, padding2=1
+    )
     # Conv2_fact = Conv2.op.input_tensors[0]
     # pad2, _ = Conv2_fact.op.input_tensors
     # conv1_relu = pad2.op.input_tensors[0]
     # conv1_rfact = conv1_relu.op.input_tensors
-    
 
-    no2,ni2,ko2,ki2,ho2,hi2,wo2,wi2 = conv2.op.axis
+    no2, ni2, ko2, ki2, ho2, hi2, wo2, wi2 = conv2.op.axis
 
     co2, ci2, r2, s2 = conv2.op.reduce_axis
 
-    fuse_choice = at.fusion_choice(conv1.op, conv2.op, [no2,ko2,ho2,wo2,co2,ni2,ci2,r2,s2,ki2,hi2,wi2], 3)
+    fuse_choice = at.fusion_choice(
+        conv1.op,
+        conv2.op,
+        [no2, ko2, ho2, wo2, co2, ni2, ci2, r2, s2, ki2, hi2, wi2],
+        3,
+    )
 
     loads = []
 
@@ -633,10 +784,9 @@ def test_build_tensorize_hyper_fusion_state_cpu():
         "wmma.accumulator",
     )
 
-    
-    no1,ni1,ko1,ki1,ho1,hi1,wo1,wi1 = conv1.op.axis
+    no1, ni1, ko1, ki1, ho1, hi1, wo1, wi1 = conv1.op.axis
     co1, ci1, r1, s1 = conv1.op.reduce_axis
-    first_match_info = at.match_info([ni1,ci1,r1,s1,ki1,hi1,wi1], first_packed)
+    first_match_info = at.match_info([ni1, ci1, r1, s1, ki1, hi1, wi1], first_packed)
 
     loads = []
 
@@ -653,7 +803,7 @@ def test_build_tensorize_hyper_fusion_state_cpu():
         "wmma.accumulator",
     )
 
-    second_match_info = at.match_info([ni2,ci2,r2,s2,ki2,hi2,wi2], second_packed)
+    second_match_info = at.match_info([ni2, ci2, r2, s2, ki2, hi2, wi2], second_packed)
 
     layer = ac.layer(outs[0].op, inputs=ins)
     tensorize_state = at.tensorize_hyper_fusion_state(
@@ -678,16 +828,26 @@ def test_build_tensorize_hyper_fusion_state_cpu():
     sch = at.tensorize_cpu(layer, tensorize_state, V100, tensorize_param)
     # print(tvm.lower(sch, layer.schedule_tensors, simple_mode=True))
 
+
 def test_tensorize_cpu():
     V100 = hw.query_hw_param("gpu.cuda.V100")
     ins, outs, tensorizeAxes = BatchGemmSoftmaxGemm()
-    fuse_choice = at.build_fusion_choice(outs[0].op,tensorizeAxes,hw_param=V100, inputs=ins, dtype="float32", simple_mode = True)
+    fuse_choice = at.build_fusion_choice(
+        outs[0].op,
+        tensorizeAxes,
+        hw_param=V100,
+        inputs=ins,
+        dtype="float32",
+        simple_mode=True,
+    )
     print(fuse_choice)
-    op1,op2 = fuse_choice.first_op, fuse_choice.second_op
+    op1, op2 = fuse_choice.first_op, fuse_choice.second_op
 
     first_packed = at.cuda_wmma(scope="shared")
 
-    first_match_info_choices = at.intrinsic_match(op1.output(0), first_packed, ["InnerMost", "SameRange"])
+    first_match_info_choices = at.intrinsic_match(
+        op1.output(0), first_packed, ["InnerMost", "SameRange"]
+    )
 
     choice = first_match_info_choices[0]
 
@@ -695,7 +855,9 @@ def test_tensorize_cpu():
 
     second_packed = at.cuda_wmma(scope="global")
 
-    second_match_info_choices = at.intrinsic_match(op2.output(0), second_packed, ["InnerMost", "SameRange"])
+    second_match_info_choices = at.intrinsic_match(
+        op2.output(0), second_packed, ["InnerMost", "SameRange"]
+    )
 
     choice = second_match_info_choices[0]
 
@@ -739,6 +901,7 @@ def test_tensorize_cpu():
     # evaluator = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=600)
     # cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
     # print(f"Our code uses {cost} ms")
+
 
 def test_tensorize_cuda():
     ins, outs = BatchGemmSoftmaxGemm()

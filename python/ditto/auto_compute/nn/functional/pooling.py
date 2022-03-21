@@ -18,8 +18,9 @@ def avgpool2d_nchw(inputs, kernel_h=2, kernel_w=2, stride_h=2, stride_w=2, paddi
     GraphOp
         shape: [batch, channel, out_height, out_width]
     """
-    padding = (padding, padding) if isinstance(
-        padding, (int, tvm.tir.IntImm)) else padding
+    padding = (
+        (padding, padding) if isinstance(padding, (int, tvm.tir.IntImm)) else padding
+    )
     padded_inputs = zero_pad2d(inputs, padding=padding)
 
     batch, channel, h_in, w_in = padded_inputs.shape
@@ -32,10 +33,12 @@ def avgpool2d_nchw(inputs, kernel_h=2, kernel_w=2, stride_h=2, stride_w=2, paddi
 
     return tvm.te.compute(
         [batch, channel, h_out, w_out],
-        lambda n, c, i, j:
-            tvm.te.sum(padded_inputs[n, c, i * stride_h + r, j *
-                                     stride_w + s]/(kernel_h*kernel_w), axis=[r, s]),
-            name="avgpool2d_nchw"
+        lambda n, c, i, j: tvm.te.sum(
+            padded_inputs[n, c, i * stride_h + r, j * stride_w + s]
+            / (kernel_h * kernel_w),
+            axis=[r, s],
+        ),
+        name="avgpool2d_nchw",
     )
 
 
@@ -61,18 +64,14 @@ def global_avgpool2d_nchw(inputs, keep_dim=True):
         w = tvm.te.reduce_axis([0, W], name="w")
         return tvm.te.compute(
             [N, C, 1, 1],
-            lambda n, c, i, j:
-            tvm.te.sum(inputs[n, c, h, w] /
-                       (H*W), axis=[h, w]),
-            name="global_avgpool2d_nchw_keep"
+            lambda n, c, i, j: tvm.te.sum(inputs[n, c, h, w] / (H * W), axis=[h, w]),
+            name="global_avgpool2d_nchw_keep",
         )
     else:
         h = tvm.te.reduce_axis([0, H], name="h")
         w = tvm.te.reduce_axis([0, W], name="w")
         return tvm.te.compute(
             [N, C],
-            lambda n, c:
-            tvm.te.sum(inputs[n, c, h, w] /
-                       (H*W), axis=[h, w]),
-            name="global_avgpool2d_nchw"
+            lambda n, c: tvm.te.sum(inputs[n, c, h, w] / (H * W), axis=[h, w]),
+            name="global_avgpool2d_nchw",
         )

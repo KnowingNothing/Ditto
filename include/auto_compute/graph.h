@@ -296,12 +296,10 @@ public:
   TVM_DECLARE_BASE_OBJECT_INFO(GraphNode, Object);
 };
 
-
 /*!
-  * \brief Get all the layers within the source and sink.
-  */
+ * \brief Get all the layers within the source and sink.
+ */
 Array<Layer> FindConvexSet(Array<Layer> source, Array<Layer> sink);
-
 
 class Graph : public ObjectRef {
 public:

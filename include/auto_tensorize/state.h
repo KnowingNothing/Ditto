@@ -93,8 +93,8 @@ public:
   }
   /*! get all vars*/
   Array<tir::Var> getAllVars();
-  
-  Map<tir::Var, IntImm> getBounds(); 
+
+  Map<tir::Var, IntImm> getBounds();
 
   static constexpr const char *_type_key = "ditto.auto_tensorize.OpHyperState";
   TVM_DECLARE_BASE_OBJECT_INFO(OpHyperStateNode, Object);
@@ -155,7 +155,7 @@ public:
    * \param layer The layer
    */
   TVM_DLL SerialFusionState(Layer layer, Array<tir::IterVar> tensorizeAxes,
-                            std::vector<double> tensorWeight = {1.0,1.0});
+                            std::vector<double> tensorWeight = {1.0, 1.0});
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(SerialFusionState, ObjectRef,
                                         SerialFusionStateNode);
@@ -197,8 +197,7 @@ buildSerialFusionState(Layer layer, Array<tir::IterVar> tensorizeAxes,
  * \param
  */
 IterGraph buildIterGraph(SerialFusionState sfState,
-                         Array<te::IterVar> tensorizeAxes,
-                         String path);
+                         Array<te::IterVar> tensorizeAxes, String path);
 
 inline OpHyperState buildOpHyperState(te::Operation op, size_t idx,
                                       Array<tir::IterVar> tensorizeAxes) {

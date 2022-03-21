@@ -321,7 +321,8 @@ public:
   std::vector<Layer> all_layers;
   std::unordered_map<Layer, std::vector<LayerTensor>> consume_graph;
   std::unordered_map<Layer, std::vector<LayerTensor>> produce_graph;
-  std::unordered_map<LayerTensor, std::vector<std::pair<Layer, int>>> feed_graph;
+  std::unordered_map<LayerTensor, std::vector<std::pair<Layer, int>>>
+      feed_graph;
 
   void VisitAttrs(tvm::AttrVisitor *v) { v->Visit("graph", &graph); }
 
@@ -343,11 +344,11 @@ public:
   /*!
    * \brief Partition a layer to fine-grained sub-layers.
    */
-  Array<Layer> NormalizePartition(Layer layer, bool modify=true);
+  Array<Layer> NormalizePartition(Layer layer, bool modify = true);
   /*!
    * \brief Fuse the convex set between front and back.
    */
-  Layer Fuse(Layer front, Layer back, bool modify=true);
+  Layer Fuse(Layer front, Layer back, bool modify = true);
 
   static constexpr const char *_type_key = "ditto.auto_compute.GraphState";
   TVM_DECLARE_BASE_OBJECT_INFO(GraphStateNode, Object);

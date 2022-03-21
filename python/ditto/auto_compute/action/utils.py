@@ -3,6 +3,7 @@ import numpy as np
 from itertools import permutations, product
 from functools import reduce
 
+
 def get_factor_lst(value):
     assert isinstance(value, int)
     ret = []

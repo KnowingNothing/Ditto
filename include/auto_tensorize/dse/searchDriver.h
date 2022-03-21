@@ -65,7 +65,7 @@ public:
    * 5. if not, go to 1.
    */
   Item search();
-  
+
   std::pair<cost_t, Item> search_with_loss();
 
   FusionSpace getFusionSpace() {

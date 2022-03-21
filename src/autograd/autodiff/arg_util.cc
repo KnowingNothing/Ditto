@@ -1,6 +1,5 @@
 #include <autograd/autodiff/arg_util.h>
 
-
 namespace ditto {
 
 namespace autograd {
@@ -19,7 +18,6 @@ int SubstituteContext::find_bound(PrimExpr &expr) {
   return -1;
 }
 
-
 std::string SubstituteContext::get_bound_name(PrimExpr &expr) {
   int id = find_bound(expr);
   if (id < 0) {
@@ -29,9 +27,10 @@ std::string SubstituteContext::get_bound_name(PrimExpr &expr) {
   }
 }
 
-
-void SubstituteContext::add(std::string &name, Var var, PrimExpr expr, ExtRange range) {
-  CHECK(var2expr.count(name) == 0) << "Internal error: variable of the same name: " << name << "\n";
+void SubstituteContext::add(std::string &name, Var var, PrimExpr expr,
+                            ExtRange range) {
+  CHECK(var2expr.count(name) == 0)
+      << "Internal error: variable of the same name: " << name << "\n";
   if (bound_begin < 0) {
     bound_begin = (int)index_names.size();
   }
@@ -42,14 +41,14 @@ void SubstituteContext::add(std::string &name, Var var, PrimExpr expr, ExtRange 
   expr2var.push_back(std::make_pair(expr, name));
 }
 
-
-PrimExpr EliminateFloorDivAndMod::VisitExpr_(const FloorDivNode* op) {
+PrimExpr EliminateFloorDivAndMod::VisitExpr_(const FloorDivNode *op) {
   arith::Analyzer ana;
   PrimExpr new_a = ana.Simplify(VisitExpr(op->a));
   PrimExpr new_b = ana.Simplify(VisitExpr(op->b));
   const VarNode *a_as_var = new_a.as<VarNode>();
   const IntImmNode *b_as_int = new_b.as<IntImmNode>();
-  CHECK(b_as_int != nullptr) << "Only support floor_div on type int, but find " << new_b.dtype() << "\n";
+  CHECK(b_as_int != nullptr) << "Only support floor_div on type int, but find "
+                             << new_b.dtype() << "\n";
 
   PrimExpr new_div;
   std::string new_name;
@@ -71,17 +70,18 @@ PrimExpr EliminateFloorDivAndMod::VisitExpr_(const FloorDivNode* op) {
     new_name = a_as_var->name_hint;
     new_div = FloorDiv(new_a, new_b);
   }
-  
+
   // check if this new div expr is bounded
   // check by structure equal
   std::string bound_this = context_.get_bound_name(new_div);
   if (bound_this == "") {
     // not bound
-    std::string new_div_name = name_generator_.unique_name(substitute_name_hint_);
+    std::string new_div_name =
+        name_generator_.unique_name(substitute_name_hint_);
     // we should know the left var
     Var new_var = Var(new_div_name);
-    context_.add(new_div_name, new_var,
-        new_div, context_.range_map[new_name].floor_div((int)b_as_int->value));
+    context_.add(new_div_name, new_var, new_div,
+                 context_.range_map[new_name].floor_div((int)b_as_int->value));
     return std::move(new_var);
   } else {
     // bound
@@ -89,14 +89,14 @@ PrimExpr EliminateFloorDivAndMod::VisitExpr_(const FloorDivNode* op) {
   }
 }
 
-
-PrimExpr EliminateFloorDivAndMod::VisitExpr_(const FloorModNode* op) {
+PrimExpr EliminateFloorDivAndMod::VisitExpr_(const FloorModNode *op) {
   arith::Analyzer ana;
   PrimExpr new_a = ana.Simplify(VisitExpr(op->a));
   PrimExpr new_b = ana.Simplify(VisitExpr(op->b));
   const VarNode *a_as_var = new_a.as<VarNode>();
   const IntImmNode *b_as_int = new_b.as<IntImmNode>();
-  CHECK(b_as_int != nullptr) << "Only support floor_mod on type int, but find " << new_b.dtype() << "\n";
+  CHECK(b_as_int != nullptr) << "Only support floor_mod on type int, but find "
+                             << new_b.dtype() << "\n";
 
   PrimExpr new_mod;
   std::string new_name;
@@ -117,17 +117,18 @@ PrimExpr EliminateFloorDivAndMod::VisitExpr_(const FloorModNode* op) {
     // left expr is already a var
     new_mod = FloorMod(new_a, new_b);
   }
-  
+
   // check if this new mod expr is bounded
   // check by structure equal
   std::string bound_this = context_.get_bound_name(new_mod);
   if (bound_this == "") {
     // not bound
-    std::string new_mod_name = name_generator_.unique_name(substitute_name_hint_);
+    std::string new_mod_name =
+        name_generator_.unique_name(substitute_name_hint_);
     Var new_var = Var(new_mod_name);
     // we should know the left var
-    context_.add(new_mod_name, new_var,
-        new_mod, context_.range_map[new_name].floor_mod((int)b_as_int->value));
+    context_.add(new_mod_name, new_var, new_mod,
+                 context_.range_map[new_name].floor_mod((int)b_as_int->value));
     return std::move(new_var);
   } else {
     // bound
@@ -135,8 +136,7 @@ PrimExpr EliminateFloorDivAndMod::VisitExpr_(const FloorModNode* op) {
   }
 }
 
-
-void ExtractCoefficient::VisitExpr_(const AddNode* op) {
+void ExtractCoefficient::VisitExpr_(const AddNode *op) {
   std::unordered_map<std::string, int> tmp1;
   scope_.push_back(&tmp1);
   VisitExpr(op->a);
@@ -165,8 +165,7 @@ void ExtractCoefficient::VisitExpr_(const AddNode* op) {
   }
 }
 
-
-void ExtractCoefficient::VisitExpr_(const SubNode* op) {
+void ExtractCoefficient::VisitExpr_(const SubNode *op) {
   std::unordered_map<std::string, int> tmp1;
   scope_.push_back(&tmp1);
   VisitExpr(op->a);
@@ -195,8 +194,7 @@ void ExtractCoefficient::VisitExpr_(const SubNode* op) {
   }
 }
 
-
-void ExtractCoefficient::VisitExpr_(const MulNode* op) {
+void ExtractCoefficient::VisitExpr_(const MulNode *op) {
   std::unordered_map<std::string, int> tmp1;
   scope_.push_back(&tmp1);
   VisitExpr(op->a);
@@ -224,17 +222,16 @@ void ExtractCoefficient::VisitExpr_(const MulNode* op) {
           (*(scope_.back()))[kv1.first] = kv1.second * kv2.second;
         }
       } else {
-        LOG(FATAL) << "Find index multiply: " << GetRef<PrimExpr>(op); throw;
+        LOG(FATAL) << "Find index multiply: " << GetRef<PrimExpr>(op);
+        throw;
       }
     }
   }
 }
 
-
-void ExtractCoefficient::VisitExpr_(const IntImmNode* op) {
+void ExtractCoefficient::VisitExpr_(const IntImmNode *op) {
   (*(scope_.back()))[const_tag_] = (int)op->value;
 }
-
 
 FloorDivModEntry FloorDivModEntry::merge(const FloorDivModEntry &other) const {
   CHECK((*this) == other) << "Can't handle different entry.\n";
@@ -259,11 +256,10 @@ FloorDivModEntry FloorDivModEntry::merge(const FloorDivModEntry &other) const {
   return FloorDivModEntry(factor, var_name, new_first, new_second);
 }
 
-
 PrimExpr flatten_axes(Array<PrimExpr> args, Array<PrimExpr> shape) {
   CHECK(args.size() == shape.size()) << "Shape mismatch with args.";
   int num_args = (int)args.size();
-  PrimExpr ret = args[num_args-1];
+  PrimExpr ret = args[num_args - 1];
   PrimExpr product = 1;
   for (int i = num_args - 2; i >= 0; --i) {
     product = product * shape[i + 1];
@@ -273,14 +269,15 @@ PrimExpr flatten_axes(Array<PrimExpr> args, Array<PrimExpr> shape) {
   return ana.Simplify(ret);
 }
 
-
-void solve_floor_div_mod(const SubstituteContext &context,
-  std::unordered_set<FloorDivModEntry, FloorDivModEntryHash> &s) {
+void solve_floor_div_mod(
+    const SubstituteContext &context,
+    std::unordered_set<FloorDivModEntry, FloorDivModEntryHash> &s) {
   for (auto kv : context.var2expr) {
     FloorDivModEntry entry;
     const FloorDivNode *as_div = kv.second.as<FloorDivNode>();
     const FloorModNode *as_mod = kv.second.as<FloorModNode>();
-    CHECK(as_div != nullptr || as_mod != nullptr) << "Only can solve floor_div or floor_mod now.\n";
+    CHECK(as_div != nullptr || as_mod != nullptr)
+        << "Only can solve floor_div or floor_mod now.\n";
     if (as_div != nullptr) {
       const IntImmNode *as_int = as_div->b.as<IntImmNode>();
       const VarNode *as_var = as_div->a.as<VarNode>();
@@ -309,9 +306,10 @@ void solve_floor_div_mod(const SubstituteContext &context,
   }
 }
 
-
-PrimExpr solve_multi_bindings(SubstituteContext &context, std::vector<PrimExpr> &bindings,
-    std::unordered_set<std::string> &unused, Array<PrimExpr> &conditions) {
+PrimExpr solve_multi_bindings(SubstituteContext &context,
+                              std::vector<PrimExpr> &bindings,
+                              std::unordered_set<std::string> &unused,
+                              Array<PrimExpr> &conditions) {
   int num_bindings = (int)bindings.size();
   CHECK(num_bindings > 0) << "Internal error: empty bindings.\n";
   int res_pos = -1;
@@ -319,8 +317,8 @@ PrimExpr solve_multi_bindings(SubstituteContext &context, std::vector<PrimExpr> 
   for (int i = 0; i < num_bindings; ++i) {
     const VarNode *as_var = bindings[i].as<VarNode>();
     if (as_var != nullptr) {
-      CHECK(context.range_map.count(as_var->name_hint) != 0) << "Internal error: unknown var: "
-                                                             << as_var->name_hint << ".\n";
+      CHECK(context.range_map.count(as_var->name_hint) != 0)
+          << "Internal error: unknown var: " << as_var->name_hint << ".\n";
       ExtRange range = context.range_map[as_var->name_hint];
       ExtRangeType range_type = range.range_type();
       if (range_type == ExtRangeType::LCRC) {
@@ -349,8 +347,8 @@ PrimExpr solve_multi_bindings(SubstituteContext &context, std::vector<PrimExpr> 
     }
     const VarNode *as_var = bindings[i].as<VarNode>();
     if (as_var != nullptr) {
-      CHECK(context.range_map.count(as_var->name_hint) != 0) << "Internal error: unknown var: "
-                                                             << as_var->name_hint << ".\n";
+      CHECK(context.range_map.count(as_var->name_hint) != 0)
+          << "Internal error: unknown var: " << as_var->name_hint << ".\n";
       ExtRange range = context.range_map[as_var->name_hint];
       ExtRangeType range_type = range.range_type();
       if (range_type == ExtRangeType::LORO) {
@@ -379,18 +377,20 @@ PrimExpr solve_multi_bindings(SubstituteContext &context, std::vector<PrimExpr> 
   return res;
 }
 
-
-void solve_substitutions(SubstituteContext &context,
-  std::unordered_map<std::string, std::vector<PrimExpr>> &bindings,
-  std::unordered_set<std::string> &unused,
-  Array<PrimExpr> &conditions, std::unordered_map<std::string, PrimExpr> &result) {
+void solve_substitutions(
+    SubstituteContext &context,
+    std::unordered_map<std::string, std::vector<PrimExpr>> &bindings,
+    std::unordered_set<std::string> &unused, Array<PrimExpr> &conditions,
+    std::unordered_map<std::string, PrimExpr> &result) {
   int num_index = (int)context.index_names.size();
   int end = context.bound_begin < 0 ? num_index : context.bound_begin;
   for (int i = num_index - 1; i >= end; --i) {
     std::string sub_var_name = context.index_names[i];
-    CHECK(bindings.count(sub_var_name) != 0) << "Internal error: unknown substitution var: "
-                                             << sub_var_name << ".\n";
-    PrimExpr unique_binding = solve_multi_bindings(context, bindings[sub_var_name], unused, conditions);
+    CHECK(bindings.count(sub_var_name) != 0)
+        << "Internal error: unknown substitution var: " << sub_var_name
+        << ".\n";
+    PrimExpr unique_binding = solve_multi_bindings(
+        context, bindings[sub_var_name], unused, conditions);
     Map<Var, PrimExpr> vmap;
     vmap.Set(context.var_map[sub_var_name], unique_binding);
     // std::cout << "check solve sub var: " << sub_var_name << "\n";
@@ -409,13 +409,13 @@ void solve_substitutions(SubstituteContext &context,
   int beg = context.bound_begin < 0 ? num_index - 1 : context.bound_begin;
   for (int i = beg; i >= 0; --i) {
     std::string var_name = context.index_names[i];
-    CHECK(bindings.count(var_name) != 0) << "Internal error: unknown var: "
-                                             << var_name << ".\n";
-    PrimExpr unique_binding = solve_multi_bindings(context, bindings[var_name], unused, conditions);
+    CHECK(bindings.count(var_name) != 0)
+        << "Internal error: unknown var: " << var_name << ".\n";
+    PrimExpr unique_binding =
+        solve_multi_bindings(context, bindings[var_name], unused, conditions);
     result[var_name] = unique_binding;
   }
 }
-
 
 bool expr_equal(const PrimExpr &a, const PrimExpr &b) {
   CheckExprEqual cee;
@@ -448,7 +448,6 @@ bool expr_equal(const PrimExpr &a, const PrimExpr &b) {
   // for (auto kv : ec2.coefficient_) {
   //   std::cout << kv.first << " : " << kv.second << "\n";
   // }
-
 
   int M = 4;
   int N = 7;
@@ -502,18 +501,16 @@ bool expr_equal(const PrimExpr &a, const PrimExpr &b) {
   // }
 
   // std::cout << "dim= " << dim << "\n";
-  
+
   return res;
 }
 
-
 TVM_REGISTER_GLOBAL("ditto.autograd.expr_equal")
-.set_body([](TVMArgs args, TVMRetValue *ret) {
-  // LOG(WARNING) << "te.expr_equal is an experimental feature.";
-  *ret = expr_equal(args[0], args[1]);
-});
+    .set_body([](TVMArgs args, TVMRetValue *ret) {
+      // LOG(WARNING) << "te.expr_equal is an experimental feature.";
+      *ret = expr_equal(args[0], args[1]);
+    });
 
+} // namespace autograd
 
-}  // namespace autograd
-
-}  // namespace ditto
+} // namespace ditto

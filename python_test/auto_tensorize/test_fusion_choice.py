@@ -9,6 +9,7 @@ from ditto.hardware.hw_param import hardware_param
 
 MI = NI = KI = 16
 
+
 def BatchGemmSoftmaxGemm(
     batch=12, M=512, N=64, K=64, L=512, in_dtype="float16", acc_dtype="float32"
 ):
@@ -87,7 +88,19 @@ def BatchGemmSoftmaxGemm(
         name="F",
     )
 
-    return [A, B, C], [F], [D_frag.op.axis[-2], D_frag.op.axis[-1], rki, E_frag.op.axis[-1], E_frag.op.axis[-2], rli]
+    return (
+        [A, B, C],
+        [F],
+        [
+            D_frag.op.axis[-2],
+            D_frag.op.axis[-1],
+            rki,
+            E_frag.op.axis[-1],
+            E_frag.op.axis[-2],
+            rli,
+        ],
+    )
+
 
 def test_iter_graph(path=""):
     M = 512
@@ -97,7 +110,7 @@ def test_iter_graph(path=""):
     # ins, outs = GemmReLUGemm(M, N, K, L)
     ins, outs, tensorizeIters = BatchGemmSoftmaxGemm()
     A, B, E = ins
-    F, = outs
+    (F,) = outs
     layer = ac.layer(F.op, inputs=[A, B, E])
     # print(layer)
     sfs = at.build_serial_fusion_state(layer)
@@ -111,8 +124,11 @@ def test_iter_graph(path=""):
 def test_fusion_choice_builder():
     V100 = hw.query_hw_param("gpu.cuda.V100")
     ins, outs, tensorizeAxes = BatchGemmSoftmaxGemm()
-    fusionChoice = at.build_fusion_choice(outs[0].op,tensorizeAxes,hw_param=V100, inputs=ins, dtype="float32")
+    fusionChoice = at.build_fusion_choice(
+        outs[0].op, tensorizeAxes, hw_param=V100, inputs=ins, dtype="float32"
+    )
     print(fusionChoice)
+
 
 def test_fusion_choice_cuda():
     # ins, outs = BatchGemmSoftmaxGemm()
@@ -130,13 +146,17 @@ def test_fusion_choice_cuda():
 
     V100 = hw.query_hw_param("gpu.cuda.V100")
     ins, outs, tensorizeAxes = BatchGemmSoftmaxGemm()
-    fuse_choice = at.build_fusion_choice(outs[0].op,tensorizeAxes,hw_param=V100, inputs=ins, dtype="float32")
+    fuse_choice = at.build_fusion_choice(
+        outs[0].op, tensorizeAxes, hw_param=V100, inputs=ins, dtype="float32"
+    )
     print(fuse_choice)
-    op1,op2 = fuse_choice.first_op, fuse_choice.second_op
+    op1, op2 = fuse_choice.first_op, fuse_choice.second_op
 
     first_packed = at.cuda_wmma(scope="shared")
 
-    first_match_info_choices = at.intrinsic_match(op1.output(0), first_packed, ["InnerMost", "SameRange"])
+    first_match_info_choices = at.intrinsic_match(
+        op1.output(0), first_packed, ["InnerMost", "SameRange"]
+    )
 
     choice = first_match_info_choices[0]
 
@@ -144,7 +164,9 @@ def test_fusion_choice_cuda():
 
     second_packed = at.cuda_wmma(scope="global")
 
-    second_match_info_choices = at.intrinsic_match(op2.output(0), second_packed, ["InnerMost", "SameRange"])
+    second_match_info_choices = at.intrinsic_match(
+        op2.output(0), second_packed, ["InnerMost", "SameRange"]
+    )
 
     choice = second_match_info_choices[0]
 

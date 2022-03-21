@@ -131,34 +131,34 @@ int AccessFunctionNode::getProductOfAbsentVars(Map<tir::Var, IntImm> bounds) {
   return value;
 }
 
-void AccessFunctionNode::repalceVars(Map<tir::Var, tir::Var> map){
+void AccessFunctionNode::repalceVars(Map<tir::Var, tir::Var> map) {
   Array<Array<PrimExpr>> new_indices;
-  for (auto arr: access_indices){
+  for (auto arr : access_indices) {
     Array<PrimExpr> tmp;
-    for (auto expr: arr){
+    for (auto expr : arr) {
       tmp.push_back(utils::ReplaceVars(expr, map));
     }
     new_indices.push_back(tmp);
   }
   access_indices = new_indices;
   Array<tir::Var> newAbsentVars, newPresentVars;
-  for (auto & var: absentVars){
+  for (auto &var : absentVars) {
     if (map.count(var))
       newAbsentVars.push_back(map.at(var));
-    else 
+    else
       newAbsentVars.push_back(var);
   }
-  for (auto & var: presentVars){
+  for (auto &var : presentVars) {
     if (map.count(var))
       newPresentVars.push_back(map.at(var));
-    else 
+    else
       newPresentVars.push_back(var);
   }
   absentVars = newAbsentVars;
   presentVars = newPresentVars;
 }
 
-void AccessFunctionNode::setAbsentVars(Array<tir::Var> absentVars_){
+void AccessFunctionNode::setAbsentVars(Array<tir::Var> absentVars_) {
   absentVars = absentVars_;
   return;
 }
@@ -215,7 +215,8 @@ IterGraph::IterGraph(Array<IterVar> firstOpIters, Array<IterVar> secondOpIters,
   n->secondOpTensorizeIters = secondOpTensorizeIters;
   struct stat buffer;
   if (stat(path.c_str(), &buffer) == 0) {
-    // LOG(WARNING) << path << "exists. Results will not be written to any file.";
+    // LOG(WARNING) << path << "exists. Results will not be written to any
+    // file.";
     n->resultPath = "";
   }
   n->setTotalFp();
@@ -538,7 +539,7 @@ double IterGraphNode::getFirstOpDataVolume() const {
 
   double fp = 0;
   for (auto acf : firstOpReadAccessFuncs)
-    for (auto fp_ : acf->getFootprint(bounds)){
+    for (auto fp_ : acf->getFootprint(bounds)) {
       fp += fp_ * tensorWeight[0];
     }
   // the write of firstOp is on chip
@@ -571,14 +572,14 @@ double IterGraphNode::getSecondOpDataVolume() const {
   double n_block = getNumOfBlocks();
   double fp = 0;
   for (auto acf : secondOpReadAccessFuncs)
-    for (auto fp_ : acf->getFootprint(bounds)){
+    for (auto fp_ : acf->getFootprint(bounds)) {
       fp += fp_ * tensorWeight[0];
     }
-  for (auto fp_ : secondOpWriteAccessFunc->getFootprint(bounds)){
+  for (auto fp_ : secondOpWriteAccessFunc->getFootprint(bounds)) {
     fp += fp_ * tensorWeight[1];
   }
   // the read of first op's output does not cause data move
-  for (auto fp_ : firstOpWriteAccessFunc->getFootprint(bounds)){
+  for (auto fp_ : firstOpWriteAccessFunc->getFootprint(bounds)) {
     fp -= fp_ * tensorWeight[0];
   }
   return fp * n_block;
@@ -658,7 +659,7 @@ IterGraphNode::getAnalyticalResult(hardware::HardwareParam hw_param,
   } else {
     throw Error("unsupported platform");
   }
-  if (fusionLevel >= 3){
+  if (fusionLevel >= 3) {
     LOG(WARNING) << "fusionLevel in L3" << std::endl;
   }
   double n_blocks = getNumOfBlocks();
@@ -685,7 +686,7 @@ IterGraphNode::getAnalyticalResult(hardware::HardwareParam hw_param,
   writeResult(res);
   return res;
 }
-size_t IterGraphNode::getFusionLevel(std::vector<double> cacheSizes){
+size_t IterGraphNode::getFusionLevel(std::vector<double> cacheSizes) {
   size_t fusionLevel;
   CHECK(cacheSizes[0] < totalFp);
   for (fusionLevel = 0; fusionLevel < cacheSizes.size(); fusionLevel++) {
@@ -695,22 +696,23 @@ size_t IterGraphNode::getFusionLevel(std::vector<double> cacheSizes){
   fusionLevel--;
   return fusionLevel;
 }
-void IterGraphNode::setCacheSize(std::vector<double> cacheSizes_){
+void IterGraphNode::setCacheSize(std::vector<double> cacheSizes_) {
   cacheSizes = cacheSizes_;
   return;
 }
 
-void IterGraphNode::setFusionLevel(size_t fusionLevel_){
+void IterGraphNode::setFusionLevel(size_t fusionLevel_) {
   fusionLevel = fusionLevel_;
   return;
 }
 
-void IterGraphNode::scheduleParallel(){
+void IterGraphNode::scheduleParallel() {
   int parallel = (int)parallelism_;
   std::unordered_map<int, IntImm> parallelSchedule;
-  for(auto iv: commonIters){
-    if (iv->iv_type == IV_Type::REDUCE || iv->iv_type == IV_Type::TENSORIZE) continue;
-    if (iv->ext >= parallel){
+  for (auto iv : commonIters) {
+    if (iv->iv_type == IV_Type::REDUCE || iv->iv_type == IV_Type::TENSORIZE)
+      continue;
+    if (iv->ext >= parallel) {
       parallelSchedule[iv->index] = IntImm(DataType::Int(32), parallel);
       break;
     }
@@ -722,35 +724,32 @@ void IterGraphNode::scheduleParallel(){
     boundsAfterParallel.Set(iv->originVar, IntImm(DataType::Int(32), iv->ext));
   for (auto iv : secondOpTensorizeIters)
     boundsAfterParallel.Set(iv->originVar, IntImm(DataType::Int(32), iv->ext));
-  for (auto iv : _firstOpIters)
-  {
+  for (auto iv : _firstOpIters) {
     int ext = iv->ext;
-    if(parallelSchedule.count(iv->index)) {
+    if (parallelSchedule.count(iv->index)) {
       int tmp = parallelSchedule.at(iv->index)->value;
       ext = (ext + tmp - 1) / tmp;
-    }   
+    }
     boundsAfterParallel.Set(iv->originVar, IntImm(DataType::Int(32), ext));
   }
-  for (auto iv : _secondOpIters)
-  {
+  for (auto iv : _secondOpIters) {
     int ext = iv->ext;
-    if(parallelSchedule.count(iv->index)) {
+    if (parallelSchedule.count(iv->index)) {
       int tmp = parallelSchedule.at(iv->index)->value;
       ext = (ext + tmp - 1) / tmp;
-    }   
-    boundsAfterParallel.Set(iv->originVar, IntImm(DataType::Int(32), ext)); 
+    }
+    boundsAfterParallel.Set(iv->originVar, IntImm(DataType::Int(32), ext));
   }
   _parallelSchedule = parallelSchedule;
   _boundsAfterParallel = boundsAfterParallel;
   return;
 }
 
-std::pair<bool, double> IterGraphNode::getDM(
-                                             int bytePerEle, bool writeThrough,
-                                             double * occupancy) {
+std::pair<bool, double> IterGraphNode::getDM(int bytePerEle, bool writeThrough,
+                                             double *occupancy) {
   applyAll();
   bounds = inferBound();
-  
+
   double cacheSize = cacheSizes[fusionLevel];
   double firstOpDataVolume = getFirstOpDataVolume() * bytePerEle;
   double firstOpBufferSize = getFirstOpBufferSize(true) * bytePerEle;
@@ -759,7 +758,7 @@ std::pair<bool, double> IterGraphNode::getDM(
   double memUse = std::max(firstOpBufferSize, secondOpBufferSize);
   bool valid = (memUse) <= cacheSize;
   double parallelism = getParallelism();
-  if (occupancy){
+  if (occupancy) {
     *occupancy = memUse / cacheSize;
   }
   return {valid,
@@ -874,8 +873,8 @@ bool ivBindingAndValidate(Array<IterVar> firstOpIters,
       iv->iv_type = IV_Type::SECONDSPATIAL;
   } else {
     std::cout << "secondOpR: " << secondOpR << std::endl;
-    std::cout << "firstOpS1: " << firstOpS1 << std::endl; 
-    std::cout << "firstOpS2: " << firstOpS2 << std::endl; 
+    std::cout << "firstOpS1: " << firstOpS1 << std::endl;
+    std::cout << "firstOpS2: " << firstOpS2 << std::endl;
     CHECK(false) << "secondOpR cannot match firstOpS";
   }
 

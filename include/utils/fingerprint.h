@@ -1,10 +1,10 @@
 #pragma once
 
 #include <tvm/runtime/object.h>
+#include <tvm/te/operation.h>
 #include <tvm/te/tensor.h>
 #include <tvm/tir/expr.h>
 #include <tvm/tir/expr_functor.h>
-#include <tvm/te/operation.h>
 #include <utils/logging.h>
 
 namespace ditto {
@@ -30,9 +30,9 @@ public:
     }
   }
 
-  Var get(const VarNode* k) {
-      CHECK(var_map.count(k)) << "Unknown var " << GetRef<PrimExpr>(k) << ".\n";
-      return var_map.at(k);
+  Var get(const VarNode *k) {
+    CHECK(var_map.count(k)) << "Unknown var " << GetRef<PrimExpr>(k) << ".\n";
+    return var_map.at(k);
   }
 
 private:

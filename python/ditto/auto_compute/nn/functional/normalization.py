@@ -34,9 +34,9 @@ def batch_norm2d_nchw_v1(inputs, alpha, beta, epsilon=1e-5):
 
     mean = tvm.te.compute(
         [C],
-        lambda c:
-            tvm.te.sum(
-                inputs[rn1, c, rh1, rw1] / (N*H*W), axis=[rn1, rh1, rw1]),
+        lambda c: tvm.te.sum(
+            inputs[rn1, c, rh1, rw1] / (N * H * W), axis=[rn1, rh1, rw1]
+        ),
         name="bn_mean",
     )
 
@@ -46,25 +46,24 @@ def batch_norm2d_nchw_v1(inputs, alpha, beta, epsilon=1e-5):
 
     square = tvm.te.compute(
         [C],
-        lambda c:
-            tvm.te.sum(
-                (inputs[rn2, c, rh2, rw2] * inputs[rn2, c, rh2, rw2]) / (N*H*W), axis=[rn2, rh2, rw2]),
-        name="bn_square"
+        lambda c: tvm.te.sum(
+            (inputs[rn2, c, rh2, rw2] * inputs[rn2, c, rh2, rw2]) / (N * H * W),
+            axis=[rn2, rh2, rw2],
+        ),
+        name="bn_square",
     )
 
     variance = tvm.te.compute(
-        [C],
-        lambda c:
-            square[c] - mean[c] * mean[c],
-        name="variance"
+        [C], lambda c: square[c] - mean[c] * mean[c], name="variance"
     )
 
     bn = tvm.te.compute(
         [N, C, H, W],
-        lambda n, c, h, w:
-            (inputs[n, c, h, w] - mean[c]) /
-        tvm.te.sqrt(variance[c] + epsilon) * alpha[c] + beta[c],
-        name="bn"
+        lambda n, c, h, w: (inputs[n, c, h, w] - mean[c])
+        / tvm.te.sqrt(variance[c] + epsilon)
+        * alpha[c]
+        + beta[c],
+        name="bn",
     )
 
     return bn
@@ -105,10 +104,11 @@ def batch_norm2d_nchw_v2(inputs, mean, variance, alpha, beta, epsilon=1e-5):
 
     bn = tvm.te.compute(
         [N, C, H, W],
-        lambda n, c, h, w:
-            (inputs[n, c, h, w] - mean[c]) /
-        tvm.te.sqrt(variance[c] + epsilon) * alpha[c] + beta[c],
-        name="bn"
+        lambda n, c, h, w: (inputs[n, c, h, w] - mean[c])
+        / tvm.te.sqrt(variance[c] + epsilon)
+        * alpha[c]
+        + beta[c],
+        name="bn",
     )
 
     return bn

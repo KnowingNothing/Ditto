@@ -10,15 +10,17 @@ class ReLU(Module):
 
     def forward(self, inputs):
         inputs = self.preprocess(inputs)
-        outputs = relu(
-            inputs.tensor)
+        outputs = relu(inputs.tensor)
 
-        relu_layer = layer(outputs.op, inputs=[inputs.tensor],
-                           weights=None,
-                           const_scalars=None,
-                           const_tensors=None,
-                           requires_grad=self.training,
-                           name="relu_layer")
+        relu_layer = layer(
+            outputs.op,
+            inputs=[inputs.tensor],
+            weights=None,
+            const_scalars=None,
+            const_tensors=None,
+            requires_grad=self.training,
+            name="relu_layer",
+        )
         return relu_layer(inputs)
 
 
@@ -28,13 +30,15 @@ class GELU(Module):
 
     def forward(self, inputs):
         inputs = self.preprocess(inputs)
-        outputs = gelu(
-            inputs.tensor)
+        outputs = gelu(inputs.tensor)
 
-        gelu_layer = layer(outputs.op, inputs=[inputs.tensor],
-                           weights=None,
-                           const_scalars=None,
-                           const_tensors=None,
-                           requires_grad=self.training,
-                           name="gelu_layer")
+        gelu_layer = layer(
+            outputs.op,
+            inputs=[inputs.tensor],
+            weights=None,
+            const_scalars=None,
+            const_tensors=None,
+            requires_grad=self.training,
+            name="gelu_layer",
+        )
         return gelu_layer(inputs)

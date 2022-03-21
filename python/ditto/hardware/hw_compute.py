@@ -64,16 +64,19 @@ class HeteroProcessor(HardwareProcessor):
     def summary(self):
         ret = ""
         indent = "  "
-        ret += "| " + indent + "| " + indent + \
-            "|--------------------------------------\n"
+        ret += (
+            "| " + indent + "| " + indent + "|--------------------------------------\n"
+        )
         for unit in self.units:
             ret += "| " + indent + "| " + indent + "| " + f"{unit}\n"
-        ret += "| " + indent + "| " + indent + \
-            "|--------------------------------------\n"
+        ret += (
+            "| " + indent + "| " + indent + "|--------------------------------------\n"
+        )
         for mem in self.local_mems:
             ret += "| " + indent + "| " + indent + "| " + f"{mem}\n"
-        ret += "| " + indent + "| " + indent + \
-            "|--------------------------------------\n"
+        ret += (
+            "| " + indent + "| " + indent + "|--------------------------------------\n"
+        )
         return ret
 
     def __str__(self) -> str:
@@ -122,8 +125,12 @@ class HomoGroup(HardwareGroup):
         ret = ""
         indent = "  "
         ret += "| " + indent + "|--------------------------------------\n"
-        ret += "| " + indent + "| " + \
-            f"{self.processor.__class__.__name__}<{self.block_x}, {self.block_y}, {self.block_z}>:\n"
+        ret += (
+            "| "
+            + indent
+            + "| "
+            + f"{self.processor.__class__.__name__}<{self.block_x}, {self.block_y}, {self.block_z}>:\n"
+        )
         ret += self.processor.summary()
         ret += "| " + indent + "|--------------------------------------\n"
         ret += "| " + indent + "| " + f"{self.shared_mem}\n"
@@ -138,7 +145,9 @@ class HomoGroup(HardwareGroup):
         return str(self)
 
 
-def hw_homogroup(processor, shared_mem, block_x, block_y=1, block_z=1, name="hw_homogroup"):
+def hw_homogroup(
+    processor, shared_mem, block_x, block_y=1, block_z=1, name="hw_homogroup"
+):
     """Hardware homogeneous group
 
     Args:
@@ -166,8 +175,10 @@ class HardwareDevice(HardwareCompute):
         ret += "|--------------------------------------\n"
         ret += "| " + f"{self.name}\n"
         ret += "|--------------------------------------\n"
-        ret += "| " + \
-            f"{self.group.__class__.__name__}<{self.grid_x}, {self.grid_y}, {self.grid_z}>:\n"
+        ret += (
+            "| "
+            + f"{self.group.__class__.__name__}<{self.grid_x}, {self.grid_y}, {self.grid_z}>:\n"
+        )
         ret += self.group.summary()
         ret += "|--------------------------------------\n"
         ret += "|" + f"{self.global_mem}\n"

@@ -156,7 +156,8 @@ public:
 
       // check if is identity
       // if (!check_identity(trans, dims)) {
-      //   LOG(FATAL) << "Don't know how to handle non-identity matrix, waiting "
+      //   LOG(FATAL) << "Don't know how to handle non-identity matrix, waiting
+      //   "
       //                 "for more discussion...\n";
       //   throw;
       // }
@@ -915,18 +916,16 @@ public:
   PrimExpr VisitExpr_(const StringImmNode *op) NOT_IMPLEMENTED
 };
 
-
 class CheckExist : public ExprVisitor {
- public:
+public:
   using ExprVisitor::VisitExpr;
   Var var_;
   bool exist;
-  CheckExist(Var var)
-      : var_(var), exist(false) {}
+  CheckExist(Var var) : var_(var), exist(false) {}
 
- protected:
+protected:
   // list of functions to override.
-  void VisitExpr_(const VarNode* op) override {
+  void VisitExpr_(const VarNode *op) override {
     if (op == var_.get()) {
       exist = true;
     }
@@ -1299,20 +1298,18 @@ protected:
   // PrimExpr VisitExpr_(const StringImmNode* op) override;
 };
 
-
 class RemoveReduce : public ExprMutator {
 private:
 public:
   PrimExpr remove(const PrimExpr &expr) { return VisitExpr(expr); }
 
 protected:
-  
-  PrimExpr VisitExpr_(const ReduceNode* op) override {
+  PrimExpr VisitExpr_(const ReduceNode *op) override {
     Array<IterVar> rivs = op->axis;
     bool can_eliminate = true;
     for (auto riv : rivs) {
       PrimExpr ext = riv->dom->extent;
-      const IntImmNode* as_int = ext.as<IntImmNode>();
+      const IntImmNode *as_int = ext.as<IntImmNode>();
       if (as_int == nullptr || as_int->value != 1) {
         can_eliminate = false;
         break;
@@ -1324,7 +1321,7 @@ protected:
           can_eliminate = false;
           break;
         }
-        const ProducerLoadNode* as_load = b.as<ProducerLoadNode>();
+        const ProducerLoadNode *as_load = b.as<ProducerLoadNode>();
         if (as_load == nullptr) {
           can_eliminate = false;
           break;

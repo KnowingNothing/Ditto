@@ -5,11 +5,15 @@ from ditto import hardware as hw
 
 @pytest.mark.basic
 def test_make_unit():
-    """Make a hardware unit
-    """
+    """Make a hardware unit"""
     isa = {
         "test.fma.fp32.fp32.fp32": hw.visa.scalar_multiply_add(
-            2.5, tvm.runtime.DataType("float32"), "float32", "float32", name="test.fma.fp32.fp32.fp32")
+            2.5,
+            tvm.runtime.DataType("float32"),
+            "float32",
+            "float32",
+            name="test.fma.fp32.fp32.fp32",
+        )
     }
     unit = hw.hw_unit(isa, name="test_unit")
     print(unit)
@@ -19,11 +23,9 @@ def test_make_unit():
 
 @pytest.mark.basic
 def test_make_local_mem():
-    """Make a hardware local mem
-    """
+    """Make a hardware local mem"""
     pattern = {
-        "scalar_fp32": hw.pattern.scalar_pattern(
-            "float32", "", name="scalar_fp32")
+        "scalar_fp32": hw.pattern.scalar_pattern("float32", "", name="scalar_fp32")
     }
     mem = hw.hw_local_mem(32, pattern, name="test_mem")
     print(mem)
@@ -33,24 +35,31 @@ def test_make_local_mem():
 
 @pytest.mark.basic
 def test_make_heteroprocessor():
-    """Make a hardware heterogenous processor
-    """
+    """Make a hardware heterogenous processor"""
     isa = {
         "test.fma.fp32.fp32.fp32": hw.visa.scalar_multiply_add(
-            2.5, tvm.runtime.DataType("float32"), "float32", "float32", name="test.fma.fp32.fp32.fp32")
+            2.5,
+            tvm.runtime.DataType("float32"),
+            "float32",
+            "float32",
+            name="test.fma.fp32.fp32.fp32",
+        )
     }
     unit = hw.hw_unit(isa, name="test_unit")
 
     pattern = {
-        "scalar_fp32": hw.pattern.scalar_pattern(
-            "float32", "", name="scalar_fp32")
+        "scalar_fp32": hw.pattern.scalar_pattern("float32", "", name="scalar_fp32")
     }
     mem = hw.hw_local_mem(32, pattern, name="test_mem")
 
     topology = {
         unit: {
-            mem: hw.compute_path(isa["test.fma.fp32.fp32.fp32"],
-                                 pattern["scalar_fp32"], hw.visa.direct(), hw.visa.direct())
+            mem: hw.compute_path(
+                isa["test.fma.fp32.fp32.fp32"],
+                pattern["scalar_fp32"],
+                hw.visa.direct(),
+                hw.visa.direct(),
+            )
         }
     }
 
@@ -62,24 +71,31 @@ def test_make_heteroprocessor():
 
 @pytest.mark.basic
 def test_make_homogroup():
-    """Make a hardware homogeneous group
-    """
+    """Make a hardware homogeneous group"""
     isa = {
         "test.fma.fp32.fp32.fp32": hw.visa.scalar_multiply_add(
-            2.5, tvm.runtime.DataType("float32"), "float32", "float32", name="test.fma.fp32.fp32.fp32")
+            2.5,
+            tvm.runtime.DataType("float32"),
+            "float32",
+            "float32",
+            name="test.fma.fp32.fp32.fp32",
+        )
     }
     unit = hw.hw_unit(isa, name="test_unit")
 
     pattern = {
-        "scalar_fp32": hw.pattern.scalar_pattern(
-            "float32", "", name="scalar_fp32")
+        "scalar_fp32": hw.pattern.scalar_pattern("float32", "", name="scalar_fp32")
     }
     mem = hw.hw_local_mem(32, pattern, name="test_mem")
 
     topology = {
         unit: {
-            mem: hw.compute_path(isa["test.fma.fp32.fp32.fp32"],
-                                 pattern["scalar_fp32"], hw.visa.direct(), hw.visa.direct())
+            mem: hw.compute_path(
+                isa["test.fma.fp32.fp32.fp32"],
+                pattern["scalar_fp32"],
+                hw.visa.direct(),
+                hw.visa.direct(),
+            )
         }
     }
 
@@ -95,24 +111,33 @@ def test_make_homogroup():
 
 @pytest.mark.basic
 def test_make_device():
-    """Make a hardware device
-    """
+    """Make a hardware device"""
     isa = {
         "test.fma.fp32.fp32.fp32": hw.visa.scalar_multiply_add(
-            2.5, tvm.runtime.DataType("float32"), "float32", "float32", name="test.fma.fp32.fp32.fp32")
+            2.5,
+            tvm.runtime.DataType("float32"),
+            "float32",
+            "float32",
+            name="test.fma.fp32.fp32.fp32",
+        )
     }
     unit = hw.hw_unit(isa, name="test_unit")
 
     pattern = {
-        "scalar_fp32": hw.pattern.scalar_pattern(
-            "float32", "", name="scalar_fp32")
+        "scalar_fp32": hw.pattern.scalar_pattern("float32", "", name="scalar_fp32")
     }
     mem = hw.hw_local_mem(32, pattern, name="test_mem")
 
     topology = {
         unit: {
-            mem: [hw.compute_path(isa["test.fma.fp32.fp32.fp32"],
-                                  pattern["scalar_fp32"], hw.visa.direct(), hw.visa.direct())]
+            mem: [
+                hw.compute_path(
+                    isa["test.fma.fp32.fp32.fp32"],
+                    pattern["scalar_fp32"],
+                    hw.visa.direct(),
+                    hw.visa.direct(),
+                )
+            ]
         }
     }
 

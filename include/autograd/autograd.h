@@ -6,11 +6,10 @@ namespace ditto {
 using namespace auto_compute;
 namespace autograd {
 
-Layer grad_layer(const Layer& layer);
+Layer grad_layer(const Layer &layer);
 
+Graph grad_graph(const Graph &graph, bool reserve_forward = false);
 
-Graph grad_graph(const Graph& graph, bool reserve_forward=false);
+} // namespace autograd
 
-}  // namespace autograd
-
-}  // namespace ditto
+} // namespace ditto

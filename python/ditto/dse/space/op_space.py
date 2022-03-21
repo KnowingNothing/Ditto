@@ -4,8 +4,7 @@ from .base_space import BaseItem, BaseSpace
 
 
 class ChooseItem(BaseItem):
-    """ChooseItem for choose one item for operator
-    """
+    """ChooseItem for choose one item for operator"""
 
     def __init__(self, item):
         """
@@ -18,7 +17,7 @@ class ChooseItem(BaseItem):
 
 class ChooseSpace(BaseSpace):
     """ChooseSpace for choose one item for one operator.
-        By default, choose a value from [lower, upper).
+    By default, choose a value from [lower, upper).
     """
 
     def __init__(self, lower=None, upper=None, mandatory_choices=None):
@@ -45,8 +44,7 @@ class ChooseSpace(BaseSpace):
 
 
 class PermuteItem(BaseItem):
-    """PermuteItem for loop reordering for operator
-    """
+    """PermuteItem for loop reordering for operator"""
 
     def __init__(self, order):
         """
@@ -58,8 +56,7 @@ class PermuteItem(BaseItem):
 
 
 class PermuteSpace(BaseSpace):
-    """PermuteSpace for reordering loops for one operator.
-    """
+    """PermuteSpace for reordering loops for one operator."""
 
     def __init__(self, num_elems=None, hit_mask=None, mandatory_choices=None):
         """

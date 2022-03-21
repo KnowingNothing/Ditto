@@ -4,10 +4,11 @@ namespace ditto {
 
 namespace autograd {
 
-template<typename T>
-void Matrix<T>::swap_row(int i, int j) {
-  CHECK(i < height_) << "index out of height range: " << i << " vs. " << height_ << "\n";
-  CHECK(j < height_) << "index out of height range: " << j << " vs. " << height_ << "\n";
+template <typename T> void Matrix<T>::swap_row(int i, int j) {
+  CHECK(i < height_) << "index out of height range: " << i << " vs. " << height_
+                     << "\n";
+  CHECK(j < height_) << "index out of height range: " << j << " vs. " << height_
+                     << "\n";
   if (i == j) {
     return;
   }
@@ -16,11 +17,11 @@ void Matrix<T>::swap_row(int i, int j) {
   }
 }
 
-
-template <typename T>
-void Matrix<T>::swap_col(int i, int j) {
-  CHECK(i < width_) << "index out of width range: " << i << " vs. " << width_ << "\n";
-  CHECK(j < width_) << "index out of width range: " << j << " vs. " << width_ << "\n";
+template <typename T> void Matrix<T>::swap_col(int i, int j) {
+  CHECK(i < width_) << "index out of width range: " << i << " vs. " << width_
+                    << "\n";
+  CHECK(j < width_) << "index out of width range: " << j << " vs. " << width_
+                    << "\n";
   if (i == j) {
     return;
   }
@@ -29,49 +30,50 @@ void Matrix<T>::swap_col(int i, int j) {
   }
 }
 
-
-template <typename T>
-void Matrix<T>::scale_row(int i, T factor) {
-  CHECK(i < height_) << "index out of height range: " << i << " vs. " << height_ << "\n";
+template <typename T> void Matrix<T>::scale_row(int i, T factor) {
+  CHECK(i < height_) << "index out of height range: " << i << " vs. " << height_
+                     << "\n";
   for (int l = 0; l < width_; ++l) {
     *(ptr + i * width_ + l) = *(ptr + i * width_ + l) * factor;
   }
 }
 
-
-template <typename T>
-void Matrix<T>::scale_col(int j, T factor) {
-  CHECK(j < width_) << "index out of height range: " << j << " vs. " << width_ << "\n";
+template <typename T> void Matrix<T>::scale_col(int j, T factor) {
+  CHECK(j < width_) << "index out of height range: " << j << " vs. " << width_
+                    << "\n";
   for (int l = 0; l < height_; ++l) {
     *(ptr + l * width_ + j) = *(ptr + l * width_ + j) * factor;
   }
 }
 
-
-template <typename T>
-void Matrix<T>::add_row(int i, int j, T factor) {
-  CHECK(i < height_) << "index out of height range: " << i << " vs. " << height_ << "\n";
-  CHECK(j < height_) << "index out of height range: " << j << " vs. " << height_ << "\n";
+template <typename T> void Matrix<T>::add_row(int i, int j, T factor) {
+  CHECK(i < height_) << "index out of height range: " << i << " vs. " << height_
+                     << "\n";
+  CHECK(j < height_) << "index out of height range: " << j << " vs. " << height_
+                     << "\n";
   for (int l = 0; l < width_; ++l) {
-    *(ptr + j * width_ + l) = *(ptr + i * width_ + l) * factor + *(ptr + j * width_ + l);
+    *(ptr + j * width_ + l) =
+        *(ptr + i * width_ + l) * factor + *(ptr + j * width_ + l);
   }
 }
 
-
-template <typename T>
-void Matrix<T>::add_col(int i, int j, T factor) {
-  CHECK(i < width_) << "index out of width range: " << i << " vs. " << width_ << "\n";
-  CHECK(j < width_) << "index out of width range: " << j << " vs. " << width_ << "\n";
+template <typename T> void Matrix<T>::add_col(int i, int j, T factor) {
+  CHECK(i < width_) << "index out of width range: " << i << " vs. " << width_
+                    << "\n";
+  CHECK(j < width_) << "index out of width range: " << j << " vs. " << width_
+                    << "\n";
   for (int l = 0; l < height_; ++l) {
-    *(ptr + l * width_ + j) =  *(ptr + l * width_ + i) * factor + *(ptr + l * width_ + j);
+    *(ptr + l * width_ + j) =
+        *(ptr + l * width_ + i) * factor + *(ptr + l * width_ + j);
   }
 }
-
 
 template <typename T>
 void Matrix<T>::row_transform(int i, int j, T s, T t, T g, T h) {
-  CHECK(i < height_) << "index out of height range: " << i << " vs. " << height_ << "\n";
-  CHECK(j < height_) << "index out of height range: " << j << " vs. " << height_ << "\n";
+  CHECK(i < height_) << "index out of height range: " << i << " vs. " << height_
+                     << "\n";
+  CHECK(j < height_) << "index out of height range: " << j << " vs. " << height_
+                     << "\n";
   std::vector<T> row_i(width_), row_j(width_);
   for (int l = 0; l < width_; ++l) {
     row_i[l] = (*(ptr + i * width_ + l)) * s + (*(ptr + j * width_ + l)) * t;
@@ -83,11 +85,12 @@ void Matrix<T>::row_transform(int i, int j, T s, T t, T g, T h) {
   }
 }
 
-
-template<typename T>
+template <typename T>
 void Matrix<T>::col_transform(int i, int j, T s, T t, T g, T h) {
-  CHECK(i < width_) << "index out of width range: " << i << " vs. " << width_ << "\n";
-  CHECK(j < width_) << "index out of width range: " << j << " vs. " << width_ << "\n";
+  CHECK(i < width_) << "index out of width range: " << i << " vs. " << width_
+                    << "\n";
+  CHECK(j < width_) << "index out of width range: " << j << " vs. " << width_
+                    << "\n";
   std::vector<T> col_i(height_), col_j(height_);
   for (int l = 0; l < height_; ++l) {
     col_i[l] = (*(ptr + l * width_ + i)) * s + (*(ptr + l * width_ + j)) * t;
@@ -98,7 +101,6 @@ void Matrix<T>::col_transform(int i, int j, T s, T t, T g, T h) {
     *(ptr + l * width_ + j) = col_j[l];
   }
 }
-
 
 ExtRange ExtRange::floor_div(int factor) {
   ExtRange ret;
@@ -114,18 +116,15 @@ ExtRange ExtRange::floor_div(int factor) {
   return ret;
 }
 
-
 ExtRange ExtRange::floor_mod(int factor) {
   return ExtRange(0, factor, false, false);
 }
 
-
-void RangeInference::VisitExpr_(const VarNode* op) {
+void RangeInference::VisitExpr_(const VarNode *op) {
   range_map[op->name_hint] = scope_.back();
 }
 
-
-void RangeInference::VisitExpr_(const AddNode* op) {
+void RangeInference::VisitExpr_(const AddNode *op) {
   const IntImmNode *a_as_int = op->a.as<IntImmNode>();
   const IntImmNode *b_as_int = op->b.as<IntImmNode>();
   ExtRange range = scope_.back();
@@ -154,8 +153,7 @@ void RangeInference::VisitExpr_(const AddNode* op) {
   }
 }
 
-
-void RangeInference::VisitExpr_(const SubNode* op) {
+void RangeInference::VisitExpr_(const SubNode *op) {
   const IntImmNode *a_as_int = op->a.as<IntImmNode>();
   const IntImmNode *b_as_int = op->b.as<IntImmNode>();
   ExtRange range = scope_.back();
@@ -193,8 +191,7 @@ void RangeInference::VisitExpr_(const SubNode* op) {
   }
 }
 
-
-void RangeInference::VisitExpr_(const MulNode* op) {
+void RangeInference::VisitExpr_(const MulNode *op) {
   const IntImmNode *a_as_int = op->a.as<IntImmNode>();
   const IntImmNode *b_as_int = op->b.as<IntImmNode>();
   ExtRange range = scope_.back();
@@ -220,7 +217,8 @@ void RangeInference::VisitExpr_(const MulNode* op) {
     } else {
       ExtRangeType range_type = range.range_type();
       if (range_type == ExtRangeType::LCRC) {
-        range.left = Mul(Sub(FloorDiv(Add(scope_.back().right, -bias-1), -bias), 1), -1);
+        range.left = Mul(
+            Sub(FloorDiv(Add(scope_.back().right, -bias - 1), -bias), 1), -1);
         range.right = Mul(Sub(FloorDiv(scope_.back().left, -bias), 1), -1);
       } else if (range_type == ExtRangeType::LCRO) {
         range.left_inf = true;
@@ -229,12 +227,13 @@ void RangeInference::VisitExpr_(const MulNode* op) {
       } else if (range_type == ExtRangeType::LORC) {
         range.left_inf = false;
         range.right_inf = true;
-        range.left = Mul(Sub(FloorDiv(Add(range.right, -bias-1), -bias), 1), -1);
+        range.left =
+            Mul(Sub(FloorDiv(Add(range.right, -bias - 1), -bias), 1), -1);
       } else {
         // nothing to do
       }
     }
-    
+
     scope_.push_back(range);
     VisitExpr(op->b);
     scope_.pop_back();
@@ -260,7 +259,8 @@ void RangeInference::VisitExpr_(const MulNode* op) {
     } else {
       ExtRangeType range_type = range.range_type();
       if (range_type == ExtRangeType::LCRC) {
-        range.left = Mul(Sub(FloorDiv(Add(scope_.back().right, -bias-1), -bias), 1), -1);
+        range.left = Mul(
+            Sub(FloorDiv(Add(scope_.back().right, -bias - 1), -bias), 1), -1);
         range.right = Mul(Sub(FloorDiv(scope_.back().left, -bias), 1), -1);
       } else if (range_type == ExtRangeType::LCRO) {
         range.left_inf = true;
@@ -269,18 +269,18 @@ void RangeInference::VisitExpr_(const MulNode* op) {
       } else if (range_type == ExtRangeType::LORC) {
         range.left_inf = false;
         range.right_inf = true;
-        range.left = Mul(Sub(FloorDiv(Add(range.right, -bias-1), -bias), 1), -1);
+        range.left =
+            Mul(Sub(FloorDiv(Add(range.right, -bias - 1), -bias), 1), -1);
       } else {
         // nothing to do
       }
     }
-    
+
     scope_.push_back(range);
     VisitExpr(op->a);
     scope_.pop_back();
   }
 }
-
 
 Array<PrimExpr> relax_matrix_array_product(Matrix<int> &m, Array<PrimExpr> &v) {
   Array<PrimExpr> res;
@@ -298,7 +298,6 @@ Array<PrimExpr> relax_matrix_array_product(Matrix<int> &m, Array<PrimExpr> &v) {
   }
   return res;
 }
-
 
 bool check_identity(Matrix<int> &m, int dims) {
   int rows = m.height();
@@ -318,7 +317,6 @@ bool check_identity(Matrix<int> &m, int dims) {
   }
   return true;
 }
-
 
 int ext_euclidean(int a, int b, int &x, int &y) {
   int r0 = a;
@@ -344,19 +342,17 @@ int ext_euclidean(int a, int b, int &x, int &y) {
   return r0;
 }
 
-
-bool divisible(int a, int b) {
-  return b % a == 0;
-}
-
+bool divisible(int a, int b) { return b % a == 0; }
 
 int smith_normalize(Matrix<int> &trans, Matrix<int> &U, Matrix<int> &V) {
   int height = trans.height();
   int width = trans.width();
-  CHECK(U.height() == height && U.width() == height) << "U matrix wrong shape: ("
-        << U.height() << "x" << U.width() << ")\nExpected: (" << height << "x" << height << ")\n";
-  CHECK(V.height() == width && V.width() == width) << "V matrix wrong shape: ("
-        << V.height() << "x" << V.width() << ")\nExpected: (" << width << "x" << width << ")\n";
+  CHECK(U.height() == height && U.width() == height)
+      << "U matrix wrong shape: (" << U.height() << "x" << U.width()
+      << ")\nExpected: (" << height << "x" << height << ")\n";
+  CHECK(V.height() == width && V.width() == width)
+      << "V matrix wrong shape: (" << V.height() << "x" << V.width()
+      << ")\nExpected: (" << width << "x" << width << ")\n";
   // initialize U and V
   for (int i = 0; i < height; ++i) {
     for (int j = 0; j < height; ++j) {
@@ -497,7 +493,7 @@ int smith_normalize(Matrix<int> &trans, Matrix<int> &U, Matrix<int> &V) {
         trans.scale_col(a, -1);
         V.scale_col(a, -1);
       }
-      if (a < dim - 1 && !divisible(trans[a][a], trans[a+1][a+1])) {
+      if (a < dim - 1 && !divisible(trans[a][a], trans[a + 1][a + 1])) {
         trans.add_col(a + 1, a, 1);
         V.add_col(a + 1, a, 1);
         stop = false;
@@ -509,7 +505,6 @@ int smith_normalize(Matrix<int> &trans, Matrix<int> &U, Matrix<int> &V) {
   return dim;
 }
 
+} // namespace autograd
 
-}  // namespace autograd
-
-}  // namespace ditto
+} // namespace ditto

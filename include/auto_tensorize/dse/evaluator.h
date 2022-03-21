@@ -62,9 +62,7 @@ public:
   double getWorkload() const;
   Map<String, FloatImm> getLog() const;
   static constexpr const char *_type_key = "ditto.auto_tensorize.FusionResult";
-  void VisitAttrs(AttrVisitor *v) {
-    v->Visit("workload", &workload);
-  }
+  void VisitAttrs(AttrVisitor *v) { v->Visit("workload", &workload); }
   TVM_DECLARE_FINAL_OBJECT_INFO(FusionResultNode, ResultNode);
 };
 
@@ -74,7 +72,8 @@ public:
                        double op1WorkLoad, double op1Buffer, double op2MemVisit,
                        double op2WorkLoad, double op2Buffer, double locality,
                        double parallelism, double redundancy, double n_block,
-                       bool valid, int fusionLevel, int bytePerEle, double cacheSize);
+                       bool valid, int fusionLevel, int bytePerEle,
+                       double cacheSize);
   TVM_DEFINE_OBJECT_REF_METHODS(FusionResult, Result, FusionResultNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(FusionResultNode);
 };

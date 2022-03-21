@@ -54,7 +54,7 @@ std::pair<cost_t, Item> BruteForceNode::search() const {
       best_i = i;
     }
   }
-  if (best_i < 0){
+  if (best_i < 0) {
     LOG(WARNING) << "no valid candidate in current searchspace";
     return {INFINITY, Item()};
   }

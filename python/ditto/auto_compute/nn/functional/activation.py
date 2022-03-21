@@ -22,6 +22,7 @@ def ReLU(x):
 
     def _inner(*idx):
         return tvm.tir.if_then_else(x(*idx) > zero, x(*idx), zero)
+
     return tvm.te.compute(x.shape, _inner, name="ReLU", tag=PATTERN_LOCAL)
 
 
@@ -35,8 +36,4 @@ def GELU(x):
         y = _c(0.5) * x_ * (_c(1.0) + tvm.te.tanh(y))
         return y
 
-    return tvm.te.compute(
-        x.shape,
-        _gelu,
-        name="gelu",
-        tag=PATTERN_LOCAL)
+    return tvm.te.compute(x.shape, _gelu, name="gelu", tag=PATTERN_LOCAL)

@@ -53,9 +53,13 @@ def test_transpose():
 def test_im2col():
     Img = tvm.te.placeholder([1, 16, 224, 224])
     res = tvm.te.compute(
-        [224*224*1, 16*9],
-        lambda i, j:
-            Img[i//(224*224), j//9, i % (224*224)//224+j % 9//3, i % 224+j % 3]
+        [224 * 224 * 1, 16 * 9],
+        lambda i, j: Img[
+            i // (224 * 224),
+            j // 9,
+            i % (224 * 224) // 224 + j % 9 // 3,
+            i % 224 + j % 3,
+        ],
     )
     print(res.op.tag)
     print(ac.nn.pattern.PATTERN_SHUFFLE in res.op.tag)

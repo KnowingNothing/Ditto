@@ -1,9 +1,5 @@
 import tvm
-from ..module import (
-    Module,
-    Parameter,
-    Linear
-)
+from ..module import Module, Parameter, Linear
 
 from ...graph import layer
 
@@ -30,20 +26,22 @@ class InternalGateLayer(Module):
         outputs = tvm.te.compute(
             [batch, hidden_size],
             lambda i, j: self.act(
-                self.alpha[j] * xi[i, j] * hh[i, j] +
-                (self.beta1[j] * xi[i, j]) +
-                (self.beta2[j] * hh[i, j])
+                self.alpha[j] * xi[i, j] * hh[i, j]
+                + (self.beta1[j] * xi[i, j])
+                + (self.beta2[j] * hh[i, j])
             ),
-            name="gate"
+            name="gate",
         )
 
-        d_layer = layer(outputs.op, inputs=[xi.tensor, hh.tensor],
-                        weights=[self.alpha.tensor,
-                                 self.beta1.tensor, self.beta2.tensor],
-                        const_scalars=None,
-                        const_tensors=None,
-                        requires_grad=self.training,
-                        name="gate_layer")
+        d_layer = layer(
+            outputs.op,
+            inputs=[xi.tensor, hh.tensor],
+            weights=[self.alpha.tensor, self.beta1.tensor, self.beta2.tensor],
+            const_scalars=None,
+            const_tensors=None,
+            requires_grad=self.training,
+            name="gate_layer",
+        )
         return d_layer(xi, hh)
 
 
@@ -57,15 +55,18 @@ class CXLayer(Module):
         outputs = tvm.te.compute(
             [batch, hidden_size],
             lambda i, j: f_g[i, j] * old_c[i, j] + i_g[i, j] * z_t[i, j],
-            name="compute_cx"
+            name="compute_cx",
         )
 
-        d_layer = layer(outputs.op, inputs=[f_g.tensor, old_c.tensor, i_g.tensor, z_t.tensor],
-                        weights=None,
-                        const_scalars=None,
-                        const_tensors=None,
-                        requires_grad=self.training,
-                        name="cx_layer")
+        d_layer = layer(
+            outputs.op,
+            inputs=[f_g.tensor, old_c.tensor, i_g.tensor, z_t.tensor],
+            weights=None,
+            const_scalars=None,
+            const_tensors=None,
+            requires_grad=self.training,
+            name="cx_layer",
+        )
         return d_layer(f_g, old_c, i_g, z_t)
 
 
@@ -81,54 +82,69 @@ class HXLayer(Module):
         outputs = tvm.te.compute(
             [batch, hidden_size],
             lambda i, j: o_g[i, j] * tvm.te.tanh(cx[i, j]),
-            name="compute_hx"
+            name="compute_hx",
         )
 
-        d_layer = layer(outputs.op, inputs=[o_g.tensor, cx.tensor],
-                        weights=None,
-                        const_scalars=None,
-                        const_tensors=None,
-                        requires_grad=self.training,
-                        name="hx_layer")
+        d_layer = layer(
+            outputs.op,
+            inputs=[o_g.tensor, cx.tensor],
+            weights=None,
+            const_scalars=None,
+            const_tensors=None,
+            requires_grad=self.training,
+            name="hx_layer",
+        )
         return d_layer(o_g, cx)
 
 
 class MI_LSTM(Module):
-    def __init__(self, input_size=28*28, hidden_size=1024, n_class=10, dtype="float32", out_dtype="float32"):
+    def __init__(
+        self,
+        input_size=28 * 28,
+        hidden_size=1024,
+        n_class=10,
+        dtype="float32",
+        out_dtype="float32",
+    ):
         super(MI_LSTM, self).__init__()
         self.dtype = dtype
         self.out_dtype = out_dtype
-        self.weight_fh = Linear(hidden_size, hidden_size,
-                                bias=True, dtype=dtype, out_dtype=out_dtype)
-        self.weight_ih = Linear(hidden_size, hidden_size,
-                                bias=True, dtype=dtype, out_dtype=out_dtype)
-        self.weight_zh = Linear(hidden_size, hidden_size,
-                                bias=True, dtype=dtype, out_dtype=out_dtype)
-        self.weight_oh = Linear(hidden_size, hidden_size,
-                                bias=True, dtype=dtype, out_dtype=out_dtype)
-        self.weight_fx = Linear(input_size, hidden_size,
-                                bias=True, dtype=dtype, out_dtype=out_dtype)
-        self.weight_ix = Linear(input_size, hidden_size,
-                                bias=True, dtype=dtype, out_dtype=out_dtype)
-        self.weight_zx = Linear(input_size, hidden_size,
-                                bias=True, dtype=dtype, out_dtype=out_dtype)
-        self.weight_ox = Linear(input_size, hidden_size,
-                                bias=True, dtype=dtype, out_dtype=out_dtype)
+        self.weight_fh = Linear(
+            hidden_size, hidden_size, bias=True, dtype=dtype, out_dtype=out_dtype
+        )
+        self.weight_ih = Linear(
+            hidden_size, hidden_size, bias=True, dtype=dtype, out_dtype=out_dtype
+        )
+        self.weight_zh = Linear(
+            hidden_size, hidden_size, bias=True, dtype=dtype, out_dtype=out_dtype
+        )
+        self.weight_oh = Linear(
+            hidden_size, hidden_size, bias=True, dtype=dtype, out_dtype=out_dtype
+        )
+        self.weight_fx = Linear(
+            input_size, hidden_size, bias=True, dtype=dtype, out_dtype=out_dtype
+        )
+        self.weight_ix = Linear(
+            input_size, hidden_size, bias=True, dtype=dtype, out_dtype=out_dtype
+        )
+        self.weight_zx = Linear(
+            input_size, hidden_size, bias=True, dtype=dtype, out_dtype=out_dtype
+        )
+        self.weight_ox = Linear(
+            input_size, hidden_size, bias=True, dtype=dtype, out_dtype=out_dtype
+        )
 
-        self.gate1 = InternalGateLayer(
-            hidden_size, "sigmoid", dtype=self.out_dtype)
-        self.gate2 = InternalGateLayer(
-            hidden_size, "sigmoid", dtype=self.out_dtype)
-        self.gate3 = InternalGateLayer(
-            hidden_size, "sigmoid", dtype=self.out_dtype)
-        self.gate4 = InternalGateLayer(
-            hidden_size, "tanh", dtype=self.out_dtype)
+        self.gate1 = InternalGateLayer(hidden_size, "sigmoid", dtype=self.out_dtype)
+        self.gate2 = InternalGateLayer(hidden_size, "sigmoid", dtype=self.out_dtype)
+        self.gate3 = InternalGateLayer(hidden_size, "sigmoid", dtype=self.out_dtype)
+        self.gate4 = InternalGateLayer(hidden_size, "tanh", dtype=self.out_dtype)
 
         self.cx = CXLayer()
         self.hx = HXLayer()
 
-        self.out = Linear(hidden_size, 10, dtype=self.out_dtype,
-                          out_dtype=self.out_dtype)
+        self.out = Linear(
+            hidden_size, 10, dtype=self.out_dtype, out_dtype=self.out_dtype
+        )
 
     def forward(self, inp, old_h, old_c):
         fxi = self.weight_fx(inp)

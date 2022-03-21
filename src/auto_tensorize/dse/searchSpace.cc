@@ -63,12 +63,12 @@ PermuteSpace::PermuteSpace(size_t numOfLoops) {
   data_ = n;
 }
 Item PermuteSpaceNode::idxToItem(size_t idx) const {
-    size_t idx_ = idx;
+  size_t idx_ = idx;
   if (mandatory)
     return PermuteItem(mandatories[idx]);
   std::vector<size_t> partial_rank;
   for (size_t i = 0; i < numOfLoops; i++) {
-    partial_rank.push_back(idx_ % (i+1));
+    partial_rank.push_back(idx_ % (i + 1));
     idx_ /= (i + 1);
   }
   std::vector<size_t> perm;
@@ -98,7 +98,7 @@ Item AttachSpaceNode::idxToItem(size_t idx) const {
   if (mandatory)
     return AttachItem((mandatories[idx])->value);
   CHECK(idx < numOfLoops) << "attach range exceeded";
-  return AttachItem(idx+1);
+  return AttachItem(idx + 1);
 }
 void AttachSpaceNode::setMandatory(Array<IntImm> mands) {
   mandatories = mands;
@@ -117,9 +117,10 @@ FusionSpace::FusionSpace(PermuteSpace firstOpPermute,
   n->firstOpTiling = firstOpTiling;
   n->secondOpTiling = secondOpTiling;
   n->name = "Fusion";
-//   std::cout << firstOpPermute->cardinal << " " << secondOpPermute->cardinal
-//             << " " << firstOpTiling->cardinal << " " << secondOpTiling->cardinal
-//             << " " << attach->cardinal << std::endl;
+  //   std::cout << firstOpPermute->cardinal << " " << secondOpPermute->cardinal
+  //             << " " << firstOpTiling->cardinal << " " <<
+  //             secondOpTiling->cardinal
+  //             << " " << attach->cardinal << std::endl;
   n->cardinal = firstOpPermute->cardinal * secondOpPermute->cardinal *
                 firstOpTiling->cardinal * secondOpTiling->cardinal *
                 attach->cardinal;
@@ -146,9 +147,10 @@ Item FusionSpaceNode::idxToItem(size_t idx) const {
   idx /= secondOpTiling->cardinal;
 
   attachItem = Downcast<AttachItem, Item>(attach->idxToItem(idx));
-   // TODO: change the fusion space to consider the fusion level
-  FusionItem item = FusionItem(firstOpTilingItem, secondOpTilingItem, firstOpPermuteItem,
-                    secondOpPermuteItem, attachItem, 2);
+  // TODO: change the fusion space to consider the fusion level
+  FusionItem item =
+      FusionItem(firstOpTilingItem, secondOpTilingItem, firstOpPermuteItem,
+                 secondOpPermuteItem, attachItem, 2);
   return item;
 }
 TilingItem::TilingItem(Array<IntImm> factors) {

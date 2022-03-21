@@ -6,6 +6,7 @@ import math
 
 MI = NI = KI = 16
 
+
 def BatchGemmSoftmaxGemm(
     batch=12, M=512, N=64, K=64, L=512, in_dtype="float16", acc_dtype="float32"
 ):
@@ -84,8 +85,18 @@ def BatchGemmSoftmaxGemm(
         name="F",
     )
 
-    return [A, B, C], [F], [D_frag.op.axis[-2], D_frag.op.axis[-1], rki, E_frag.op.axis[-1], E_frag.op.axis[-2], rli]
-
+    return (
+        [A, B, C],
+        [F],
+        [
+            D_frag.op.axis[-2],
+            D_frag.op.axis[-1],
+            rki,
+            E_frag.op.axis[-1],
+            E_frag.op.axis[-2],
+            rli,
+        ],
+    )
 
 
 def GemmReLUGemm(M, N, K, L):
@@ -94,29 +105,14 @@ def GemmReLUGemm(M, N, K, L):
     E = tvm.te.placeholder([L, N], name="E", dtype="float32")
     k = tvm.te.reduce_axis([0, K], "rk")
     C = tvm.te.compute(
-        [M, L],
-        lambda m1, l1:
-            tvm.te.sum(A[m1, k] * B[k, l1], axis=k),
-        name="C"
+        [M, L], lambda m1, l1: tvm.te.sum(A[m1, k] * B[k, l1], axis=k), name="C"
     )
     D = tvm.te.compute(
-        [M, L],
-        lambda i, j:
-            tvm.tir.if_then_else(
-                C[i, j] > 0,
-                C[i, j],
-                0.0
-        ),
-        name="D"
+        [M, L], lambda i, j: tvm.tir.if_then_else(C[i, j] > 0, C[i, j], 0.0), name="D"
     )
     l = tvm.te.reduce_axis([0, L], "rl")
     F = tvm.te.compute(
-        [M, N],
-        lambda m2, n2:
-            tvm.te.sum(
-                D[m2, l] * E[l, n2], axis=l
-        ),
-        name="F"
+        [M, N], lambda m2, n2: tvm.te.sum(D[m2, l] * E[l, n2], axis=l), name="F"
     )
     return [A, B, E], [F]
 
@@ -129,7 +125,7 @@ def test_iter_graph(path=""):
     # ins, outs = GemmReLUGemm(M, N, K, L)
     ins, outs, tensorizeIters = BatchGemmSoftmaxGemm(M, N, K, L)
     A, B, E = ins
-    F, = outs
+    (F,) = outs
     layer = ac.layer(F.op, inputs=[A, B, E])
     # print(layer)
     sfs = at.build_serial_fusion_state(layer)
@@ -156,6 +152,7 @@ def test_workflow():
     ig.set_attach(2)
     ig.apply_all()
 
+
 # test schedule independency
 
 
@@ -175,15 +172,15 @@ def test_analyse():
     it = at.build_fusion_item([16, 16, 4], [16, 4, 4], [0, 2, 1], [0, 2, 1], 2)
     ig.set_fusion(it)
     hp = hardware_param(
-        256/4,  # register_per_processor_kb: float,
+        256 / 4,  # register_per_processor_kb: float,
         96,  # shared_memory_per_group_kb: float, up to 96KB
         12080,  # shared_memory_bandwidth_gbs: float,
         16,  # global_memory_gb: float,
         750,  # global_memory_bandwidth_gbs: float,
         4,  # num_processors_per_group: int,
         80,  # num_groups: int,
-        14*1e3,  # fp32_peak_perf_gflops: float,
-        5*1e-6,  # launch_latency_s: float
+        14 * 1e3,  # fp32_peak_perf_gflops: float,
+        5 * 1e-6,  # launch_latency_s: float
     )
     res = ig.analyse(hp, 4, 1)
     print(res)
@@ -191,21 +188,22 @@ def test_analyse():
     log = res.getLog()
     print(log)
 
+
 # test search
 
 
 def test_search():
     ig = test_iter_graph()
     hp = hardware_param(
-        256/4,  # register_per_processor_kb: float,
+        256 / 4,  # register_per_processor_kb: float,
         96,  # shared_memory_per_group_kb: float, up to 96KB
         12080,  # shared_memory_bandwidth_gbs: float,
         16,  # global_memory_gb: float,
         750,  # global_memory_bandwidth_gbs: float,
         4,  # num_processors_per_group: int,
         80,  # num_groups: int,
-        14*1e3,  # fp32_peak_perf_gflops: float,
-        5*1e-6,  # launch_latency_s: float
+        14 * 1e3,  # fp32_peak_perf_gflops: float,
+        5 * 1e-6,  # launch_latency_s: float
     )
 
     # featureLog = at.build_feature_log(ig, hp)
@@ -213,7 +211,8 @@ def test_search():
     # print(featureLog)
 
     searchDriver = at.build_search_driver(
-        ig, ["time", "static analysis"], "bruteForce", hp, "float16")
+        ig, ["time", "static analysis"], "bruteForce", hp, "float16"
+    )
     print(searchDriver)
     fusionSpace = searchDriver.get_fusion_space()
     print(fusionSpace)
@@ -233,31 +232,31 @@ def test_search():
 def test_templates():
     ig = test_iter_graph()
     hp = hardware_param(
-        256/4,  # register_per_processor_kb: float,
+        256 / 4,  # register_per_processor_kb: float,
         96,  # shared_memory_per_group_kb: float, up to 96KB
         12080,  # shared_memory_bandwidth_gbs: float,
         16,  # global_memory_gb: float,
         750,  # global_memory_bandwidth_gbs: float,
         4,  # num_processors_per_group: int,
         80,  # num_groups: int,
-        14*1e3,  # fp32_peak_perf_gflops: float,
-        5*1e-6,  # launch_latency_s: float
+        14 * 1e3,  # fp32_peak_perf_gflops: float,
+        5 * 1e-6,  # launch_latency_s: float
     )
 
-
     searchDriver = at.build_search_driver(
-        ig, ["time", "static analysis"], "bruteForce", hp, "float32")
+        ig, ["time", "static analysis"], "bruteForce", hp, "float32"
+    )
     fusionSpace = searchDriver.get_fusion_space()
     fusionSpace.set_first_op_permute_mandatory([[0, 1, 2]])
     fusionSpace.set_first_op_tiling_mandatory([1, 1, 1])
     templates = {
-        'F1': ([0, 1, 2], 3, [-1, -1, -1]),
-        'F2': ([0, 1, 2], 2, [-1, -1, 1]),
-        'F3': ([0, 2, 1], 2, [-1, 1, -1]),
-        'F4': ([1, 2, 0], 2, [1, -1, -1]),
-        'F5': ([0, 1, 2], 1, [-1, 1, 1]),
-        'F6': ([1, 0, 2], 1, [1, -1, 1]),
-        'F7': ([2, 0, 1], 1, [1, 1, -1])
+        "F1": ([0, 1, 2], 3, [-1, -1, -1]),
+        "F2": ([0, 1, 2], 2, [-1, -1, 1]),
+        "F3": ([0, 2, 1], 2, [-1, 1, -1]),
+        "F4": ([1, 2, 0], 2, [1, -1, -1]),
+        "F5": ([0, 1, 2], 1, [-1, 1, 1]),
+        "F6": ([1, 0, 2], 1, [1, -1, 1]),
+        "F7": ([2, 0, 1], 1, [1, 1, -1]),
     }
     res = {}
     for name, template in templates:
@@ -276,22 +275,22 @@ def test_write_file():
     it = at.build_fusion_item([16, 16, 4], [16, 4, 4], [0, 2, 1], [0, 2, 1], 2)
     ig.set_fusion(it)
     hp = hardware_param(
-        256/4,  # register_per_processor_kb: float,
+        256 / 4,  # register_per_processor_kb: float,
         96,  # shared_memory_per_group_kb: float, up to 96KB
         12080,  # shared_memory_bandwidth_gbs: float,
         16,  # global_memory_gb: float,
         750,  # global_memory_bandwidth_gbs: float,
         4,  # num_processors_per_group: int,
         80,  # num_groups: int,
-        14*1e3,  # fp32_peak_perf_gflops: float,
-        5*1e-6,  # launch_latency_s: float
+        14 * 1e3,  # fp32_peak_perf_gflops: float,
+        5 * 1e-6,  # launch_latency_s: float
     )
     res = ig.analyse(hp, 4, 1)
     ig.display()
     log = res.getLog()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_iter_graph()
     # test_schedule_independency()
     # test_workflow()

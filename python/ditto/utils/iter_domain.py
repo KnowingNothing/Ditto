@@ -4,8 +4,9 @@ import tvm
 from functools import reduce
 
 
-def infer_range(expr_list: List[tvm.ir.PrimExpr],
-                range_map: Dict[tvm.tir.Var, tvm.ir.Range]):
+def infer_range(
+    expr_list: List[tvm.ir.PrimExpr], range_map: Dict[tvm.tir.Var, tvm.ir.Range]
+):
     var_expr_map = {}
     var_list = []
     for i, expr in enumerate(expr_list):
@@ -28,7 +29,6 @@ def accumulate(vlist, zero=0):
     return reduce(lambda x, y: x + y, vlist, zero)
 
 
-def get_access_indices(op: tvm.te.tensor.Operation,
-                       tensor: tvm.te.tensor.Tensor):
+def get_access_indices(op: tvm.te.tensor.Operation, tensor: tvm.te.tensor.Tensor):
     ret = _ffi_api.GetAccessIndices(op, tensor.op)
     return [[xx for xx in x] for x in ret]

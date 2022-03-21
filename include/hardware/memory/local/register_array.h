@@ -23,7 +23,8 @@ public:
    * \param capacity The size of this memory in kilo-bytes
    * \param pattern_list Allowed access patterns
    */
-  TVM_DLL RegisterArray(String name, double kb, Map<String, Pattern> pattern_list);
+  TVM_DLL RegisterArray(String name, double kb,
+                        Map<String, Pattern> pattern_list);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(RegisterArray, LocalMemory,
                                         RegisterArrayNode);

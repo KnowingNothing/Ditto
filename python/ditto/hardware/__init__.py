@@ -5,34 +5,23 @@ from . import pattern
 from . import visa
 from .devices.nvgpu import (
     query_gpu as query_nvgpu,
-    query_gpu_param as query_nvgpu_param
+    query_gpu_param as query_nvgpu_param,
 )
 from .hw_param import HardwareParam
 
 
-QUERY_FUNCS = {
-    "gpu": {
-        "cuda": query_nvgpu
-    }
-}
+QUERY_FUNCS = {"gpu": {"cuda": query_nvgpu}}
 
-QUERY_PARAM_FUNCS = {
-    "gpu": {
-        "cuda": query_nvgpu_param
-    },
-    "cpu": {
-        
-    }
-}
+QUERY_PARAM_FUNCS = {"gpu": {"cuda": query_nvgpu_param}, "cpu": {}}
 
 
 def parse_target(target):
     """Split the target string.
-        Expect target format:
-        target ::= device_type.programming_model.architecture
-        device_type ::= gpu | cpu | npu | fpga | asic
-        programming_model ::= cuda | opencl | c | llvm | cce | hls_c | hls_cl
-        architecture ::= P100 | V100 | A100 | Xeon-Silver-4210R | Ascend-910B
+    Expect target format:
+    target ::= device_type.programming_model.architecture
+    device_type ::= gpu | cpu | npu | fpga | asic
+    programming_model ::= cuda | opencl | c | llvm | cce | hls_c | hls_cl
+    architecture ::= P100 | V100 | A100 | Xeon-Silver-4210R | Ascend-910B
     """
     return target.split(".")
 

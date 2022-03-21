@@ -21,24 +21,30 @@ class OpState(Object):
     def reduce_axis(self):
         return _ffi_api.OpStateGetReduceAxis(self)
 
-    def transform(self, spatial_forward, fspatial_backward,
-                  reduce_forward, freduce_backward):
+    def transform(
+        self, spatial_forward, fspatial_backward, reduce_forward, freduce_backward
+    ):
         def _make_vars(forward, fcompute):
             code = fcompute.__code__
             names = code.co_varnames
             if not (len(forward) == len(names)):
                 raise ValueError(
-                    f"transform var number mismatch {len(forward)} vs {len(names)}.\n")
+                    f"transform var number mismatch {len(forward)} vs {len(names)}.\n"
+                )
             vvars = [tvm.tir.Var(name, "int32") for name in names]
             return vvars, fcompute(*vvars)
 
-        spatial_vars, spatial_backward = _make_vars(
-            spatial_forward, fspatial_backward)
-        reduce_vars, reduce_backward = _make_vars(
-            reduce_forward, freduce_backward)
-        return _ffi_api.OpStateTransform(self, spatial_vars, spatial_forward,
-                                         spatial_backward, reduce_vars,
-                                         reduce_forward, reduce_backward)
+        spatial_vars, spatial_backward = _make_vars(spatial_forward, fspatial_backward)
+        reduce_vars, reduce_backward = _make_vars(reduce_forward, freduce_backward)
+        return _ffi_api.OpStateTransform(
+            self,
+            spatial_vars,
+            spatial_forward,
+            spatial_backward,
+            reduce_vars,
+            reduce_forward,
+            reduce_backward,
+        )
 
 
 @tvm._ffi.register_object("ditto.auto_compute.LayerState")
@@ -65,8 +71,15 @@ class LayerState(Object):
                 return i
         raise ValueError(f"op: {op} is not part of this layer: {self}.\n")
 
-    def transform(self, k, spatial_forward, fspatial_backward,
-                  reduce_forward, freduce_backward, explicit_transform=True):
+    def transform(
+        self,
+        k,
+        spatial_forward,
+        fspatial_backward,
+        reduce_forward,
+        freduce_backward,
+        explicit_transform=True,
+    ):
         if isinstance(k, tensor.Tensor):
             k = k.op
         if not isinstance(k, tensor.Operation):
@@ -77,18 +90,24 @@ class LayerState(Object):
             names = code.co_varnames
             if not (len(forward) == len(names)):
                 raise ValueError(
-                    f"transform var number mismatch {len(forward)} vs {len(names)}.\n")
+                    f"transform var number mismatch {len(forward)} vs {len(names)}.\n"
+                )
             vvars = [tvm.tir.Var(name, "int32") for name in names]
             return vvars, fcompute(*vvars)
 
-        spatial_vars, spatial_backward = _make_vars(
-            spatial_forward, fspatial_backward)
-        reduce_vars, reduce_backward = _make_vars(
-            reduce_forward, freduce_backward)
-        ret = _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
-                                           spatial_backward, reduce_vars,
-                                           reduce_forward, reduce_backward,
-                                           1 if explicit_transform else 0)
+        spatial_vars, spatial_backward = _make_vars(spatial_forward, fspatial_backward)
+        reduce_vars, reduce_backward = _make_vars(reduce_forward, freduce_backward)
+        ret = _ffi_api.LayerStateTransform(
+            self,
+            k,
+            spatial_vars,
+            spatial_forward,
+            spatial_backward,
+            reduce_vars,
+            reduce_forward,
+            reduce_backward,
+            1 if explicit_transform else 0,
+        )
         return ret.output(0)
 
     def _fold(self, k, axis, factor, explicit=True):
@@ -107,8 +126,8 @@ class LayerState(Object):
                     outer = tvm.tir.Var(axis.var.name + ".outer", "int32")
                     inner = tvm.tir.Var(axis.var.name + ".inner", "int32")
                     vars.extend([outer, inner])
-                    forward.extend([iv.var//factor, iv.var % factor])
-                    backward.append(outer*factor + inner)
+                    forward.extend([iv.var // factor, iv.var % factor])
+                    backward.append(outer * factor + inner)
                 else:
                     var = tvm.tir.Var(iv.var.name, "int32")
                     vars.append(var)
@@ -123,13 +142,19 @@ class LayerState(Object):
         reduce_vars = []
         reduce_forward = []
         reduce_backward = []
-        _inner(reduce_vars, reduce_forward,
-               reduce_backward, self[k].reduce_axis())
+        _inner(reduce_vars, reduce_forward, reduce_backward, self[k].reduce_axis())
 
-        ret = _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
-                                           spatial_backward, reduce_vars,
-                                           reduce_forward, reduce_backward,
-                                           1 if explicit else 0)
+        ret = _ffi_api.LayerStateTransform(
+            self,
+            k,
+            spatial_vars,
+            spatial_forward,
+            spatial_backward,
+            reduce_vars,
+            reduce_forward,
+            reduce_backward,
+            1 if explicit else 0,
+        )
         return ret.output(0)
 
     def _unfold(self, k, *axis, explicit=True):
@@ -179,21 +204,24 @@ class LayerState(Object):
                 elif i == start_id:
                     names = []
                     unfold_expr = 0
-                    for siv in all_axis[i:i+num_axis]:
+                    for siv in all_axis[i : i + num_axis]:
                         names.append(siv.var.name)
                         unfold_expr = unfold_expr * siv.dom.extent + siv.var
-                    for j, siv in enumerate(reversed(all_axis[i:i+num_axis])):
-                        factors[num_axis - j -
-                                1] = factors[num_axis - j] * siv.dom.extent
+                    for j, siv in enumerate(reversed(all_axis[i : i + num_axis])):
+                        factors[num_axis - j - 1] = (
+                            factors[num_axis - j] * siv.dom.extent
+                        )
                     name = ".".join(names) + ".unfold"
                     var = tvm.tir.Var(name, "int32")
                     fused_var = var
                     vars.append(var)
                     forward.append(unfold_expr)
-                    backward.append(fused_var//factors[i-start_id+1])
+                    backward.append(fused_var // factors[i - start_id + 1])
                 else:
-                    backward.append(fused_var %
-                                    factors[i-start_id]//factors[i-start_id+1])
+                    backward.append(
+                        fused_var % factors[i - start_id] // factors[i - start_id + 1]
+                    )
+
         spatial_vars = []
         spatial_forward = []
         spatial_backward = []
@@ -220,10 +248,17 @@ class LayerState(Object):
                 spatial_backward.append(var)
         else:
             raise ValueError(f"Unsupported iter var type: {iter_type}.\n")
-        ret = _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
-                                           spatial_backward, reduce_vars,
-                                           reduce_forward, reduce_backward,
-                                           1 if explicit else 0)
+        ret = _ffi_api.LayerStateTransform(
+            self,
+            k,
+            spatial_vars,
+            spatial_forward,
+            spatial_backward,
+            reduce_vars,
+            reduce_forward,
+            reduce_backward,
+            1 if explicit else 0,
+        )
         return ret.output(0)
 
     def _shuffle(self, k, *axes, explicit=True):
@@ -268,10 +303,17 @@ class LayerState(Object):
             reduce_forward.append(iv.var)
             reduce_backward.append(var)
 
-        ret = _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
-                                           spatial_backward, reduce_vars,
-                                           reduce_forward, reduce_backward,
-                                           1 if explicit else 0)
+        ret = _ffi_api.LayerStateTransform(
+            self,
+            k,
+            spatial_vars,
+            spatial_forward,
+            spatial_backward,
+            reduce_vars,
+            reduce_forward,
+            reduce_backward,
+            1 if explicit else 0,
+        )
         return ret.output(0)
 
     def _eliminate(self, k, axis, explicit=True):
@@ -286,14 +328,16 @@ class LayerState(Object):
                 exist = True
                 if len(self[k].axis()) == 1:
                     raise ValueError(
-                        "Can't eliminate the only spatial dimension of the compute")
+                        "Can't eliminate the only spatial dimension of the compute"
+                    )
                 break
         for iv in self[k].reduce_axis():
             if iv == axis:
                 exist = True
                 if len(self[k].reduce_axis()) == 1:
                     raise ValueError(
-                        "Can't eliminate the only reduce dimension of the tensor")
+                        "Can't eliminate the only reduce dimension of the tensor"
+                    )
                 break
 
         if not exist:
@@ -317,13 +361,19 @@ class LayerState(Object):
         reduce_vars = []
         reduce_forward = []
         reduce_backward = []
-        _inner(self[k].reduce_axis(), reduce_vars,
-               reduce_forward, reduce_backward)
+        _inner(self[k].reduce_axis(), reduce_vars, reduce_forward, reduce_backward)
 
-        ret = _ffi_api.LayerStateTransform(self, k, spatial_vars, spatial_forward,
-                                           spatial_backward, reduce_vars,
-                                           reduce_forward, reduce_backward,
-                                           1 if explicit else 0)
+        ret = _ffi_api.LayerStateTransform(
+            self,
+            k,
+            spatial_vars,
+            spatial_forward,
+            spatial_backward,
+            reduce_vars,
+            reduce_forward,
+            reduce_backward,
+            1 if explicit else 0,
+        )
         return ret.output(0)
 
     def explicit_fold(self, k, axis, factor):
@@ -367,10 +417,10 @@ class GraphState(Object):
 
     def get_current_layers(self):
         return _ffi_api.GraphStateGetCurrentLayers(self)
-    
+
     def normalize_partition_layer(self, layer, modify=True):
         return _ffi_api.GraphStateNormalizePartitionLayer(self, layer, modify)
-    
+
     def fuse_layer(self, front, back, modify=True):
         return _ffi_api.GraphStateFuseLayer(self, front, back, modify)
 

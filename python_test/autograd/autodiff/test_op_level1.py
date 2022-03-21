@@ -14,18 +14,19 @@ TEST_CASES = OrderedDict()
 def register_test(func):
     name = func.__name__
     prefix = "test"
-    assert name[:len(prefix)] == prefix
+    assert name[: len(prefix)] == prefix
     try:
-        number = int(name[len(prefix):])
+        number = int(name[len(prefix) :])
 
         def _inner(*args, **kwargs):
             print(func.__doc__)
             func(*args, **kwargs)
+
         assert number not in TEST_CASES, "Repeated test case number %d" % number
         TEST_CASES[number] = _inner
     except ValueError as e:
         print(e)
-        print("Can't convert to number", name[len(prefix):])
+        print("Can't convert to number", name[len(prefix) :])
 
 
 @register_test
@@ -37,8 +38,7 @@ def test1():
     A = tvm.te.placeholder(Ashape, dtype=dtype, name="A")
     B = tvm.te.placeholder(Cshape, dtype=dtype, name="B")
 
-    C = tvm.te.compute(Cshape,
-    lambda i, j, k, n: B[i,j,k,n]+A[i,j,k], name="C")
+    C = tvm.te.compute(Cshape, lambda i, j, k, n: B[i, j, k, n] + A[i, j, k], name="C")
 
     dC = tvm.te.placeholder(Cshape, dtype=dtype, name="dC")
 
@@ -71,10 +71,12 @@ def test1():
     C_torch = B_torch + A_torch.reshape(Ashape + [1]).expand_as(B_torch)
     loss = C_torch.sum()
     loss.backward()
-    testing.assert_allclose(dA_tvm.asnumpy(), A_torch.grad.numpy(), atol=1e-30, rtol=1e-30)
+    testing.assert_allclose(
+        dA_tvm.asnumpy(), A_torch.grad.numpy(), atol=1e-30, rtol=1e-30
+    )
     print("Compare with Numpy success!")
-    
-    
+
+
 @register_test
 def test2():
     N = 2
@@ -97,9 +99,13 @@ def test2():
     c = tvm.te.reduce_axis([0, nC], name="c")
     r = tvm.te.reduce_axis([0, R], name="r")
     s = tvm.te.reduce_axis([0, S], name="s")
-    C = tvm.te.compute([N, K, P, Q],
-    lambda n, k, h, w :
-        tvm.te.sum(A[n, c, h * st + r, w * st + s] * B[k, c, r, s], axis=[c,r,s]), name="C")
+    C = tvm.te.compute(
+        [N, K, P, Q],
+        lambda n, k, h, w: tvm.te.sum(
+            A[n, c, h * st + r, w * st + s] * B[k, c, r, s], axis=[c, r, s]
+        ),
+        name="C",
+    )
 
     dC = tvm.te.placeholder([N, K, P, Q], dtype=dtype, name="dC")
 
@@ -138,10 +144,12 @@ def test2():
     B_torch = torch.tensor(B_np)
     dC_torch = torch.tensor(dC_np)
     golden_torch = torch.nn.functional.conv_transpose2d(dC_torch, B_torch)
-    testing.assert_allclose(dA_tvm.asnumpy(), golden_torch.numpy(), rtol=1e-3, atol=1e-3)
+    testing.assert_allclose(
+        dA_tvm.asnumpy(), golden_torch.numpy(), rtol=1e-3, atol=1e-3
+    )
     print("Compare with PyTorch success!")
-    
-    
+
+
 @register_test
 def test3():
     N = 2
@@ -161,14 +169,20 @@ def test3():
 
     A = tvm.te.placeholder([N, nC, H, W], dtype=dtype, name="A")
     B1 = tvm.te.placeholder([K, nC, R, S], dtype=dtype, name="B1")
-    
-    B = tvm.te.compute([K, nC, R, S], lambda k, c, r, s: B1[k, c, r, s] * B1[k, c, r, s], name="B")
+
+    B = tvm.te.compute(
+        [K, nC, R, S], lambda k, c, r, s: B1[k, c, r, s] * B1[k, c, r, s], name="B"
+    )
     c = tvm.te.reduce_axis([0, nC], name="c")
     r = tvm.te.reduce_axis([0, R], name="r")
     s = tvm.te.reduce_axis([0, S], name="s")
-    C = tvm.te.compute([N, K, P, Q],
-    lambda n, k, h, w :
-        tvm.te.sum(A[n, c, h * st + r, w * st + s] * B[k, c, r, s], axis=[c,r,s]), name="C")
+    C = tvm.te.compute(
+        [N, K, P, Q],
+        lambda n, k, h, w: tvm.te.sum(
+            A[n, c, h * st + r, w * st + s] * B[k, c, r, s], axis=[c, r, s]
+        ),
+        name="C",
+    )
 
     dC = tvm.te.placeholder([N, K, P, Q], dtype=dtype, name="dC")
 
@@ -208,12 +222,15 @@ def test3():
     B_torch = B1_torch * B1_torch
     dC_torch = torch.tensor(dC_np)
     golden_torch = torch.nn.functional.conv_transpose2d(dC_torch, B_torch)
-    testing.assert_allclose(dA_tvm.asnumpy(), golden_torch.numpy(), rtol=1e-3, atol=1e-3)
+    testing.assert_allclose(
+        dA_tvm.asnumpy(), golden_torch.numpy(), rtol=1e-3, atol=1e-3
+    )
     print("Compare with PyTorch success!")
 
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--case", help="test case", type=int, default=1)
     parser.add_argument("--all", help="test all", action="store_true")
@@ -226,7 +243,6 @@ if __name__ == "__main__":
             v()
             print("Pass!")
     else:
-        assert args.case in TEST_CASES, "Can't find case %s." % (
-            str(args.case))
+        assert args.case in TEST_CASES, "Can't find case %s." % (str(args.case))
         case = TEST_CASES[args.case]
         case()

@@ -6,6 +6,6 @@ namespace auto_tensorize {
 
 static const int SUBSTANTIAL = 16;
 
-}  // namespace auto_tensorize
+} // namespace auto_tensorize
 
-}  // namespace ditto
+} // namespace ditto

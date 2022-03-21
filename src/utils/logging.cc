@@ -1,12 +1,11 @@
 #include <utils/logging.h>
 
-
 namespace ditto {
 
 namespace utils {
 
 int get_evn_value(std::string name) {
-  char* value = std::getenv(name.c_str());
+  char *value = std::getenv(name.c_str());
   if (value != nullptr) {
     return std::stoi(std::string(value));
   } else {
@@ -14,13 +13,11 @@ int get_evn_value(std::string name) {
   }
 }
 
-
 std::chrono::milliseconds current_time() {
-  return std::chrono::duration_cast< std::chrono::milliseconds >(
-          std::chrono::system_clock::now().time_since_epoch()
-          );
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch());
 }
 
-}  // namespace utils
+} // namespace utils
 
-}  // namespace ditto
+} // namespace ditto

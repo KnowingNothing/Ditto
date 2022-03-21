@@ -54,7 +54,7 @@ public:
 protected:
   Graph graph_;
   Map<String, Module> built_mods_;
-  Device dev_;  
+  Device dev_;
   bool init_;
   std::vector<std::string> exe_seq_;
   std::unordered_map<std::string, Layer> workloads_;
