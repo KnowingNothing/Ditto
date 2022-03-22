@@ -8,7 +8,7 @@ from transformers.models.auto.configuration_auto import AutoConfig
 
 def run_benchmark(batch_size=8, seq_len=512):
     # The bare Bert Model without any specific head on top.
-    config = AutoConfig.from_pretrained('bert-base-uncased')
+    config = AutoConfig.from_pretrained("bert-base-uncased")
     model = AutoModel.from_config(config)
     model = model.cuda().eval()
 
@@ -45,14 +45,14 @@ def run_benchmark(batch_size=8, seq_len=512):
 
 bert_config = [
     # seq-len
-    (512, )
+    (512,)
 ]
 
 
 if __name__ == "__main__":
     assert torch.backends.cudnn.is_available()
     torch.backends.cudnn.enabled = True
-    batches = [2**i for i in range(1)]
+    batches = [2 ** i for i in range(1)]
 
     for batch in batches:
         for i, config in enumerate(bert_config):

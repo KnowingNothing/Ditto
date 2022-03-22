@@ -1,10 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras.applications import (
-    mobilenet,
-    nasnet,
-    resnet50,
-    xception
-)
+from tensorflow.keras.applications import mobilenet, nasnet, resnet50, xception
 from tensorflow.keras.mixed_precision import experimental as mixed_precision
 from tensorflow.keras import layers
 from transformers.models.auto.modeling_tf_auto import TFAutoModel
@@ -54,11 +49,12 @@ def get_xception_shape():
 
 
 def get_bert():
-    config = AutoConfig.from_pretrained('bert-base-uncased')
+    config = AutoConfig.from_pretrained("bert-base-uncased")
     model = TFAutoModel.from_config(config)
 
     def _inner(inp):
         return model(inp, training=False)
+
     return _inner
 
 
@@ -90,7 +86,7 @@ MODEL_DICT = {
     "xception": get_xception,
     "bert": get_bert,
     "mi-lstm": get_milstm,
-    "shuffle": get_shufflenet
+    "shuffle": get_shufflenet,
 }
 
 SHAPE_DICT = {
@@ -100,15 +96,22 @@ SHAPE_DICT = {
     "xception": get_xception_shape,
     "bert": get_bert_shape,
     "mi-lstm": get_milstm_shape,
-    "shuffle": get_shufflenet_shape
+    "shuffle": get_shufflenet_shape,
 }
 
 
 def test_infer_perf(
-        fget_model, input_shape, batch=1, dtype="float32", mix_p=False,
-        repeats=1, use_xla=True, input_is_index=False):
+    fget_model,
+    input_shape,
+    batch=1,
+    dtype="float32",
+    mix_p=False,
+    repeats=1,
+    use_xla=True,
+    input_is_index=False,
+):
     if mix_p:
-        policy = mixed_precision.Policy('mixed_float16')
+        policy = mixed_precision.Policy("mixed_float16")
         mixed_precision.set_policy(policy)
     model = fget_model()
     if input_is_index:
@@ -130,7 +133,7 @@ def test_infer_perf(
         start = time.time()
         output = model_func(img_tensor)
         stop = time.time()
-        total = (stop - start) * 1000.
+        total = (stop - start) * 1000.0
 
         time_record.append(total)
     return time_record
@@ -140,15 +143,20 @@ if __name__ == "__main__":
     print("NOTE: please export XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/local/cuda-11.1")
     print("NOTE: please export CUDA_VISIBLE_DEVICES=0")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dnn", help="the dnn to test", default="res50",
-                        choices=["mobile", "nas", "res50", "xception", "bert", "mi-lstm", "shuffle"])
-    parser.add_argument("--batch", help="batch size", type=int, default=1)
-    parser.add_argument("--dtype", help="data type", default="fp32",
-                        choices=["fp32", "fp16", "mix"])
     parser.add_argument(
-        "--repeats", help="number of repeat exectution", type=int, default=1)
-    parser.add_argument("--use_xla", help="enable xla jit",
-                        action="store_true")
+        "--dnn",
+        help="the dnn to test",
+        default="res50",
+        choices=["mobile", "nas", "res50", "xception", "bert", "mi-lstm", "shuffle"],
+    )
+    parser.add_argument("--batch", help="batch size", type=int, default=1)
+    parser.add_argument(
+        "--dtype", help="data type", default="fp32", choices=["fp32", "fp16", "mix"]
+    )
+    parser.add_argument(
+        "--repeats", help="number of repeat exectution", type=int, default=1
+    )
+    parser.add_argument("--use_xla", help="enable xla jit", action="store_true")
 
     args = parser.parse_args()
 
@@ -180,7 +188,7 @@ if __name__ == "__main__":
     print("use xla =", use_xla)
     print("input is index =", input_is_index)
     print()
-    with tf.device('GPU:'+str(device)):
+    with tf.device("GPU:" + str(device)):
         time_record = test_infer_perf(
             fget_model,
             shape,
@@ -189,6 +197,6 @@ if __name__ == "__main__":
             mix_p=mix_p,
             repeats=repeats,
             use_xla=use_xla,
-            input_is_index=input_is_index
+            input_is_index=input_is_index,
         )
         print("Average inference latency", np.mean(time_record))

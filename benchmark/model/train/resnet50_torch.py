@@ -14,8 +14,9 @@ def train_perf(device=0):
     dtype = "float32"
     img = np.random.uniform(-1, 1, [batch, 3, 224, 224]).astype(dtype)
     img_tensor = torch.tensor(img).cuda("cuda:" + str(device))
-    label_tensor = torch.empty(batch, dtype=torch.long).random_(
-        1000).cuda("cuda:" + str(device))
+    label_tensor = (
+        torch.empty(batch, dtype=torch.long).random_(1000).cuda("cuda:" + str(device))
+    )
     model(img_tensor)
     number = 10
     repeats = 10

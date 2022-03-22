@@ -11,11 +11,11 @@ import torchvision.transforms as transforms
 
 
 class ConvLayer(nn.Module):
-
     def __init__(self, in_channels=1, out_channels=256):
         super(ConvLayer, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels,
-                              kernel_size=9, stride=1, padding=0)
+        self.conv = nn.Conv2d(
+            in_channels, out_channels, kernel_size=9, stride=1, padding=0
+        )
 
     def forward(self, x):
         conved = self.conv(x)
@@ -24,19 +24,25 @@ class ConvLayer(nn.Module):
 
 
 class PrimaryCaps(nn.Module):
-
     def __init__(self, num_capsules=8, in_channels=256, out_channels=32):
         super(PrimaryCaps, self).__init__()
-        self.capsules = nn.ModuleList([
-            nn.Conv2d(in_channels=in_channels, out_channels=out_channels,
-                      kernel_size=9, stride=2, padding=0)
-            for _ in range(num_capsules)])
+        self.capsules = nn.ModuleList(
+            [
+                nn.Conv2d(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=9,
+                    stride=2,
+                    padding=0,
+                )
+                for _ in range(num_capsules)
+            ]
+        )
 
     def forward(self, x):
         # get batch size of inputs
         batch_size = x.size(0)
-        u = [capsule(x).view(batch_size, 32 * 6 * 6, 1)
-             for capsule in self.capsules]
+        u = [capsule(x).view(batch_size, 32 * 6 * 6, 1) for capsule in self.capsules]
         u = torch.cat(u, dim=-1)
         u_squash = self.squash(u)
         return u_squash
@@ -49,11 +55,13 @@ class PrimaryCaps(nn.Module):
 
 
 def softmax(input_tensor, dim=2):
-    transposed_input = input_tensor.transpose(
-        dim, len(input_tensor.size()) - 1)
+    transposed_input = input_tensor.transpose(dim, len(input_tensor.size()) - 1)
     softmaxed_output = F.softmax(
-        transposed_input.contiguous().view(-1, transposed_input.size(-1)), dim=-1)
-    return softmaxed_output.view(*transposed_input.size()).transpose(dim, len(input_tensor.size()) - 1)
+        transposed_input.contiguous().view(-1, transposed_input.size(-1)), dim=-1
+    )
+    return softmaxed_output.view(*transposed_input.size()).transpose(
+        dim, len(input_tensor.size()) - 1
+    )
 
 
 # dynamic routing
@@ -70,23 +78,28 @@ def dynamic_routing(b_ij, u_hat, squash, routing_iterations=3):
 
 TRAIN_ON_GPU = torch.cuda.is_available()
 
-if(TRAIN_ON_GPU):
-    print('Training on GPU!')
+if TRAIN_ON_GPU:
+    print("Training on GPU!")
 else:
-    print('Only CPU available')
+    print("Only CPU available")
 
 
 class DigitCaps(nn.Module):
-
-    def __init__(self, num_capsules=10, previous_layer_nodes=32*6*6,
-                 in_channels=8, out_channels=16):
+    def __init__(
+        self,
+        num_capsules=10,
+        previous_layer_nodes=32 * 6 * 6,
+        in_channels=8,
+        out_channels=16,
+    ):
         super(DigitCaps, self).__init__()
         self.num_capsules = num_capsules
         self.previous_layer_nodes = previous_layer_nodes
         self.in_channels = in_channels
 
-        self.W = nn.Parameter(torch.randn(num_capsules, previous_layer_nodes,
-                                          in_channels, out_channels))
+        self.W = nn.Parameter(
+            torch.randn(num_capsules, previous_layer_nodes, in_channels, out_channels)
+        )
 
     def forward(self, u):
         u = u[None, :, :, None, :]
@@ -108,7 +121,6 @@ class DigitCaps(nn.Module):
 
 
 class CapsuleNetwork(nn.Module):
-
     def __init__(self):
         super(CapsuleNetwork, self).__init__()
         self.conv_layer = ConvLayer()
@@ -117,8 +129,7 @@ class CapsuleNetwork(nn.Module):
 
     def forward(self, images):
         primary_caps_output = self.primary_capsules(self.conv_layer(images))
-        caps_output = self.digit_capsules(
-            primary_caps_output).squeeze().transpose(0, 1)
+        caps_output = self.digit_capsules(primary_caps_output).squeeze().transpose(0, 1)
         # squeeze can will delete all 1 in dims, which is unexpected
         if batch == 1:
             caps_output = caps_output.reshape(batch, 10, 16)
@@ -134,16 +145,15 @@ if TRAIN_ON_GPU:
 
 
 class CapsuleLoss(nn.Module):
-
     def __init__(self):
         super(CapsuleLoss, self).__init__()
 
     def forward(self, x, labels, images=None, reconstructions=None):
         batch_size = x.size(0)
-        v_c = torch.sqrt((x**2).sum(dim=2))
+        v_c = torch.sqrt((x ** 2).sum(dim=2))
         left = F.relu(0.9 - v_c).view(batch_size, -1)
         right = F.relu(v_c - 0.1).view(batch_size, -1)
-        margin_loss = labels * left + 0.5 * (1. - labels) * right
+        margin_loss = labels * left + 0.5 * (1.0 - labels) * right
         margin_loss = margin_loss.sum()
         return margin_loss
 
@@ -179,8 +189,7 @@ def train_perf(device=0):
             optimizer.zero_grad()
             caps_output = model(img_tensor)
             images, reconstructions = 0, 0
-            loss = criterion(caps_output, label_tensor,
-                             images, reconstructions)
+            loss = criterion(caps_output, label_tensor, images, reconstructions)
 
             start.record()
             loss.backward()

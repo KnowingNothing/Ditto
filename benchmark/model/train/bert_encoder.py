@@ -42,7 +42,9 @@ class PretrainedConfig(object):
         self.return_dict = kwargs.pop("return_dict", True)
         self.output_hidden_states = kwargs.pop("output_hidden_states", False)
         self.output_attentions = kwargs.pop("output_attentions", False)
-        self.torchscript = kwargs.pop("torchscript", False)  # Only used by PyTorch models
+        self.torchscript = kwargs.pop(
+            "torchscript", False
+        )  # Only used by PyTorch models
         self.use_bfloat16 = kwargs.pop("use_bfloat16", False)
         self.pruned_heads = kwargs.pop("pruned_heads", {})
         self.tie_word_embeddings = kwargs.pop(
@@ -82,7 +84,9 @@ class PretrainedConfig(object):
         self.label2id = kwargs.pop("label2id", None)
         if self.id2label is not None:
             kwargs.pop("num_labels", None)
-            self.id2label = dict((int(key), value) for key, value in self.id2label.items())
+            self.id2label = dict(
+                (int(key), value) for key, value in self.id2label.items()
+            )
             # Keys are always strings in JSON so convert ids to int here.
         else:
             self.num_labels = kwargs.pop("num_labels", 2)
@@ -286,7 +290,10 @@ class BertConfig(PretrainedConfig):
 
 
 def apply_chunking_to_forward(
-    forward_fn: Callable[..., torch.Tensor], chunk_size: int, chunk_dim: int, *input_tensors
+    forward_fn: Callable[..., torch.Tensor],
+    chunk_size: int,
+    chunk_dim: int,
+    *input_tensors,
 ) -> torch.Tensor:
     """
     This function chunks the :obj:`input_tensors` into smaller input tensor parts of size :obj:`chunk_size` over the
@@ -321,7 +328,9 @@ def apply_chunking_to_forward(
             return apply_chunking_to_forward(self.forward_chunk, self.chunk_size_lm_head, self.seq_len_dim, hidden_states)
     """
 
-    assert len(input_tensors) > 0, "{} has to be a tuple/list of tensors".format(input_tensors)
+    assert len(input_tensors) > 0, "{} has to be a tuple/list of tensors".format(
+        input_tensors
+    )
     tensor_shape = input_tensors[0].shape[chunk_dim]
     assert all(
         input_tensor.shape[chunk_dim] == tensor_shape for input_tensor in input_tensors
@@ -346,11 +355,13 @@ def apply_chunking_to_forward(
 
         # chunk input tensor into tuples
         input_tensors_chunks = tuple(
-            input_tensor.chunk(num_chunks, dim=chunk_dim) for input_tensor in input_tensors
+            input_tensor.chunk(num_chunks, dim=chunk_dim)
+            for input_tensor in input_tensors
         )
         # apply forward fn to every tuple
         output_chunks = tuple(
-            forward_fn(*input_tensors_chunk) for input_tensors_chunk in zip(*input_tensors_chunks)
+            forward_fn(*input_tensors_chunk)
+            for input_tensors_chunk in zip(*input_tensors_chunks)
         )
         # concatenate output at same dimension
         return torch.cat(output_chunks, dim=chunk_dim)
@@ -384,8 +395,12 @@ class BertEmbeddings(nn.Module):
         self.word_embeddings = nn.Embedding(
             config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id
         )
-        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
-        self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
+        self.position_embeddings = nn.Embedding(
+            config.max_position_embeddings, config.hidden_size
+        )
+        self.token_type_embeddings = nn.Embedding(
+            config.type_vocab_size, config.hidden_size
+        )
 
         # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
         # any TensorFlow checkpoint file
@@ -396,7 +411,9 @@ class BertEmbeddings(nn.Module):
         self.register_buffer(
             "position_ids", torch.arange(config.max_position_embeddings).expand((1, -1))
         )
-        self.position_embedding_type = getattr(config, "position_embedding_type", "absolute")
+        self.position_embedding_type = getattr(
+            config, "position_embedding_type", "absolute"
+        )
 
     def forward(
         self,
@@ -440,7 +457,9 @@ class BertSelfAttention(nn.Module):
         self.value = nn.Linear(config.hidden_size, self.all_head_size)
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-        self.position_embedding_type = getattr(config, "position_embedding_type", "absolute")
+        self.position_embedding_type = getattr(
+            config, "position_embedding_type", "absolute"
+        )
         if (
             self.position_embedding_type == "relative_key"
             or self.position_embedding_type == "relative_key_query"
@@ -451,7 +470,10 @@ class BertSelfAttention(nn.Module):
             )
 
     def transpose_for_scores(self, x):
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        new_x_shape = x.size()[:-1] + (
+            self.num_attention_heads,
+            self.attention_head_size,
+        )
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
@@ -463,7 +485,6 @@ class BertSelfAttention(nn.Module):
         key_layer = self.transpose_for_scores(self.key(hidden_states))
         value_layer = self.transpose_for_scores(self.value(hidden_states))
         query_layer = self.transpose_for_scores(self.query(hidden_states))
-
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
@@ -500,7 +521,9 @@ class BertSelfAttention(nn.Module):
                     "bhrd,lrd->bhlr", key_layer, positional_embedding
                 )
                 attention_scores = (
-                    attention_scores + relative_position_scores_query + relative_position_scores_key
+                    attention_scores
+                    + relative_position_scores_query
+                    + relative_position_scores_key
                 )
 
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
@@ -556,7 +579,9 @@ class BertAttention(nn.Module):
             attention_mask,
         )
         attention_output = self.output(self_outputs[0], hidden_states)
-        outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
+        outputs = (attention_output,) + self_outputs[
+            1:
+        ]  # add attentions if we output them
         return outputs
 
 
@@ -628,7 +653,9 @@ class BertEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.layer = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
+        self.layer = nn.ModuleList(
+            [BertLayer(config) for _ in range(config.num_hidden_layers)]
+        )
 
     def forward(self, hidden_states, attention_mask=None):
         for i, layer_module in enumerate(self.layer):
@@ -663,7 +690,7 @@ class BertModel(nn.Module):
 
         self.pooler = BertPooler(config) if add_pooling_layer else None
 
-    def forward(self, embedding_output): # input_ids):
+    def forward(self, embedding_output):  # input_ids):
         batch_size, seqlen, hidden_size = embedding_output.size()
         input_shape = (batch_size, seqlen)
         device = embedding_output.device
@@ -690,7 +717,9 @@ class BertModel(nn.Module):
         )
 
         sequence_output = encoder_outputs[0]
-        pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
+        pooled_output = (
+            self.pooler(sequence_output) if self.pooler is not None else None
+        )
 
         return pooled_output or sequence_output
 

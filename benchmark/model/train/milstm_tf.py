@@ -10,25 +10,16 @@ import argparse
 
 
 class MILSTMCell(tf.keras.layers.Layer):
-    def __init__(self,
-                 units,
-                 n_class,
-                 **kwargs):
+    def __init__(self, units, n_class, **kwargs):
         super(MILSTMCell, self).__init__(**kwargs)
         self.units = units
 
         self.kernel = tf.keras.layers.Dense(self.units * 4)
         self.recurrent_kernel = tf.keras.layers.Dense(self.units * 4)
 
-        self.alpha = self.add_weight(
-            shape=(1, self.units * 4),
-            name='alpha')
-        self.beta1 = self.add_weight(
-            shape=(1, self.units * 4),
-            name='beta1')
-        self.beta2 = self.add_weight(
-            shape=(1, self.units * 4),
-            name='beta2')
+        self.alpha = self.add_weight(shape=(1, self.units * 4), name="alpha")
+        self.beta1 = self.add_weight(shape=(1, self.units * 4), name="beta1")
+        self.beta2 = self.add_weight(shape=(1, self.units * 4), name="beta2")
 
         self.classifier = tf.keras.layers.Dense(n_class)
 
@@ -47,8 +38,9 @@ class MILSTMCell(tf.keras.layers.Layer):
         x_beta1 = self.beta1 * x
         h_beta2 = self.beta2 * h_tmp
 
-        i, f, c, o = tf.split(xh_alpha + x_beta1 + h_beta2,
-                              num_or_size_splits=4, axis=1)
+        i, f, c, o = tf.split(
+            xh_alpha + x_beta1 + h_beta2, num_or_size_splits=4, axis=1
+        )
 
         i = activations.sigmoid(i)
         f = activations.sigmoid(f)
@@ -63,8 +55,7 @@ class MILSTMCell(tf.keras.layers.Layer):
 def test_train_perf(batch_size):
     model = MILSTMCell(1024, 10)
 
-    data = tf.convert_to_tensor(
-        np.random.randn(batch_size, 28 * 28), np.float32)
+    data = tf.convert_to_tensor(np.random.randn(batch_size, 28 * 28), np.float32)
     old_h = tf.convert_to_tensor(np.random.randn(batch_size, 1024), np.float32)
     old_c = tf.convert_to_tensor(np.random.randn(batch_size, 1024), np.float32)
     labels = tf.convert_to_tensor(np.random.randn(batch_size, 10), np.float32)
@@ -72,8 +63,7 @@ def test_train_perf(batch_size):
     @tf.function(experimental_compile=USE_XLA)
     def model_loss(data, states, labels):
         logits, _ = model(data, states)
-        loss = tf.nn.softmax_cross_entropy_with_logits(
-            labels=labels, logits=logits)
+        loss = tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
         return loss
 
     model_loss(data, [old_h, old_c], labels)
@@ -92,18 +82,16 @@ def test_train_perf(batch_size):
             gradients = tape.gradient(loss, model.trainable_variables)
             end_time = time.time()
 
-            optimizer.apply_gradients(
-                zip(gradients, model.trainable_variables))
+            optimizer.apply_gradients(zip(gradients, model.trainable_variables))
             records.append(end_time - start_time)
-        print("Average training latency {} ms".format(1000. * np.mean(records)))
-        print("Median training latency {} ms".format(1000. * np.median(records)))
+        print("Average training latency {} ms".format(1000.0 * np.mean(records)))
+        print("Median training latency {} ms".format(1000.0 * np.median(records)))
     print("batch = ", batch_size)
 
 
 def test_infer_perf(batch_size):
     model = MILSTMCell(1024, 10)
-    data = tf.convert_to_tensor(
-        np.random.randn(batch_size, 28 * 28), np.float32)
+    data = tf.convert_to_tensor(np.random.randn(batch_size, 28 * 28), np.float32)
     old_h = tf.convert_to_tensor(np.random.randn(batch_size, 1024), np.float32)
     old_c = tf.convert_to_tensor(np.random.randn(batch_size, 1024), np.float32)
 
@@ -111,6 +99,7 @@ def test_infer_perf(batch_size):
     def model_func(data, states):
         out = model(data, states)
         return out
+
     model_func(data, [old_h, old_c])
 
     number = 10
@@ -124,9 +113,8 @@ def test_infer_perf(batch_size):
             end_time = time.time()
 
             records.append(end_time - start_time)
-        print("Average inference latency {} ms".format(1000. * np.mean(records)))
-        print("Median inference latency {} ms".format(
-            1000. * np.median(records)))
+        print("Average inference latency {} ms".format(1000.0 * np.mean(records)))
+        print("Median inference latency {} ms".format(1000.0 * np.median(records)))
     print("batch = ", batch_size)
 
 
@@ -135,7 +123,7 @@ if __name__ == "__main__":
     for xla in [True, False]:
         for batch in [1, 16, 32, 64]:
             USE_XLA = xla
-            with tf.device('GPU:'+str(device)):
+            with tf.device("GPU:" + str(device)):
                 test_train_perf(batch)
                 test_infer_perf(batch)
                 print("use XLA:", xla)

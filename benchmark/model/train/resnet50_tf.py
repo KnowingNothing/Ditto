@@ -37,10 +37,9 @@ def test_train_perf(batch=1):
             start = time.time()
             gradients = tape.gradient(loss, model.trainable_variables)
             stop = time.time()
-            total = (stop - start) * 1000.
+            total = (stop - start) * 1000.0
 
-            optimizer.apply_gradients(
-                zip(gradients, model.trainable_variables))
+            optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
             time_record.append(total)
         print("Average training latency", np.mean(time_record))
@@ -73,7 +72,7 @@ def test_infer_perf(batch=1):
             start = time.time()
             output = model_func(img_tensor)
             stop = time.time()
-            total = (stop - start) * 1000.
+            total = (stop - start) * 1000.0
 
             time_record.append(total)
         print("Average inference latency", np.mean(time_record))
@@ -87,7 +86,7 @@ if __name__ == "__main__":
     for xla in [True, False]:
         for batch in [1, 16, 32, 64]:
             USE_XLA = xla
-            with tf.device('GPU:'+str(device)):
+            with tf.device("GPU:" + str(device)):
                 test_train_perf(batch)
                 test_infer_perf(batch)
                 print("use XLA:", xla)

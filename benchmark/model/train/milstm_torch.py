@@ -15,7 +15,7 @@ torch.manual_seed(42)
 
 
 class MILSTM_Cell(nn.Module):
-    def __init__(self, input_size=28*28, hidden_size=1024):
+    def __init__(self, input_size=28 * 28, hidden_size=1024):
         super(MILSTM_Cell, self).__init__()
 
         self.hidden_size = hidden_size
@@ -51,17 +51,29 @@ class MILSTM_Cell(nn.Module):
         # gates : [batch, hidden_size]
 
         # forget gate
-        f_g = torch.sigmoid(self.alpha_f * self.weight_fx(inp) * self.weight_fh(h_0) +
-                            (self.beta_f1 * self.weight_fx(inp)) + (self.beta_f2 * self.weight_fh(h_0)))
+        f_g = torch.sigmoid(
+            self.alpha_f * self.weight_fx(inp) * self.weight_fh(h_0)
+            + (self.beta_f1 * self.weight_fx(inp))
+            + (self.beta_f2 * self.weight_fh(h_0))
+        )
         # input gate
-        i_g = torch.sigmoid(self.alpha_i * self.weight_ix(inp) * self.weight_ih(h_0) +
-                            (self.beta_i1 * self.weight_ix(inp)) + (self.beta_i2 * self.weight_ih(h_0)))
+        i_g = torch.sigmoid(
+            self.alpha_i * self.weight_ix(inp) * self.weight_ih(h_0)
+            + (self.beta_i1 * self.weight_ix(inp))
+            + (self.beta_i2 * self.weight_ih(h_0))
+        )
         # output gate
-        o_g = torch.sigmoid(self.alpha_o * self.weight_ox(inp) * self.weight_oh(h_0) +
-                            (self.beta_o1 * self.weight_ox(inp)) + (self.beta_o2 * self.weight_oh(h_0)))
+        o_g = torch.sigmoid(
+            self.alpha_o * self.weight_ox(inp) * self.weight_oh(h_0)
+            + (self.beta_o1 * self.weight_ox(inp))
+            + (self.beta_o2 * self.weight_oh(h_0))
+        )
         # block input
-        z_t = torch.tanh(self.alpha_z * self.weight_zx(inp) * self.weight_zh(h_0) +
-                         (self.beta_z1 * self.weight_zx(inp)) + (self.beta_z2 * self.weight_zh(h_0)))
+        z_t = torch.tanh(
+            self.alpha_z * self.weight_zx(inp) * self.weight_zh(h_0)
+            + (self.beta_z1 * self.weight_zx(inp))
+            + (self.beta_z2 * self.weight_zh(h_0))
+        )
         # current cell state
         cx = f_g * c_0 + i_g * z_t
         # hidden state
@@ -71,7 +83,7 @@ class MILSTM_Cell(nn.Module):
 
 
 class MILSTM(nn.Module):
-    def __init__(self, input_size=28*28, hidden_size=1024, n_class=10):
+    def __init__(self, input_size=28 * 28, hidden_size=1024, n_class=10):
         super(MILSTM, self).__init__()
         self.n_class = n_class
         self.hidden_size = hidden_size
@@ -82,10 +94,12 @@ class MILSTM(nn.Module):
 
     def forward(self, x):
         if self.h is None:
-            zeroh = Variable(torch.zeros(
-                batch, self.hidden_size, dtype=x.dtype, device=x.device))
-            zeroc = Variable(torch.zeros(
-                batch, self.hidden_size, dtype=x.dtype, device=x.device))
+            zeroh = Variable(
+                torch.zeros(batch, self.hidden_size, dtype=x.dtype, device=x.device)
+            )
+            zeroc = Variable(
+                torch.zeros(batch, self.hidden_size, dtype=x.dtype, device=x.device)
+            )
             self.h = zeroh
             self.c = zeroc
         new_h, new_c = self.lstm(x, self.h, self.c)
@@ -100,15 +114,15 @@ def MINST_train():
     num_epoches = 3
 
     train_dataset = datasets.MNIST(
-        root='./data', train=True, transform=transforms.ToTensor(), download=False)
+        root="./data", train=True, transform=transforms.ToTensor(), download=False
+    )
 
     test_dataset = datasets.MNIST(
-        root='./data', train=False, transform=transforms.ToTensor(), download=False)
+        root="./data", train=False, transform=transforms.ToTensor(), download=False
+    )
 
-    train_loader = DataLoader(
-        train_dataset, batch=batch, shuffle=True)
-    test_loader = DataLoader(
-        test_dataset, batch=batch, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch=batch, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch=batch, shuffle=False)
 
     model = MILSTM()  # 图片大小是28x28
     use_gpu = torch.cuda.is_available()
@@ -123,19 +137,19 @@ def MINST_train():
     infer_time_record = []
     # 开始训练
     for epoch in range(num_epoches):
-        print('epoch {}'.format(epoch + 1))
-        print('*' * 10)
+        print("epoch {}".format(epoch + 1))
+        print("*" * 10)
         running_loss = 0.0
         running_acc = 0.0
         for i, data in enumerate(train_loader, 1):
             img, label = data
             b, c, h, w = img.size()
-            assert c == 1, 'channel must be 1'
+            assert c == 1, "channel must be 1"
             if b != batch:
                 print("discarded for training")
                 continue
             img = img.squeeze(1)
-            img = img.view(batch, 28*28)
+            img = img.view(batch, 28 * 28)
             if use_gpu:
                 img = Variable(img).cuda()
                 # print(img.size())
@@ -165,25 +179,34 @@ def MINST_train():
             running_acc += num_correct.item()
 
             if i % 30000 == 0:
-                print('[{}/{}] Loss: {:.6f}, Acc: {:.6f}'.format(
-                    epoch + 1, num_epoches, running_loss / (batch * i),
-                    running_acc / (batch * i)))
-        print('Finish {} epoch, Loss: {:.6f}, Acc: {:.6f}'.format(
-            epoch + 1, running_loss / (len(train_dataset)), running_acc / (len(
-                train_dataset))))
+                print(
+                    "[{}/{}] Loss: {:.6f}, Acc: {:.6f}".format(
+                        epoch + 1,
+                        num_epoches,
+                        running_loss / (batch * i),
+                        running_acc / (batch * i),
+                    )
+                )
+        print(
+            "Finish {} epoch, Loss: {:.6f}, Acc: {:.6f}".format(
+                epoch + 1,
+                running_loss / (len(train_dataset)),
+                running_acc / (len(train_dataset)),
+            )
+        )
         with torch.no_grad():
             # model.eval()
-            eval_loss = 0.
-            eval_acc = 0.
+            eval_loss = 0.0
+            eval_acc = 0.0
             for data in test_loader:
                 img, label = data
                 b, c, h, w = img.size()
-                assert c == 1, 'channel must be 1'
+                assert c == 1, "channel must be 1"
                 if b != batch:
                     print("discarded for testing")
                     continue
                 img = img.squeeze(1)
-                img = img.view(batch, 28*28)
+                img = img.view(batch, 28 * 28)
                 if use_gpu:
                     img = Variable(img, volatile=True).cuda()
                     label = Variable(label, volatile=True).cuda()
@@ -202,22 +225,34 @@ def MINST_train():
                 _, pred = torch.max(out, 1)
                 num_correct = (pred == label).sum()
                 eval_acc += num_correct.item()
-            print('Test Loss: {:.6f}, Acc: {:.6f}'.format(eval_loss / (len(
-                test_dataset)), eval_acc / (len(test_dataset))))
-    print("train time median:", np.median(train_time_record),
-          "max", np.max(train_time_record))
-    print("infer time meidan:", np.median(infer_time_record),
-          "max", np.max(infer_time_record))
+            print(
+                "Test Loss: {:.6f}, Acc: {:.6f}".format(
+                    eval_loss / (len(test_dataset)), eval_acc / (len(test_dataset))
+                )
+            )
+    print(
+        "train time median:",
+        np.median(train_time_record),
+        "max",
+        np.max(train_time_record),
+    )
+    print(
+        "infer time meidan:",
+        np.median(infer_time_record),
+        "max",
+        np.max(infer_time_record),
+    )
 
 
 def train_perf(device=0):
     model = MILSTM().cuda("cuda:" + str(device))
     model.train()
     dtype = "float32"
-    img = np.random.uniform(-1, 1, [batch, 28*28]).astype(dtype)
+    img = np.random.uniform(-1, 1, [batch, 28 * 28]).astype(dtype)
     img_tensor = torch.tensor(img).cuda("cuda:" + str(device))
-    label_tensor = torch.empty(batch, dtype=torch.long).random_(
-        10).cuda("cuda:" + str(device))
+    label_tensor = (
+        torch.empty(batch, dtype=torch.long).random_(10).cuda("cuda:" + str(device))
+    )
     model(img_tensor)
     number = 10
     repeats = 10
@@ -256,7 +291,7 @@ def inference_perf(device=0):
     model = MILSTM().cuda("cuda:" + str(device))
     model.eval()
     dtype = "float32"
-    img = np.random.uniform(-1, 1, [batch, 28*28]).astype(dtype)
+    img = np.random.uniform(-1, 1, [batch, 28 * 28]).astype(dtype)
     img_tensor = torch.tensor(img).cuda("cuda:" + str(device))
     model(img_tensor)
     number = 10

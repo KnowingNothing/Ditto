@@ -4,26 +4,18 @@ import tensorflow as tf
 
 import numpy as np
 
+
 class MILSTMCell(tf.keras.layers.Layer):
-    def __init__(self,
-                 units,
-                 n_class,
-                 **kwargs):
+    def __init__(self, units, n_class, **kwargs):
         super(MILSTMCell, self).__init__(**kwargs)
         self.units = units
 
         self.kernel = tf.keras.layers.Dense(self.units * 4)
         self.recurrent_kernel = tf.keras.layers.Dense(self.units * 4)
 
-        self.alpha = self.add_weight(
-            shape=(1, self.units * 4),
-            name='alpha')
-        self.beta1 = self.add_weight(
-            shape=(1, self.units * 4),
-            name='beta1')
-        self.beta2 = self.add_weight(
-            shape=(1, self.units * 4),
-            name='beta2')
+        self.alpha = self.add_weight(shape=(1, self.units * 4), name="alpha")
+        self.beta1 = self.add_weight(shape=(1, self.units * 4), name="beta1")
+        self.beta2 = self.add_weight(shape=(1, self.units * 4), name="beta2")
 
         self.classifier = tf.keras.layers.Dense(n_class)
 
@@ -42,8 +34,9 @@ class MILSTMCell(tf.keras.layers.Layer):
         x_beta1 = self.beta1 * x
         h_beta2 = self.beta2 * h_tmp
 
-        i, f, c, o = tf.split(xh_alpha + x_beta1 + h_beta2,
-                              num_or_size_splits=4, axis=1)
+        i, f, c, o = tf.split(
+            xh_alpha + x_beta1 + h_beta2, num_or_size_splits=4, axis=1
+        )
 
         i = activations.sigmoid(i)
         f = activations.sigmoid(f)
@@ -52,13 +45,10 @@ class MILSTMCell(tf.keras.layers.Layer):
 
         h = activations.tanh(c) * o
         return h, c
-    
-    
+
+
 class MILSTM(tf.keras.layers.Layer):
-    def __init__(self,
-                 steps,
-                 n_class,
-                 **kwargs):
+    def __init__(self, steps, n_class, **kwargs):
         super(MILSTM, self).__init__(**kwargs)
         self.steps = steps
 

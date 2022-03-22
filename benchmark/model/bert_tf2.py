@@ -10,7 +10,7 @@ from transformers.models.auto.configuration_auto import AutoConfig
 
 def run_benchmark(batch_size=8, seq_len=512):
     # The bare Bert Model without any specific head on top.
-    config = AutoConfig.from_pretrained('bert-base-uncased')
+    config = AutoConfig.from_pretrained("bert-base-uncased")
     model = TFAutoModel.from_config(config)
 
     @tf.function
@@ -33,22 +33,22 @@ def run_benchmark(batch_size=8, seq_len=512):
             test_step(input_ids)
             end_time = time.time()
             records.append(end_time - start_time)
-        print("Average inference latency {} ms".format(1000. * np.mean(records)))
-        print("Median inference latency {} ms".format(1000. * np.median(records)))
+        print("Average inference latency {} ms".format(1000.0 * np.mean(records)))
+        print("Median inference latency {} ms".format(1000.0 * np.median(records)))
 
 
 bert_configs = [
     # seq-len
-    (512, )
+    (512,)
 ]
 
 
 if __name__ == "__main__":
-    batches = [2**i for i in range(1)]
+    batches = [2 ** i for i in range(1)]
     for batch in batches:
         for i, config in enumerate(bert_configs):
             run_benchmark(batch, *config)
-    
+
     # from transformers import TensorFlowBenchmark, TensorFlowBenchmarkArguments
 
     # args = TensorFlowBenchmarkArguments(models=["bert-base-uncased"], batch_sizes=[1], sequence_lengths=[512])
