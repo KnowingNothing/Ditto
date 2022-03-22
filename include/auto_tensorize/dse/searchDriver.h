@@ -91,7 +91,7 @@ public:
   TVM_DEFINE_OBJECT_REF_COW_METHOD(SearchDriverNode);
 };
 
-SearchDriver buildSearchDriver(IterGraph ig, Array<String> evaltypes,
+inline SearchDriver buildSearchDriver(IterGraph ig, Array<String> evaltypes,
                                       String searcher,
                                       hardware::HardwareParam hw_param,
                                       String dtype) {
