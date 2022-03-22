@@ -40,7 +40,7 @@ class MatchInfo(Object):
         return str(self)
 
 
-def match_info(axis: List[tvm.tir.IterVar], intrin: tvm.te.tensor_intrin.TensorIntrin, impl: str):
+def match_info(axis: List[tvm.tir.IterVar], intrin: tvm.te.tensor_intrin.TensorIntrin, impl: str = ""):
     return _ffi_api.MatchInfo(axis, intrin, impl)
 
 

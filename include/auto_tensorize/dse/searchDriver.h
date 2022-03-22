@@ -94,7 +94,25 @@ public:
 inline SearchDriver buildSearchDriver(IterGraph ig, Array<String> evaltypes,
                                       String searcher,
                                       hardware::HardwareParam hw_param,
-                                      String dtype);
+                                      String dtype) {
+  std::unordered_map<std::string, int32_t> m = {{"float32", 4}, {"float64", 8},
+                                                {"float16", 2}, {"int16", 2},
+                                                {"int32", 4},   {"int64", 8}};
+  CHECK(m.count(dtype)) << "invalid dtype: " << dtype;
+  int bytePerEle = m[dtype];
+  ig->setConfig(hw_param, bytePerEle);
+  SearchSpace searchSpace = ig->getSearchSpace();
+  Array<Evaluator> evals;
+  evals.push_back(StaticAnalysis(ig));
+  SearchAlg alg;
+  if (searcher == "bruteForce" || searcher == "BruteForce" ||
+      searcher == "brute") {
+    alg = BruteForce(searchSpace, evals);
+  } else {
+    CHECK(false) << "searcher undefined, candidates are: bruteForce, ";
+  }
+  return SearchDriver(evals, searchSpace, alg);
+}
 } // namespace auto_tensorize
 
 } // namespace ditto

@@ -1494,16 +1494,14 @@ void setTemplatesAndSearchLightWeight(
   }
   std::vector<FusionInfo> candidates(MAX_CANDIDATES_NUMBER);
   size_t itemCnt = 0;
-  ig->setHardwareParam(hw_param);
-  std::cout << "cacheLevel_n: " << hw_param->cacheSizePerThread.size()
-            << std::endl;
-  const size_t n_level = hw_param->cacheSizePerThread.size();
-  for (size_t fusionLevel = 1; fusionLevel < n_level; fusionLevel++) {
+  ig->setConfig(hw_param, bytePerEle);
+  const size_t n_level = ig->fusionLevels.size();
+  for (auto fusionLevel: ig->fusionLevels) {
     std::cout << "fusionLevel: " << fusionLevel << std::endl;
     ig->setFusionLevel(fusionLevel);
     size_t n_candidates = 0;
 
-    double bestDM = INFINITY;
+    double bestLevelCost = INFINITY;
     int bestFactors[nSecondOpIters];
     for (auto fusionTemplate : fusionTemplates) {
       size_t cacheLevel = 0;
@@ -1533,39 +1531,38 @@ void setTemplatesAndSearchLightWeight(
       ig->setSecondOpPermute(secondOpPermute_);
       ig->setAttach(fusionAttachPos);
 
-      auto getDM = [&hw_param, &bytePerEle, &secondOpTilingFactors, &ig,
-                    &nSecondOpIters](double *occupancy = NULL) {
+      auto getCost = [&secondOpTilingFactors, &ig,
+                    &nSecondOpIters](double *occupancy = NULL, double * parallelism = NULL) {
         Array<IntImm> secondOpTilingFactors_;
         for (size_t i = 0; i < nSecondOpIters; i++)
           secondOpTilingFactors_.push_back(
               IntImm(DataType::Int(32), secondOpTilingFactors[i]));
         ig->setSecondOpTiling(secondOpTilingFactors_);
-        return ig->getDM(bytePerEle, false, occupancy);
+        return ig->getCost(occupancy, parallelism);
       };
 
       std::function<void(int)> dfs = [&](size_t idx) {
         bool valid;
-        double dm;
+        double cost;
         if (idx == secondOpUnsetIndices.size()) {
-          double occupancy;
-          std::tie(valid, dm) = getDM(&occupancy);
-          if (valid && dm < bestDM) {
-            bestDM = dm;
+          double occupancy, parallelism;
+          std::tie(valid, cost) = getCost(&occupancy, &parallelism);
+          if (valid && cost < bestLevelCost) {
+            bestLevelCost = cost;
             memcpy(bestFactors, secondOpTilingFactors,
                    sizeof(int) * nSecondOpIters);
           }
           if (!valid)
             return;
           n_candidates += 1;
-          if (n_candidates >= (MAX_CANDIDATES_NUMBER / (n_level - 1)))
+          if (n_candidates >= (MAX_CANDIDATES_NUMBER / (n_level)))
             return;
 
           FusionInfo fusionInfo;
           fusionInfo.cacheOccupancy = occupancy;
-          fusionInfo.cost = dm / hw_param->cacheBandwidth[fusionLevel];
+          fusionInfo.cost = cost;
           fusionInfo.n_block = ig->getNumOfBlocks();
-          fusionInfo.parallelism =
-              std::min(hw_param->num_groups, (int)ig->getParallelism());
+          fusionInfo.parallelism = parallelism;
           fusionInfo.secondOpOuterIndices = secondOpOuterIndices;
           fusionInfo.fusionLevel = fusionLevel;
           fusionInfo.computation =
@@ -1584,21 +1581,18 @@ void setTemplatesAndSearchLightWeight(
         int pos = secondOpUnsetIndices[idx];
         for (size_t i = idx; i < secondOpUnsetIndices.size(); i++)
           secondOpTilingFactors[secondOpUnsetIndices[i]] = 1;
-        std::tie(valid, dm) = getDM();
+        std::tie(valid, cost) = getCost();
         if (!valid)
           return;
         for (size_t i = idx; i < secondOpUnsetIndices.size(); i++) {
           secondOpTilingFactors[secondOpUnsetIndices[i]] =
               secondOpBounds[secondOpUnsetIndices[i]];
         }
-        // if (data == NULL)
-        // {
-        if (mode == "survey") {
-          std::tie(valid, dm) = getDM();
-          if (dm > bestDM)
+        if (mode == "best") {
+          std::tie(valid, cost) = getCost();
+          if (cost > bestLevelCost)
             return;
         }
-        // }
         int bound = secondOpBounds[pos];
         for (int i = 1; i <= bound; i++) {
           secondOpTilingFactors[pos] = i;
@@ -1609,8 +1603,8 @@ void setTemplatesAndSearchLightWeight(
       };
       // LOG(INFO) << "Begin searching pattern " << fusionTemplate.name;
       dfs(0);
-      if (bestDM < bestCost) {
-        bestCost = bestDM;
+      if (bestLevelCost < bestCost) {
+        bestCost = bestLevelCost;
         Array<IntImm> secondOpTiling_;
         for (size_t i = 0; i < nSecondOpIters; i++)
           secondOpTiling_.push_back(IntImm(DataType::Int(32), bestFactors[i]));

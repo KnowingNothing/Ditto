@@ -256,7 +256,12 @@ inline FusionItem buildFusionItem(Array<IntImm> firstOpTiling,
                                   Array<IntImm> secondOpTiling,
                                   Array<IntImm> firstOpPermute,
                                   Array<IntImm> secondOpPermute,
-                                  size_t attachPos, size_t fusionLevel);
+                                  size_t attachPos, size_t fusionLevel) {
+  return FusionItem(TilingItem(firstOpTiling), TilingItem(secondOpTiling),
+                    PermuteItem(firstOpPermute), PermuteItem(secondOpPermute),
+                    AttachItem(attachPos), fusionLevel);
+}
+
 } // namespace auto_tensorize
 
 } // namespace ditto

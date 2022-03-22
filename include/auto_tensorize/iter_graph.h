@@ -222,13 +222,15 @@ public:
   std::vector<double> tensorWeight;
   size_t attachPos = 0; // default: independent loops
   std::vector<double> cacheSizes;
-  size_t fusionLevel;
+  std::vector<double> cacheBandwidth;
+  int fusionLevel;
   String resultPath;
   int totalFp;
   double parallelism_ = -1;
   std::unordered_map<int, IntImm> _parallelSchedule;
   Map<tir::Var, IntImm> _boundsAfterParallel;
-
+  bool writeThrough; // whether E matrix is directly written back to global memory
+  int bytePerEle;
   void VisitAttrs(AttrVisitor *v) {
     v->Visit("init_firstOpIters", &_firstOpIters);
     v->Visit("init_secondOpIters", &_secondOpIters);
@@ -310,19 +312,17 @@ public:
   /*! \brief get the second Op's workload*/
   double getSecondOpWorkload() const;
   /*! \brief get the second Op's blockSize*/
-  double getSecondOpBufferSize(bool writeThrough = false) const;
+  double getSecondOpBufferSize() const;
   /*! \brief get the redundant compute volume*/
   double getRedundancy() const;
-  /*! \brief get the fusion level */
-  size_t getFusionLevel(std::vector<double> cacheSizes);
   /*! \brief manually set the fusion level*/
-  void setFusionLevel(size_t fusionLevel_);
+  void setFusionLevel(int fusionLevel_);
+  /*! \brief fusionLevels*/
+  std::vector<int> fusionLevels;
   /*! \brief get the analytical result */
-  FusionResult getAnalyticalResult(hardware::HardwareParam hw_param,
-                                   int bytePerEle, bool writeThrough = true);
+  FusionResult getAnalyticalResult();
   /*! \brief get the data movement*/
-  std::pair<bool, double> getDM(int bytePerEle, bool writeThrough,
-                                double *occupancy = NULL);
+  std::pair<bool, double> getCost(double *occupancy = NULL, double * parallelism = NULL);
   /*! \brief looplike lightweight visualize */
   void visualize();
   /*! \brief write result */
@@ -332,10 +332,38 @@ public:
   /*! \brief get the problem size after parallel */
   Map<tir::Var, IntImm> getPbsz();
   /*! \brief set hardware related param */
-  void setHardwareParam(hardware::HardwareParam hw_param){
-    cacheSizes = hw_param->cacheSizePerThread;
-    tensorWeight = hw_param->tensorWeight;
-    parallelism_ = hw_param->num_groups;
+  void setConfig(hardware::HardwareParam hw_param, int bytePerEle_){
+    bytePerEle = bytePerEle_;
+    if (hw_param->platform == "CPU"){
+      cacheSizes = hw_param->cacheSizePerThread;
+      tensorWeight = hw_param->tensorWeight;
+      parallelism_ = hw_param->num_groups;
+      cacheBandwidth = hw_param->cacheBandwidth;
+      fusionLevels.clear();
+      fusionLevel = -1;
+      for (int i = 1; i < (int)cacheSizes.size(); i++)
+        fusionLevels.push_back(i);
+      writeThrough = false;
+    }
+    else if (hw_param->platform == "NVGPU"){
+      cacheSizes.clear();
+      cacheSizes.push_back(hw_param->shared_memory_per_group_kb * 1e3);
+      
+      tensorWeight = hw_param->tensorWeight;
+      parallelism_ = hw_param->num_groups * hw_param->num_processors_per_group;
+      cacheBandwidth.clear();
+      cacheBandwidth.push_back(hw_param->global_memory_bandwidth_gbs * 1e9);
+      fusionLevels.clear();
+      fusionLevels.push_back(0);
+      fusionLevel = -1;
+      writeThrough = true;
+      std::cout << "cacheSizes: " << cacheSizes[0] << std::endl;
+      std::cout << "parallel_: " << parallelism_ << std::endl;
+
+    }
+    else {
+      throw Error(hw_param->platform + "not supported");
+    }
   }
   static constexpr const char *_type_key = "ditto.auto_tensorize.IterGraph";
   TVM_DECLARE_FINAL_OBJECT_INFO(IterGraphNode, Object);

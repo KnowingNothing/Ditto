@@ -68,22 +68,7 @@ BruteForce::BruteForce(SearchSpace searchSpace, Array<Evaluator> evals) {
   n->evals = evals;
   data_ = std::move(n);
 }
-inline SearchDriver buildSearchDriver(IterGraph ig, Array<String> evaltypes,
-                                      String searcher,
-                                      hardware::HardwareParam hw_param,
-                                      String dtype) {
-  SearchSpace searchSpace = ig->getSearchSpace();
-  Array<Evaluator> evals;
-  evals.push_back(StaticAnalysis(ig, hw_param, dtype));
-  SearchAlg alg;
-  if (searcher == "bruteForce" || searcher == "BruteForce" ||
-      searcher == "brute") {
-    alg = BruteForce(searchSpace, evals);
-  } else {
-    CHECK(false) << "searcher undefined, candidates are: bruteForce, ";
-  }
-  return SearchDriver(evals, searchSpace, alg);
-}
+
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
     .set_dispatch<SearchAlgNode>([](const ObjectRef &node, ReprPrinter *p) {
       auto *op = static_cast<const SearchAlgNode *>(node.get());

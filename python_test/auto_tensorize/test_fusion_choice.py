@@ -131,19 +131,6 @@ def test_fusion_choice_builder():
 
 
 def test_fusion_choice_cuda():
-    # ins, outs = BatchGemmSoftmaxGemm()
-    # A, B, C = ins
-    # (F,) = outs
-
-    # E_frag = F.op.input_tensors[0]
-    # exp, C_ext = E_frag.op.input_tensors
-    # D_frag = exp.op.input_tensors[0]
-    # A_shared, B_shared = D_frag.op.input_tensors
-
-    # b, m, n, mi, ni = E_frag.op.axis
-    # rlo, rli = E_frag.op.reduce_axis
-    # fuse_choice = at.fusion_choice(D_frag.op, E_frag.op, [b, m, n, rlo, mi, ni, rli], 3)
-
     V100 = hw.query_hw_param("gpu.cuda.V100")
     ins, outs, tensorizeAxes = BatchGemmSoftmaxGemm()
     fuse_choice = at.build_fusion_choice(

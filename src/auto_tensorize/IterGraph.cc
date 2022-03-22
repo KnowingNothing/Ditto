@@ -236,7 +236,7 @@ void IterGraphNode::setTotalFp() {
   for (auto iv : _secondOpIters)
     bounds.Set(iv->originVar, IntImm(DataType::Int(32), iv->ext));
 
-  totalFp = getFirstOpBufferSize(false) + getSecondOpBufferSize(false);
+  totalFp = getFirstOpBufferSize() + getSecondOpBufferSize();
 }
 
 void IterGraphNode::setFirstOpTiling(Array<IntImm> factors_) {
@@ -543,10 +543,7 @@ double IterGraphNode::getFirstOpDataVolume() const {
     for (auto fp_ : acf->getFootprint(bounds)) {
       fp += fp_ * tensorWeight[0];
     }
-  // the write of firstOp is on chip
-  // for (auto fp_ : firstOpWriteAccessFunc->getFootprint(bounds))
-  //   fp += fp_;
-  return fp * n_block;
+  return fp * n_block * bytePerEle;
 }
 
 /*! \brief get the first Op's workload*/
@@ -565,7 +562,7 @@ double IterGraphNode::getFirstOpBufferSize(bool considerWrite) const {
   if (considerWrite)
     for (auto fp_ : firstOpWriteAccessFunc->getFootprint(bounds))
       fp += fp_;
-  return fp;
+  return fp * bytePerEle;
 }
 
 /*! \brief get the second Op's memvisit*/
@@ -584,7 +581,7 @@ double IterGraphNode::getSecondOpDataVolume() const {
   for (auto fp_ : firstOpWriteAccessFunc->getFootprint(bounds)) {
     fp -= fp_ * tensorWeight[0];
   }
-  return fp * n_block;
+  return fp * n_block * bytePerEle;
 }
 /*! \brief get the second Op's workload*/
 double IterGraphNode::getSecondOpWorkload() const {
@@ -593,7 +590,7 @@ double IterGraphNode::getSecondOpWorkload() const {
   return fp * n_block;
 }
 /*! \brief get the second Op's blockSize*/
-double IterGraphNode::getSecondOpBufferSize(bool writeThrough) const {
+double IterGraphNode::getSecondOpBufferSize() const {
   double fp = 0;
   for (auto acf : secondOpReadAccessFuncs)
     for (auto fp_ : acf->getFootprint(bounds))
@@ -601,7 +598,7 @@ double IterGraphNode::getSecondOpBufferSize(bool writeThrough) const {
   if (!writeThrough)
     for (auto fp_ : secondOpWriteAccessFunc->getFootprint(bounds))
       fp += fp_;
-  return fp;
+  return fp * bytePerEle;
 }
 
 void IterGraphNode::writeResult(FusionResult res) {
@@ -636,49 +633,23 @@ Map<tir::Var, IntImm> getPbsz();
 
 /*! \brief get the analytical result */
 FusionResult
-IterGraphNode::getAnalyticalResult(hardware::HardwareParam hw_param,
-                                   int bytePerEle, bool writeThrough) {
+IterGraphNode::getAnalyticalResult() {
   applyAll();
   bounds = inferBound();
-  double cacheSize;
-  size_t fusionLevel = 0;
-  bool considerWrite;
-  if (hw_param->platform == "CPU") {
-    for (fusionLevel = 0; fusionLevel < hw_param->cacheSizes.size();
-         fusionLevel++) {
-      if (hw_param->cacheSizes[fusionLevel] > totalFp)
-        break;
-    }
-    fusionLevel--;
-    writeThrough = false;
-    considerWrite = true;
-    cacheSize = hw_param->cacheSizes[fusionLevel];
-  } else if (hw_param->platform == "NVGPU") {
-    cacheSize = hw_param->shared_memory_per_group_kb * 1000;
-    fusionLevel = 0;
-    writeThrough = true;
-    considerWrite = true;
-  } else {
-    throw Error("unsupported platform");
-  }
-  if (fusionLevel >= 3) {
-    LOG(WARNING) << "fusionLevel in L3" << std::endl;
-  }
+  double cacheSize = cacheSizes[fusionLevel];
   double n_blocks = getNumOfBlocks();
-  double firstOpDataVolume = getFirstOpDataVolume() * bytePerEle;
-  double firstOpBufferSize = getFirstOpBufferSize(considerWrite) * bytePerEle;
+  double firstOpDataVolume = getFirstOpDataVolume();
+  double firstOpBufferSize = getFirstOpBufferSize(true);
   double firstOpWorkload = getFirstOpWorkload();
-  double secondOpDataVolume = getSecondOpDataVolume() * bytePerEle;
-  double secondOpBufferSize = getSecondOpBufferSize(writeThrough) * bytePerEle;
+  double secondOpDataVolume = getSecondOpDataVolume();
+  double secondOpBufferSize = getSecondOpBufferSize();
   double secondOpWorkload = getSecondOpWorkload();
   double memUse = std::max(firstOpBufferSize, secondOpBufferSize);
   bool valid = (memUse) <= cacheSize;
   double locality =
       valid ? 1 / (double)(firstOpDataVolume + secondOpDataVolume) : -INFINITY;
-  double parallelism = std::min(
-      std::min(getParallelism(), (double)hw_param->num_groups *
-                                     hw_param->num_processors_per_group),
-      hw_param->num_groups * (cacheSize / memUse));
+  double parallelism = 
+      std::min(getParallelism(), parallelism_ * (cacheSize / memUse));
   double redundancy = getRedundancy();
   FusionResult res =
       FusionResult(bounds, firstOpDataVolume, firstOpWorkload,
@@ -688,18 +659,13 @@ IterGraphNode::getAnalyticalResult(hardware::HardwareParam hw_param,
   writeResult(res);
   return res;
 }
-size_t IterGraphNode::getFusionLevel(std::vector<double> cacheSizes) {
-  size_t fusionLevel;
-  CHECK(cacheSizes[0] < totalFp);
-  for (fusionLevel = 0; fusionLevel < cacheSizes.size(); fusionLevel++) {
-    if (cacheSizes[fusionLevel] > totalFp)
-      break;
-  }
-  fusionLevel--;
-  return fusionLevel;
-}
 
-void IterGraphNode::setFusionLevel(size_t fusionLevel_) {
+void IterGraphNode::setFusionLevel(int fusionLevel_) {
+  bool found = false;
+  for (auto l: fusionLevels){
+    if (l == fusionLevel_) found = true;
+  }
+  CHECK(found);
   fusionLevel = fusionLevel_;
   return;
 }
@@ -743,24 +709,26 @@ void IterGraphNode::scheduleParallel() {
   return;
 }
 
-std::pair<bool, double> IterGraphNode::getDM(int bytePerEle, bool writeThrough,
-                                             double *occupancy) {
+std::pair<bool, double> IterGraphNode::getCost(double *occupancy, double * parallelism_p) {
   applyAll();
   bounds = inferBound();
-  CHECK(cacheSizes.size() > fusionLevel);
+  CHECK(fusionLevel >= 0);
   double cacheSize = cacheSizes[fusionLevel];
-  double firstOpDataVolume = getFirstOpDataVolume() * bytePerEle;
-  double firstOpBufferSize = getFirstOpBufferSize(true) * bytePerEle;
-  double secondOpDataVolume = getSecondOpDataVolume() * bytePerEle;
-  double secondOpBufferSize = getSecondOpBufferSize(writeThrough) * bytePerEle;
+  double firstOpDataVolume = getFirstOpDataVolume();
+  double firstOpBufferSize = getFirstOpBufferSize(true);
+  double secondOpDataVolume = getSecondOpDataVolume();
+  double secondOpBufferSize = getSecondOpBufferSize();
   double memUse = std::max(firstOpBufferSize, secondOpBufferSize);
   bool valid = (memUse) <= cacheSize;
-  double parallelism = getParallelism();
+  
+  double parallelism = 
+      std::min(getParallelism(), parallelism_ * (cacheSize / memUse));
   if (occupancy) {
     *occupancy = memUse / cacheSize;
   }
+  if (parallelism_p) * parallelism_p = parallelism;
   return {valid,
-          ((firstOpDataVolume + secondOpDataVolume) / (double)parallelism)};
+          ((firstOpDataVolume + secondOpDataVolume) / (double)parallelism * cacheBandwidth[fusionLevel])};
 }
 
 /*! \brief looplike lightweight visualize */

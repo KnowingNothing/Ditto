@@ -108,8 +108,6 @@ public:
 class StaticAnalysisNode : public EvaluatorNode {
 public:
   IterGraph iterGraph;
-  hardware::HardwareParam hw_param;
-  int bytePerEle;
   Result eval(Item it) const;
   cost_t cost(Item it) const;
   TVM_DECLARE_FINAL_OBJECT_INFO(StaticAnalysisNode, EvaluatorNode);
@@ -117,8 +115,7 @@ public:
 
 class StaticAnalysis : public Evaluator {
 public:
-  TVM_DLL StaticAnalysis(IterGraph ig, hardware::HardwareParam hw_param,
-                         String dtype);
+  TVM_DLL StaticAnalysis(IterGraph ig);
   TVM_DEFINE_OBJECT_REF_METHODS(StaticAnalysis, Evaluator, StaticAnalysisNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(StaticAnalysisNode);
 };

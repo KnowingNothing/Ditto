@@ -1223,7 +1223,7 @@ TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildCPUTensorizeParam")
       fusionInfo.bounds = fusionChoice->fusionResult->bounds;
       CHECK(sfs->tensorizeAxes.defined());
       IterGraph ig = buildIterGraph(sfs, sfs->tensorizeAxes, "");
-      ig->setHardwareParam(hw_param);
+      ig->setConfig(hw_param, bytePerEle);
       ig->setFusionLevel(fusionInfo.fusionLevel);
       ig->setFusion(fusionChoice->fusionItem);
       ig->scheduleParallel();

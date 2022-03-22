@@ -46,32 +46,24 @@ double FusionResultNode::getArithmeticIntensity() const {
 double FusionResultNode::getWorkload() const {
   return op1.workLoad + op2.workLoad;
 }
-StaticAnalysis::StaticAnalysis(IterGraph ig, hardware::HardwareParam hw_param,
-                               String dtype) {
+StaticAnalysis::StaticAnalysis(IterGraph ig) {
   auto n = make_object<StaticAnalysisNode>();
   n->tag = "static analysis";
   n->iterGraph = ig;
-  n->hw_param = hw_param;
-  std::string tmp = std::string(dtype);
-  std::unordered_map<std::string, int32_t> m = {{"float32", 4}, {"float64", 8},
-                                                {"float16", 2}, {"int16", 2},
-                                                {"int32", 4},   {"int64", 8}};
-  CHECK(m[tmp]) << "invalid dtype: " << dtype;
-  n->bytePerEle = m[tmp];
   data_ = n;
 }
 
 Result StaticAnalysisNode::eval(Item it) const {
   auto fusionItem = Downcast<FusionItem, Item>(it);
   iterGraph->setFusion(fusionItem);
-  FusionResult result = iterGraph->getAnalyticalResult(hw_param, bytePerEle);
+  FusionResult result = iterGraph->getAnalyticalResult();
   return result;
 }
 cost_t StaticAnalysisNode::cost(Item it) const {
   auto fusionItem = Downcast<FusionItem, Item>(it);
   CHECK(it.defined());
   iterGraph->setFusion(fusionItem);
-  FusionResult result = iterGraph->getAnalyticalResult(hw_param, bytePerEle);
+  FusionResult result = iterGraph->getAnalyticalResult();
   if (!result->valid)
     return INFINITY;
   double dm =

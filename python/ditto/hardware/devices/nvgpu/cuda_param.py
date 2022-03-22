@@ -16,6 +16,7 @@ V100_16GB_param = hardware_param(
     80,  # num_groups: int,
     14 * 1e3,  # fp32_peak_perf_gflops: float,
     5 * 1e-6,  # launch_latency_s: float
+    platform="NVGPU"
 )
 
 V100_32GB_param = hardware_param(
@@ -28,4 +29,5 @@ V100_32GB_param = hardware_param(
     80,  # num_groups: int,
     14 * 1e3,  # fp32_peak_perf_gflops: float,
     5 * 1e-6,  # launch_latency_s: float
+    platform="NVGPU"
 )
