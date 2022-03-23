@@ -16,7 +16,7 @@ FusionResult::FusionResult(Map<tir::Var, IntImm> bounds, double op1MemVisit,
                            double op2Buffer, double locality,
                            double parallelism, double redundancy,
                            double n_block, bool valid, int fusionLevel,
-                           int bytePerEle, double cacheSize) {
+                           int bytePerEle, double cacheSize, double memUse) {
   auto n = make_object<FusionResultNode>();
   n->bounds = bounds;
   n->op1.dataMovementVolume = op1MemVisit;
@@ -36,6 +36,7 @@ FusionResult::FusionResult(Map<tir::Var, IntImm> bounds, double op1MemVisit,
   n->cacheSize = cacheSize;
   n->occupancy = std::max(op1Buffer, op2Buffer) / cacheSize;
   n->dataMovement = (op1MemVisit + op2MemVisit) / (double)parallelism;
+  n->memUse = memUse;
   data_ = n;
 }
 double FusionResultNode::getArithmeticIntensity() const {

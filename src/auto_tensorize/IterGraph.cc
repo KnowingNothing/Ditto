@@ -655,7 +655,7 @@ IterGraphNode::getAnalyticalResult() {
       FusionResult(bounds, firstOpDataVolume, firstOpWorkload,
                    firstOpBufferSize, secondOpDataVolume, secondOpWorkload,
                    secondOpBufferSize, locality, parallelism, redundancy,
-                   n_blocks, valid, fusionLevel, bytePerEle, cacheSize);
+                   n_blocks, valid, fusionLevel, bytePerEle, cacheSize, memUse);
   writeResult(res);
   return res;
 }
@@ -709,7 +709,7 @@ void IterGraphNode::scheduleParallel() {
   return;
 }
 
-std::pair<bool, double> IterGraphNode::getCost(double *occupancy, double * parallelism_p) {
+std::pair<bool, double> IterGraphNode::getCost(double *occupancy, double * parallelism_p, double * memUse_p) {
   applyAll();
   bounds = inferBound();
   CHECK(fusionLevel >= 0);
@@ -727,8 +727,9 @@ std::pair<bool, double> IterGraphNode::getCost(double *occupancy, double * paral
     *occupancy = memUse / cacheSize;
   }
   if (parallelism_p) * parallelism_p = parallelism;
+  if (memUse_p) *memUse_p = memUse;
   return {valid,
-          ((firstOpDataVolume + secondOpDataVolume) / (double)parallelism * cacheBandwidth[fusionLevel])};
+          ((firstOpDataVolume + secondOpDataVolume) / ((double)parallelism * cacheBandwidth[fusionLevel]))};
 }
 
 /*! \brief looplike lightweight visualize */

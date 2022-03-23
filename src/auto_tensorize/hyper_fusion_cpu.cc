@@ -7,6 +7,7 @@
 #include <stack>
 #include <tvm/driver/driver_api.h>
 #include <tvm/te/schedule_pass.h>
+#include<iomanip>
 namespace ditto {
 
 namespace auto_tensorize {
@@ -176,7 +177,8 @@ CPUTensorizeParam::CPUTensorizeParam(
     std::unordered_map<int, Array<IntImm>> commonTilingFactor,
     FusionInfo fusionInfo, std::vector<double> firstOpCosts,
     std::vector<double> secondOpCosts, std::vector<double> commCosts,
-    Array<FloatImm> cacheOccupancy) {
+    Array<FloatImm> cacheOccupancy, 
+    std::unordered_map<std::string, double> log) {
   auto node = make_object<CPUTensorizeParamNode>();
   node->op1 = op1;
   node->op2 = op2;
@@ -191,6 +193,7 @@ CPUTensorizeParam::CPUTensorizeParam(
   node->firstOpCosts = firstOpCosts;
   node->secondOpCosts = secondOpCosts;
   node->commCosts = commCosts, node->cacheOccupancy = cacheOccupancy;
+  node->log = log;
   data_ = node;
 }
 
@@ -545,7 +548,7 @@ CostAndFactor ScheduleHelper(
     std::vector<double> weightPerCacheLevel, const size_t beginCacheLevel,
     const size_t endCacheLevel, size_t bytePerEle,
     std::string searchType = "stochastic", std::string mode = "best",
-    std::vector<CostAndFactor> *data = NULL, bool verbose = false) {
+    std::vector<CostAndFactor> *data = NULL, bool verbose = false, std::string prefix = "") {
   // std::cout << "begin schedule helper with param: \n";
   // for (auto idxFactors: factor.tileSize){
   //   int idx = idxFactors.first;
@@ -565,21 +568,24 @@ CostAndFactor ScheduleHelper(
   // delayedWeight_init.size() << std::endl; std::cout <<
   // "weightPerTensor.size()" << weightPerTensor.size() << std::endl; std::cout
   // << "acf.size()" << accessFunctions.size() << std::endl;
-  if (verbose) {
-    for (auto acf : accessFunctions)
-      std::cout << "access_indices" << acf->access_indices
-                << "absentVars: " << acf->absentVars
-                << ", presentVars: " << acf->presentVars << std::endl;
-    std::cout << std::endl;
-    std::cout << "tensorWeight:";
-    for (auto tswt : weightPerTensor)
-      std::cout << tswt << " ";
-    std::cout << std::endl;
-    std::cout << "weightPerCacheLevel:";
-    for (auto wpcl : weightPerCacheLevel)
-      std::cout << wpcl << " ";
-    std::cout << std::endl;
-  }
+  // std::cout << "access functions:";
+  // for (auto acf: accessFunctions) 
+  //   std::cout <<acf << " " << acf->absentVars << std::endl;
+  // if (verbose) {
+  //   for (auto acf : accessFunctions)
+  //     std::cout << "access_indices" << acf->access_indices
+  //               << "absentVars: " << acf->absentVars
+  //               << ", presentVars: " << acf->presentVars << std::endl;
+  //   std::cout << std::endl;
+  //   std::cout << "tensorWeight:";
+  //   for (auto tswt : weightPerTensor)
+  //     std::cout << tswt << " ";
+  //   std::cout << std::endl;
+  //   std::cout << "weightPerCacheLevel:";
+  //   for (auto wpcl : weightPerCacheLevel)
+  //     std::cout << wpcl << " ";
+  //   std::cout << std::endl;
+  // }
 
   std::vector<CostAndFactor> candidates;
   std::vector<double> footprints;
@@ -617,7 +623,6 @@ CostAndFactor ScheduleHelper(
             std::cout << std::endl;
             std::cout << "skip" << skip << std::endl;
             std::cout << "cachelevel: " << cacheLevel << std::endl;
-            std::cout << "bounds" << std::endl;
             std::cout << "tileSize: " << tileSize << std::endl;
           }
           Map<tir::Var, FloatImm> quotients;
@@ -644,8 +649,11 @@ CostAndFactor ScheduleHelper(
 
             if (i != skip)
               weight += weightPerCacheLevel[cacheLevel] * weightPerTensor[i];
-            if (verbose)
-              std::cout << "dm" << i << " : " << dm_ << std::endl;
+            if (verbose){
+              std::cout << "dm" << i << " : " << dm_ << " ";
+              std::cout << accessFunctions[i] -> absentVars << " " << footprints[i] <<  std::endl;
+              std::cout << "weight" << weight << std::endl;
+            }
             dm += dm_ * weight;
           }
           if (delayedDM_p)
@@ -654,10 +662,10 @@ CostAndFactor ScheduleHelper(
         };
         auto getFP = [&accessFunctions,
                       &bytePerEle](Map<tir::Var, IntImm> tileSize) {
-          int fp = 0;
+          double fp = 0;
           for (size_t i = 0; i < accessFunctions.size(); i++) {
             for (auto fp_ : accessFunctions[i]->getFootprint(tileSize))
-              fp += fp_ * bytePerEle;
+              fp += (double)fp_ * bytePerEle;
           }
           return fp;
         };
@@ -667,11 +675,12 @@ CostAndFactor ScheduleHelper(
           double occupancy;
           double delayedCost;
           double curCost;
+          double fp;
           cacheLevelFactor(double cost_, Map<tir::Var, IntImm> TileSize_,
                            double occupancy_, double delayedCost_,
-                           double curCost_)
+                           double curCost_, double fp_)
               : cost(cost_), TileSize(TileSize_), occupancy(occupancy_),
-                delayedCost(delayedCost_), curCost(curCost_) {}
+                delayedCost(delayedCost_), curCost(curCost_), fp(fp_) {}
         };
         std::vector<cacheLevelFactor> best;
         size_t beam;
@@ -687,14 +696,14 @@ CostAndFactor ScheduleHelper(
                 // do the evaluation
                 if (verbose)
                   std::cout << "tileSize" << tileSize << std::endl;
-                int fp = getFP(tileSize);
+                double fp = getFP(tileSize);
                 if (fp > cacheSizes[cacheLevel])
                   return;
                 double delayedDM;
                 double dm = getDM(tileSize, &delayedDM);
                 double occupancy = getFP(tileSize) / cacheSizes[cacheLevel];
                 cacheLevelFactor newItem = {dm, tileSize, occupancy, delayedDM,
-                                            dm - delayedDM};
+                                            dm - delayedDM, fp};
                 if (mode == "best") {
                   if (verbose)
                     std::cout << "best.size(): " << best.size() << std::endl;
@@ -755,23 +764,11 @@ CostAndFactor ScheduleHelper(
             std::cout << std::endl;
           }
         }
-        if (cacheLevel == 1)
-          beam = 100;
-        else
-          beam = 5;
+        beam = 20;
         for (size_t i = 0; i < accessFunctions.size(); i++) {
           // determine the delayed weight
           skip = i;
           dfsTileSizeOfCacheLevel(0, tileSizeInit);
-
-          // std::cout << "cacheLevel: " << cacheLevel << ", bestCost"
-          //           << best[0].cost << std::endl;
-          // std::cout << "the ratio: "
-          //           << getFP(best[0].TileSize) /
-          //                  (double)hw_param->cacheSizes[cacheLevel]
-          //           << std::endl;
-          // CHECK(best.size() && best[0].cost < 1e9)
-          //     << "best cost is " << best[0].cost;
 
           std::vector<double> newDelayedWeight;
           for (size_t j = 0; j < accessFunctions.size(); j++) {
@@ -809,6 +806,8 @@ CostAndFactor ScheduleHelper(
             }
             newFactors.skip.push_back(i);
             newFactors.loopOrder.push_back(newLoopOrder);
+            newFactors.log[prefix + "fp" + std::to_string(cacheLevel)] = item.fp;
+            newFactors.log[prefix + "cost" + std::to_string(cacheLevel)] = item.curCost;
             auto newCost = cost;
             CHECK(newCost.size());
             auto p = newCost.rbegin();
@@ -858,7 +857,7 @@ CostAndFactor scheduleSingleCubic(OpHyperState op, Map<tir::Var, IntImm> bounds,
                                   size_t bytePerEle,
                                   std::string searchType = "stochastic",
                                   std::string mode = "best",
-                                  std::vector<CostAndFactor> *data = NULL) {
+                                  std::vector<CostAndFactor> *data = NULL, std::string prefix = "") {
   std::vector<double> weightPerCacheLevel, weightPerTensor, delayedWeight_init;
   std::vector<CostAndFactor> candidates;
   std::unordered_map<int, tir::Var> idx2var;
@@ -901,7 +900,7 @@ CostAndFactor scheduleSingleCubic(OpHyperState op, Map<tir::Var, IntImm> bounds,
   return ScheduleHelper(factor, bounds, hw_param->cacheSizePerThread, idx2var,
                         accessFunctions, fixedTileSize, delayedWeight_init,
                         weightPerTensor, weightPerCacheLevel, 1,
-                        fusionCacheLevel, bytePerEle, searchType, mode, data);
+                        fusionCacheLevel, bytePerEle, searchType, mode, data, false, prefix);
 }
 
 CostAndFactor scheduleCommonLoop(OpHyperState op1, OpHyperState op2,
@@ -909,7 +908,7 @@ CostAndFactor scheduleCommonLoop(OpHyperState op1, OpHyperState op2,
                                  FusionInfo fusionInfo, const size_t bytePerEle,
                                  const std::string searchType,
                                  const std::string mode,
-                                 std::vector<CostAndFactor> *data) {
+                                 std::vector<CostAndFactor> *data, std::string prefix = "") {
   SingleCubicScheduleFactor factor;
   std::unordered_map<int, tir::Var> idx2var = op2->getIdx2var();
   std::vector<double> weightPerTensor, weightPerCacheLevel, delayedWeight;
@@ -994,24 +993,23 @@ CostAndFactor scheduleCommonLoop(OpHyperState op1, OpHyperState op2,
       factor, fusionInfo.boundsAfterParallel, hw_param->cacheSizePerThread,
       idx2var, accessFunctions, innerBounds, delayedWeight, weightPerTensor,
       weightPerCacheLevel, fusionInfo.fusionLevel + 1,
-      hw_param->cacheSizePerThread.size(), bytePerEle, searchType, mode, data);
+      hw_param->cacheSizePerThread.size(), bytePerEle, searchType, mode, data, false, prefix);
 }
 CPUTensorizeParam buildCPUTensorizeParam(SerialFusionState sfs,
                                          hardware::HardwareParam hw_param,
                                          int bytePerEle,
                                          FusionInfo fusionInfo) {
-
   OpHyperState op1, op2;
   std::tie(op1, op2) = sfs->getCubicOpPair();
   Map<tir::Var, IntImm> bounds = fusionInfo.bounds;
   CostAndFactor op1caf =
       scheduleSingleCubic(op1, bounds, hw_param, fusionInfo.fusionLevel,
-                          bytePerEle, "normal", "best", NULL);
+                          bytePerEle, "normal", "best", NULL, "op1");
   CostAndFactor op2caf =
       scheduleSingleCubic(op2, bounds, hw_param, fusionInfo.fusionLevel,
-                          bytePerEle, "normal", "best", NULL);
+                          bytePerEle, "normal", "best", NULL, "op2");
   CostAndFactor commCaf = scheduleCommonLoop(
-      op1, op2, hw_param, fusionInfo, bytePerEle, "normal", "best", NULL);
+      op1, op2, hw_param, fusionInfo, bytePerEle, "normal", "best", NULL, "comm");
 
   SingleCubicScheduleFactor op1Schedule = op1caf.factor;
   SingleCubicScheduleFactor op2Schedule = op2caf.factor;
@@ -1047,6 +1045,17 @@ CPUTensorizeParam buildCPUTensorizeParam(SerialFusionState sfs,
   for (auto occupancy_ : commSchedule.cacheOccupancy)
     occupancy.push_back(FloatImm(DataType::Float(32), occupancy_));
 
+  std::unordered_map<std::string, double> log;
+  for (auto kv: commCaf.factor.log){
+    log[kv.first] = kv.second;
+  }
+  for (auto kv: op1caf.factor.log){
+    log[kv.first] = kv.second;
+  }
+  for (auto kv: op2caf.factor.log){
+    log[kv.first] = kv.second;
+  }
+  std::cout << std::endl;
   for (auto &cost : op1caf.costs)
     cost = cost * (double)fusionInfo.n_block / (double)fusionInfo.parallelism;
   for (auto &cost : op2caf.costs)
@@ -1055,7 +1064,7 @@ CPUTensorizeParam buildCPUTensorizeParam(SerialFusionState sfs,
       op1, op2, hw_param->num_groups, op1Schedule.loopOrder,
       op2Schedule.loopOrder, commSchedule.loopOrder, firstOpTileFactor,
       secondOpTileFactor, commonLoopTileFcator, fusionInfo, op1caf.costs,
-      op2caf.costs, commCaf.costs, occupancy);
+      op2caf.costs, commCaf.costs, occupancy, log);
 }
 
 ScheduleContext SingleOpSchedule(te::Operation op,
@@ -1092,7 +1101,7 @@ te::Schedule FusionContextNode::run(int i, te::Schedule sch, bool verbose) {
     outfile << sum;
     outfile << std::endl;
   }
-  std::cout << "run " << i << std::endl;
+  std::cout << "run " << i << " fusionLevel:" << schParam->fusionInfo.fusionLevel <<  std::endl;
   if (verbose) {
     double cost_sum = 0;
     for (auto cost : schParam->costs) {
@@ -1115,6 +1124,14 @@ te::Schedule FusionContextNode::run(int i, te::Schedule sch, bool verbose) {
   if (verbose) {
     std::cout << std::endl;
     std::cout << schParam << std::endl;
+    std::cout << std::setw(10)<< "cacheSize";
+    for (size_t i = 1; i < hw_param->cacheSizes.size(); i++) 
+      std::cout<< std::setw(10) << hw_param->cacheSizes[i];
+    std::cout << std::endl;
+    std::cout << std::setw(10)<< "bandwidth";
+    for (size_t i = 1; i < hw_param->cacheBandwidth.size(); i++) 
+      std::cout << std::setw(10)<< hw_param->cacheBandwidth[i];
+    std::cout << std::endl;
   }
   return TensorizeCPU(layer, state, hw_param, schParam);
 }
@@ -1126,61 +1143,89 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
       p->PrintIndent();
       p->stream << "---------------CPU Tensorize Param------------------\n";
       std::unordered_map<int, tir::Var> firstOpIdx2var = op->op1->getIdx2var();
-      p->stream << "fusion level: " << op->fusionInfo.fusionLevel;
-      p->stream << "first op tileSize: " << std::endl;
-      for (auto idx_factor : op->firstOpTilingFactor)
-        p->stream << "\t" << firstOpIdx2var[idx_factor.first] << ": "
-                  << idx_factor.second << std::endl;
-      p->stream << "first op order:" << std::endl;
-      int level = 0;
-      for (auto order : op->firstOpLoopOrder) {
-        p->stream << "\t" << level++ << ": ";
-        for (auto i : order)
-          p->stream << firstOpIdx2var[i] << ", ";
-        p->stream << std::endl;
-      }
-
       std::unordered_map<int, tir::Var> secondOpIdx2var = op->op2->getIdx2var();
-      p->stream << "second op tileSize: " << std::endl;
-      for (auto idx_factor : op->secondOpTilingFactor)
-        p->stream << "\t" << secondOpIdx2var[idx_factor.first] << ": "
-                  << idx_factor.second << std::endl;
-      p->stream << "second op order:" << std::endl;
-      level = 0;
-      for (auto order : op->secondOpLoopOrder) {
-        p->stream << "\t";
-        p->stream << "\t" << level++ << ": ";
-        for (auto i : order)
-          p->stream << secondOpIdx2var[i] << ", ";
+      p->stream << "fusion level: " << op->fusionInfo.fusionLevel << std::endl;
+      auto bounds = op->fusionInfo.bounds;
+      auto parallel_bounds = op->fusionInfo.boundsAfterParallel;
+      p->stream << "tileSize: " << std::endl;
+      std::cout << std::setw(10) << "" << std::setw(10) << "L1" << std::setw(10) << "L2" << std::setw(10) << "L3" << std::setw(10) << "B" << std::setw(10) << "P" << std::endl;
+      for (auto idx_factor : op->firstOpTilingFactor){
+        auto var = firstOpIdx2var[idx_factor.first];
+        p->stream << std::setw(10) << "op1." + std::string(var->name_hint);
+        int tileSize = 1;
+        int level = 0;
+        for (auto factor: idx_factor.second){
+          tir::Var innerMostVar = firstOpIdx2var[*op->firstOpLoopOrder[level+1].rbegin()];
+          tileSize *= factor -> value;
+          if (var.same_as(innerMostVar))
+            p->stream << std::setw(10) << std::to_string(tileSize) + "*";
+          else  p->stream << std::setw(10) << tileSize;
+          level++;
+        }
+        tileSize = bounds.at(var)->value;
+        p->stream << std::setw(10) << tileSize;
         p->stream << std::endl;
       }
-
-      p->stream << "common loop: " << std::endl;
-      for (auto idx_factor : op->commonTilingFactor)
-        p->stream << "\t" << secondOpIdx2var[idx_factor.first] << ": "
-                  << idx_factor.second << std::endl;
-      p->stream << "common loop order:" << std::endl;
-      level = 0;
-      for (auto order : op->commonLoopOrder) {
-        p->stream << "\t";
-        p->stream << "\t" << level++ << ": ";
-        for (auto i : order)
-          p->stream << secondOpIdx2var[i] << ", ";
-        p->stream << std::endl;
+      for (auto idx_factor : op->secondOpTilingFactor){
+        auto var = secondOpIdx2var[idx_factor.first];
+        p->stream << std::setw(10) << "op2." + std::string(var->name_hint);
+        int tileSize = 1;
+        int level = 0;
+        for (auto factor: idx_factor.second){
+          tir::Var innerMostVar = secondOpIdx2var[*op->secondOpLoopOrder[level+1].rbegin()];
+          tileSize *= factor -> value;
+          if (var.same_as(innerMostVar))
+            p->stream << std::setw(10) << std::to_string(tileSize) + "*";
+          else  p->stream << std::setw(10) << tileSize;
+          level++;
+        }
+        tileSize = bounds.at(var)->value;
+        p->stream << std::setw(10) << tileSize;
+        auto commFactor = op->commonTilingFactor.at(idx_factor.first);
+        level = 0;
+        for (auto factor: commFactor){
+          tir::Var innerMostVar = secondOpIdx2var[*op->commonLoopOrder[level+1].rbegin()];
+          tileSize *= factor -> value;
+          if (var.same_as(innerMostVar))
+            p->stream << std::setw(10) << std::to_string(tileSize) + "*";
+          else  p->stream << std::setw(10) << tileSize;
+          level++;
+        }
+        p->stream << std::setw(10) <<  op->fusionInfo.boundsAfterParallel.at(var);
+        if (op->fusionInfo.parallelFactor.count(idx_factor.first)){
+          p->stream << std::setw(10) << "P"+std::to_string(op->fusionInfo.parallelFactor.at(idx_factor.first)->value);
+        }
+        p->stream << std::endl; 
       }
-      p->stream << "firstOpCosts: ";
-      for (auto cost : op->firstOpCosts)
-        std::cout << cost << " ";
-      std::cout << std::endl;
-      p->stream << "secondOpCost: ";
-      for (auto cost : op->secondOpCosts)
-        std::cout << cost << " ";
-      std::cout << std::endl;
-      p->stream << "commonLoopCost: ";
-      for (auto cost : op->commCosts)
-        std::cout << cost << " ";
-      std::cout << std::endl;
-      p->stream << "fusionCost: " << op->fusionInfo.cost << std::endl;
+      p->stream << std::setw(10) << "cost:";
+      for (size_t i = 1; i < op->firstOpCosts.size();i++){
+        double cost = op->firstOpCosts[i] + op->secondOpCosts[i];
+        p->stream << std::setw(10) << cost;
+      }
+      p->stream << std::setw(10) << op->fusionInfo.cost;
+      for (size_t i = 1; i  < op->commCosts.size(); i++)
+        p->stream << std::setw(10) << op->commCosts[i];
+      p->stream << std::endl;
+      p->stream << std::setw(10)<< "fp:";
+      for (size_t i = 1; i < op->firstOpCosts.size(); i++){
+        std::string key = "op1fp" + std::to_string(i);
+        CHECK(op->log.count(key));
+        p->stream << std::setw(10)<< op->log.at(key);
+      }
+      p->stream << std::setw(10)<< op->fusionInfo.memUse;
+      for (size_t i = 1; i < op->commCosts.size(); i++){
+        std::string key = "commfp" + std::to_string(i + op->fusionInfo.fusionLevel);
+        CHECK(op->log.count(key));
+        p->stream << std::setw(10)<< op->log.at(key);
+      }
+      p->stream << std::endl;
+      p->stream << std::setw(10)<<"op2fp";
+      for (size_t i = 1; i < op->secondOpCosts.size(); i++){
+        std::string key = "op2fp" + std::to_string(i);
+        CHECK(op->log.count(key));
+        p->stream << std::setw(10)<< op->log.at(key);
+      }
+      p->stream << std::endl;
       p->stream << "\n----------------------------------------------------\n";
     });
 
@@ -1227,6 +1272,7 @@ TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildCPUTensorizeParam")
       ig->setFusionLevel(fusionInfo.fusionLevel);
       ig->setFusion(fusionChoice->fusionItem);
       ig->scheduleParallel();
+      fusionInfo.memUse = fusionChoice->fusionResult->memUse;
       fusionInfo.boundsAfterParallel = ig->_boundsAfterParallel;
       fusionInfo.parallelFactor = ig->_parallelSchedule;
       fusionInfo.cacheOccupancy = fusionChoice->fusionResult->occupancy;

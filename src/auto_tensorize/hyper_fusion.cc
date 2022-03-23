@@ -7,7 +7,7 @@
 #include <tvm/te/schedule_pass.h>
 
 #define MAX_CANDIDATES_NUMBER 10000
-#define SURVEY_CANDIDATES_NUMBER 30
+#define SURVEY_CANDIDATES_NUMBER 100
 
 namespace ditto {
 
@@ -1497,11 +1497,11 @@ void setTemplatesAndSearchLightWeight(
   std::vector<FusionInfo> candidates(MAX_CANDIDATES_NUMBER);
   size_t itemCnt = 0;
   ig->setConfig(hw_param, bytePerEle);
-  const size_t n_level = ig->fusionLevels.size();
   for (auto fusionLevel: ig->fusionLevels) {
+  // for (size_t fusionLevel = 1; fusionLevel < 2; fusionLevel ++){
     std::cout << "fusionLevel: " << fusionLevel << std::endl;
+    int itemBeforeSearch = itemCnt;
     ig->setFusionLevel(fusionLevel);
-    size_t n_candidates = 0;
 
     double bestLevelCost = INFINITY;
     int bestFactors[nSecondOpIters];
@@ -1534,21 +1534,21 @@ void setTemplatesAndSearchLightWeight(
       ig->setAttach(fusionAttachPos);
 
       auto getCost = [&secondOpTilingFactors, &ig,
-                    &nSecondOpIters](double *occupancy = NULL, double * parallelism = NULL) {
+                    &nSecondOpIters](double *occupancy = NULL, double * parallelism = NULL, double * memUse = NULL) {
         Array<IntImm> secondOpTilingFactors_;
         for (size_t i = 0; i < nSecondOpIters; i++)
           secondOpTilingFactors_.push_back(
               IntImm(DataType::Int(32), secondOpTilingFactors[i]));
         ig->setSecondOpTiling(secondOpTilingFactors_);
-        return ig->getCost(occupancy, parallelism);
+        return ig->getCost(occupancy, parallelism, memUse);
       };
 
       std::function<void(int)> dfs = [&](size_t idx) {
         bool valid;
         double cost;
         if (idx == secondOpUnsetIndices.size()) {
-          double occupancy, parallelism;
-          std::tie(valid, cost) = getCost(&occupancy, &parallelism);
+          double occupancy, parallelism, memUse;
+          std::tie(valid, cost) = getCost(&occupancy, &parallelism, &memUse);
           if (valid && cost < bestLevelCost) {
             bestLevelCost = cost;
             memcpy(bestFactors, secondOpTilingFactors,
@@ -1556,9 +1556,7 @@ void setTemplatesAndSearchLightWeight(
           }
           if (!valid)
             return;
-          n_candidates += 1;
-          if (n_candidates >= (MAX_CANDIDATES_NUMBER / (n_level)))
-            return;
+          if (itemCnt >= MAX_CANDIDATES_NUMBER) return;
 
           FusionInfo fusionInfo;
           fusionInfo.cacheOccupancy = occupancy;
@@ -1577,6 +1575,7 @@ void setTemplatesAndSearchLightWeight(
           for (auto idx : secondOpUnsetIndices)
             fusionInfo.secondOpOuterTilingFactors.push_back(
                 secondOpTilingFactors[idx]);
+          fusionInfo.memUse = memUse;
           candidates[itemCnt++] = fusionInfo;
           return;
         }
@@ -1616,22 +1615,29 @@ void setTemplatesAndSearchLightWeight(
       }
     }
     std::cout << "candidates for fusionLevel " << fusionLevel << ": "
-              << n_candidates << std::endl;
+              << itemCnt - itemBeforeSearch << std::endl;
   }
-  CHECK(itemCnt < MAX_CANDIDATES_NUMBER);
+  CHECK(itemCnt <= MAX_CANDIDATES_NUMBER);
   candidates.resize(itemCnt);
   std::sort(candidates.begin(), candidates.end(),
             [](FusionInfo &first, FusionInfo &second) {
-              if (first.fusionLevel == second.fusionLevel)
-                return first.cost < second.cost;
-              return first.fusionLevel < second.fusionLevel;
+              return first.cost < second.cost;
             });
 
   std::cout << "candidates.size(): " << candidates.size() << std::endl;
 
   if (data) {
-    if (mode == "best")
-      *data = {candidates[0]};
+    if (mode == "best"){
+      std::vector <FusionInfo> candidates_;
+      std::set<int> levels;
+      for (auto candidate: candidates){
+        if (!levels.count(candidate.fusionLevel)){
+          candidates_.push_back(candidate);
+          levels.insert(candidate.fusionLevel);
+        }
+      }
+      *data = {candidates_};
+    }
     else if (mode == "survey") {
       std::vector<FusionInfo> candidates_;
       double ave = 0, ave2 = 0;

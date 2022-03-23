@@ -54,7 +54,7 @@ public:
   double cacheSize;
   double occupancy;
   double dataMovement;
-
+  double memUse;
   double getArithmeticIntensity() const;
   double getLocality(hardware::HardwareParam) const;
   double getRedundancy() const;
@@ -73,7 +73,7 @@ public:
                        double op2WorkLoad, double op2Buffer, double locality,
                        double parallelism, double redundancy, double n_block,
                        bool valid, int fusionLevel, int bytePerEle,
-                       double cacheSize);
+                       double cacheSize, double memUse);
   TVM_DEFINE_OBJECT_REF_METHODS(FusionResult, Result, FusionResultNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(FusionResultNode);
 };

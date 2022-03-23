@@ -89,6 +89,7 @@ struct FusionInfo {
   Map<tir::Var, IntImm> boundsAfterParallel;
   std::unordered_map<int, IntImm> parallelFactor;
   double cacheOccupancy;
+  double memUse;
 };
 std::ostream &operator<<(std::ostream &o, const FusionInfo &fusionInfo);
 /*!
@@ -629,6 +630,7 @@ public:
   std::vector<double> secondOpCosts;
   std::vector<double> commCosts;
   std::vector<double> costs;
+  std::unordered_map<std::string, double> log;
   double cost;
   Array<FloatImm> cacheOccupancy;
   std::unordered_map<int, Array<IntImm>> commonTilingFactor;
@@ -656,7 +658,8 @@ public:
                     std::vector<double> firstOpCosts = {},
                     std::vector<double> secondOpCosts = {},
                     std::vector<double> commCosts = {},
-                    Array<FloatImm> cacheOccupancy = {});
+                    Array<FloatImm> cacheOccupancy = {},
+                    std::unordered_map<std::string, double> log = {});
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(CPUTensorizeParam, ObjectRef,
                                         CPUTensorizeParamNode);
@@ -668,6 +671,7 @@ struct SingleCubicScheduleFactor {
   std::vector<std::vector<int>> loopOrder;
   std::vector<int> skip;
   std::vector<double> cacheOccupancy;
+  std::unordered_map<std::string, double> log;
 };
 
 struct CostAndFactor {

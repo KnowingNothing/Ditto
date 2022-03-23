@@ -322,7 +322,7 @@ public:
   /*! \brief get the analytical result */
   FusionResult getAnalyticalResult();
   /*! \brief get the data movement*/
-  std::pair<bool, double> getCost(double *occupancy = NULL, double * parallelism = NULL);
+  std::pair<bool, double> getCost(double *occupancy = NULL, double * parallelism = NULL, double * memUse = NULL);
   /*! \brief looplike lightweight visualize */
   void visualize();
   /*! \brief write result */
