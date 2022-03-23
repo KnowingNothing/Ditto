@@ -90,6 +90,8 @@ struct FusionInfo {
   std::unordered_map<int, IntImm> parallelFactor;
   double cacheOccupancy;
   double memUse;
+  double outerCost;
+  double maxThreadIter;
 };
 std::ostream &operator<<(std::ostream &o, const FusionInfo &fusionInfo);
 /*!

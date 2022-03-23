@@ -1057,9 +1057,12 @@ CPUTensorizeParam buildCPUTensorizeParam(SerialFusionState sfs,
   }
   std::cout << std::endl;
   for (auto &cost : op1caf.costs)
-    cost = cost * (double)fusionInfo.n_block / (double)fusionInfo.parallelism;
+    cost = cost * fusionInfo.outerCost;
   for (auto &cost : op2caf.costs)
-    cost = cost * (double)fusionInfo.n_block / (double)fusionInfo.parallelism;
+    cost = cost * fusionInfo.outerCost;
+  for (auto &cost: commCaf.costs)
+    cost *= fusionInfo.maxThreadIter;
+  
   return CPUTensorizeParam(
       op1, op2, hw_param->num_groups, op1Schedule.loopOrder,
       op2Schedule.loopOrder, commSchedule.loopOrder, firstOpTileFactor,
@@ -1131,6 +1134,9 @@ te::Schedule FusionContextNode::run(int i, te::Schedule sch, bool verbose) {
     std::cout << std::setw(10)<< "bandwidth";
     for (size_t i = 1; i < hw_param->cacheBandwidth.size(); i++) 
       std::cout << std::setw(10)<< hw_param->cacheBandwidth[i];
+    std::cout << std::endl;
+    std::cout << "fusionInfo\n";
+    std::cout << schParam->fusionInfo;
     std::cout << std::endl;
   }
   return TensorizeCPU(layer, state, hw_param, schParam);
@@ -1238,44 +1244,63 @@ TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildCPUTensorizeParam")
     .set_body_typed([](SerialFusionState sfs, FusionChoice fusionChoice,
                        hardware::HardwareParam hw_param, int bytePerEle) {
       /*
-              fusionInfo.cacheOccupancy = occupancy;
-              fusionInfo.cost = dm / hw_param->cacheBandwidth[fusionLevel];
-              fusionInfo.n_block = ig->getNumOfBlocks();
-              fusionInfo.parallelism = std::min(hw_param->num_groups,
-         (int)ig->getParallelism()); fusionInfo.secondOpOuterIndices =
-         secondOpOuterIndices; fusionInfo.fusionLevel = fusionLevel;
-              fusionInfo.computation = ig->getFirstOpWorkload() +
-         ig->getSecondOpWorkload(); fusionInfo.bounds = ig->bounds;
-              fusionInfo.valid = true;
-              ig->scheduleParallel();
-              fusionInfo.boundsAfterParallel = ig->_boundsAfterParallel;
-              fusionInfo.parallelFactor = ig->_parallelSchedule;
-              for (auto idx : secondOpUnsetIndices)
-                fusionInfo.secondOpOuterTilingFactors.push_back(
-                    secondOpTilingFactors[idx]);
+              double occupancy, parallelism, memUse;
+          std::tie(valid, cost) = getCost(&occupancy, &parallelism, &memUse);
+          if (valid && cost < bestLevelCost) {
+            bestLevelCost = cost;
+            memcpy(bestFactors, secondOpTilingFactors,
+                   sizeof(int) * nSecondOpIters);
+          }
+          if (!valid)
+            return;
+          if (itemCnt >= MAX_CANDIDATES_NUMBER) return;
+
+          FusionInfo fusionInfo;
+          fusionInfo.cacheOccupancy = occupancy;
+          fusionInfo.cost = cost;
+          fusionInfo.n_block = ig->getNumOfBlocks();
+          fusionInfo.outerCost = ig->_outerCost;
+          fusionInfo.maxThreadIter = ig->_maxThreadIter;
+          fusionInfo.parallelism = parallelism;
+          fusionInfo.secondOpOuterIndices = secondOpOuterIndices;
+          fusionInfo.fusionLevel = fusionLevel;
+          fusionInfo.computation =
+              ig->getFirstOpWorkload() + ig->getSecondOpWorkload();
+          fusionInfo.bounds = ig->bounds;
+          fusionInfo.valid = true;
+          fusionInfo.boundsAfterParallel = ig->_boundsAfterParallel;
+          fusionInfo.parallelFactor = ig->_parallelSchedule;
+          for (auto idx : secondOpUnsetIndices)
+            fusionInfo.secondOpOuterTilingFactors.push_back(
+                secondOpTilingFactors[idx]);
+          fusionInfo.memUse = memUse;
+          candidates[itemCnt++] = fusionInfo;
       */
       FusionInfo fusionInfo;
       fusionInfo.fusionLevel = fusionChoice->fusionResult->fusionLevel;
-      fusionInfo.cost = fusionChoice->fusionResult->dataMovement /
-                        hw_param->cacheBandwidth.at(fusionInfo.fusionLevel);
-      for (auto i : fusionChoice->secondOpOuterIndices)
-        fusionInfo.secondOpOuterIndices.push_back(i->value);
-      for (auto i : fusionChoice->secondOpOuterTilingFactors)
-        fusionInfo.secondOpOuterTilingFactors.push_back(i->value);
-      fusionInfo.n_block = fusionChoice->fusionResult->n_block;
-      fusionInfo.parallelism = fusionChoice->fusionResult->parallelism;
-      fusionInfo.valid = true;
-      fusionInfo.bounds = fusionChoice->fusionResult->bounds;
-      CHECK(sfs->tensorizeAxes.defined());
       IterGraph ig = buildIterGraph(sfs, sfs->tensorizeAxes, "");
       ig->setConfig(hw_param, bytePerEle);
       ig->setFusionLevel(fusionInfo.fusionLevel);
       ig->setFusion(fusionChoice->fusionItem);
-      ig->scheduleParallel();
-      fusionInfo.memUse = fusionChoice->fusionResult->memUse;
+      double occupancy, parallelism, memUse, cost;
+      bool valid;
+      std::tie(valid, cost) = ig->getCost(&occupancy, &parallelism, &memUse);
+      fusionInfo.cacheOccupancy = occupancy;
+      fusionInfo.cost = cost;
+      fusionInfo.n_block = ig->getNumOfBlocks();
+      fusionInfo.outerCost = ig->_outerCost;
+      fusionInfo.maxThreadIter = ig->_maxThreadIter;
+      fusionInfo.parallelism = parallelism;
+      for (auto i : fusionChoice->secondOpOuterIndices)
+        fusionInfo.secondOpOuterIndices.push_back(i->value);
+      for (auto i : fusionChoice->secondOpOuterTilingFactors)
+        fusionInfo.secondOpOuterTilingFactors.push_back(i->value);
+      fusionInfo.bounds = ig->bounds;
+      fusionInfo.valid = true;
       fusionInfo.boundsAfterParallel = ig->_boundsAfterParallel;
       fusionInfo.parallelFactor = ig->_parallelSchedule;
-      fusionInfo.cacheOccupancy = fusionChoice->fusionResult->occupancy;
+      fusionInfo.memUse = memUse;
+      CHECK(sfs->tensorizeAxes.defined());
       fusionInfo.computation =
           ig->getFirstOpWorkload() + ig->getSecondOpWorkload();
       return buildCPUTensorizeParam(sfs, hw_param, bytePerEle, fusionInfo);

@@ -231,6 +231,8 @@ public:
   Map<tir::Var, IntImm> _boundsAfterParallel;
   bool writeThrough; // whether E matrix is directly written back to global memory
   int bytePerEle;
+  double _outerCost; // singleThreadWorkload * ceil (n_thread / n_core)
+  double _maxThreadIter; // ceil (n_thread / n_core)
   void VisitAttrs(AttrVisitor *v) {
     v->Visit("init_firstOpIters", &_firstOpIters);
     v->Visit("init_secondOpIters", &_secondOpIters);

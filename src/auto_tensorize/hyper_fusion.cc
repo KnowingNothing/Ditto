@@ -8,7 +8,7 @@
 
 #define MAX_CANDIDATES_NUMBER 10000
 #define SURVEY_CANDIDATES_NUMBER 100
-
+#define SELECT_TOP 10
 namespace ditto {
 
 namespace auto_tensorize {
@@ -1562,6 +1562,8 @@ void setTemplatesAndSearchLightWeight(
           fusionInfo.cacheOccupancy = occupancy;
           fusionInfo.cost = cost;
           fusionInfo.n_block = ig->getNumOfBlocks();
+          fusionInfo.outerCost = ig->_outerCost;
+          fusionInfo.maxThreadIter = ig->_maxThreadIter;
           fusionInfo.parallelism = parallelism;
           fusionInfo.secondOpOuterIndices = secondOpOuterIndices;
           fusionInfo.fusionLevel = fusionLevel;
@@ -1569,7 +1571,6 @@ void setTemplatesAndSearchLightWeight(
               ig->getFirstOpWorkload() + ig->getSecondOpWorkload();
           fusionInfo.bounds = ig->bounds;
           fusionInfo.valid = true;
-          ig->scheduleParallel();
           fusionInfo.boundsAfterParallel = ig->_boundsAfterParallel;
           fusionInfo.parallelFactor = ig->_parallelSchedule;
           for (auto idx : secondOpUnsetIndices)
@@ -1640,6 +1641,9 @@ void setTemplatesAndSearchLightWeight(
     }
     else if (mode == "survey") {
       std::vector<FusionInfo> candidates_;
+      for (size_t i = 0; i < std::min(candidates.size(), (size_t)SELECT_TOP); i++){
+        candidates_.push_back(candidates.at(i));
+      }
       double ave = 0, ave2 = 0;
       for (size_t i = 0; i < candidates.size(); i++) {
         FusionInfo &fusionInfo = candidates.at(i);
@@ -1654,6 +1658,8 @@ void setTemplatesAndSearchLightWeight(
            i += std::max((candidates.size() + SURVEY_CANDIDATES_NUMBER - 1) /
                              (SURVEY_CANDIDATES_NUMBER),
                          (size_t)1)) {
+        if (candidates_.size() >= SURVEY_CANDIDATES_NUMBER)
+          break;
         FusionInfo fusionInfo = candidates.at(i);
         candidates_.push_back(fusionInfo);
       }
@@ -1831,6 +1837,8 @@ std::ostream &operator<<(std::ostream &o, const FusionInfo &fusionInfo) {
   o << "fusion cost: " << fusionInfo.cost << std::endl;
   o << "outerIndices.size(): " << fusionInfo.secondOpOuterIndices.size()
     << std::endl;
+  o << "outer cost" << fusionInfo.outerCost << std::endl;
+  o << "max iter: " << fusionInfo.maxThreadIter << std::endl;
   return o;
 }
 FusionContext buildFusionContext(SerialFusionState sfs, Layer layer,
@@ -1839,10 +1847,6 @@ FusionContext buildFusionContext(SerialFusionState sfs, Layer layer,
                                  String searchType = "stochastic",
                                  String mode = "survey",
                                  String dtype = "float32") {
-  std::cout << "fusionSize:" << std::endl;
-  for (auto cs : hw_param->cacheSizePerThread)
-    std::cout << cs << " ";
-  std::cout << std::endl;
   std::vector<FusionInfo> fusionInfo(SURVEY_CANDIDATES_NUMBER);
   for (auto it : fusionInfo)
     it.valid = 0;
@@ -1858,7 +1862,6 @@ FusionContext buildFusionContext(SerialFusionState sfs, Layer layer,
                                    &fusionInfo);
   OpHyperState op1, op2;
   std::tie(op1, op2) = sfs->getCubicOpPair();
-  std::cout << "in buildFusionContext" << std::endl;
   size_t cnt = 0;
   for (auto info : fusionInfo) {
     if (!info.valid)
