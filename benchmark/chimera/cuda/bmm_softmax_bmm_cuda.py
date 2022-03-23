@@ -280,7 +280,7 @@ supported_dtypes = set(
 
 example_text = """
  example:
-    python bmm_softmax_bmm_cuda.py --in_dtype float16 --out_dtype float16 --begin 0 --num 1
+    python bmm_softmax_bmm_cuda.py --in_dtype float16 --acc_dtype float32 --begin 0 --num 1
 """
 
 shapes = [
@@ -300,7 +300,7 @@ if __name__ == "__main__":
         epilog=example_text,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--only_once", action="store_true")
     parser.add_argument(
         "--in_dtype",
         type=str,
@@ -345,6 +345,7 @@ if __name__ == "__main__":
             in_dtype=args.in_dtype,
             acc_dtype=args.acc_dtype,
             sm=args.sm,
+            only_once=args.only_once
         )
         costs.append((ss, cost))
 
