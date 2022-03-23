@@ -113,7 +113,7 @@ def BatchGemmGemm(
 
     cast = tvm.te.compute(
         [batch, M // MI, L // NI, MI, NI],
-        lambda b, mo, lo, mi, li: D_frag[b, mo, lo, mi, li],
+        lambda b, mo, lo, mi, li: D_frag[b, mo, lo, mi, li].astype(in_dtype),
         name="cast",
     )
 
