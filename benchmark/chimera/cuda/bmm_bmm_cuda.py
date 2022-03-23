@@ -113,7 +113,7 @@ def BatchGemmGemm(
 
     cast = tvm.te.compute(
         [batch, M // MI, L // NI, MI, NI],
-        lambda b, mo, lo, mi, li: D_frag[b, mo, lo, mi, li].astype(in_dtype),
+        lambda b, mo, lo, mi, li: D_frag[b, mo, lo, mi, li],
         name="cast",
     )
 
@@ -140,17 +140,13 @@ def BatchGemmGemm(
         name="E_frag",
     )
 
-    # F = tvm.te.compute(
-    #     [batch, M, N],
-    #     lambda b, m, n: E_frag[b, m // MI, n // NI, m % MI, n % NI].astype(in_dtype)
-    #     / (
-    #         E_frag[b, m // MI, N // NI - 1, m % MI, NI - 1].astype(in_dtype)
-    #         + tvm.tir.const(1e-5, in_dtype)
-    #     ),
-    #     name="F",
-    # )
+    F = tvm.te.compute(
+        [batch, M, N],
+        lambda b, m, n: E_frag[b, m // MI, n // NI, m % MI, n % NI].astype(in_dtype),
+        name="F",
+    )
 
-    return [A, B, C], [E_frag]
+    return [A, B, C], [F]
 
 
 def main(
@@ -168,9 +164,9 @@ def main(
         batch=batch, M=M, N=N, K=K, L=L, in_dtype=in_dtype, acc_dtype=acc_dtype
     )
     A, B, C = ins
-    (E_frag,) = outs
+    (F,) = outs
 
-    # E_frag = F.op.input_tensors[0]
+    E_frag = F.op.input_tensors[0]
     cast, C_ext = E_frag.op.input_tensors
     D_frag = cast.op.input_tensors[0]
     A_shared, B_shared = D_frag.op.input_tensors
@@ -203,7 +199,7 @@ def main(
 
     second_match_info = at.match_info(choice, second_packed)
 
-    layer = ac.layer([E_frag.op], inputs=[A, B, C])
+    layer = ac.layer([F.op], inputs=[A, B, C])
     tensorize_state = at.tensorize_hyper_fusion_state(
         layer, fuse_choice, {D_frag.op: first_match_info, E_frag.op: second_match_info}
     )
@@ -293,7 +289,7 @@ supported_dtypes = set(
 
 example_text = """
  example:
-    python bmm_softmax_bmm_cuda.py --in_dtype float16 --out_dtype float16 --begin 0 --num 1
+    python bmm_bmm_cuda.py --in_dtype float16 --acc_dtype float32 --begin 0 --num 1
 """
 
 shapes = [
@@ -313,7 +309,7 @@ if __name__ == "__main__":
         epilog=example_text,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--only_once", action="store_true")
     parser.add_argument(
         "--in_dtype",
         type=str,
@@ -358,6 +354,7 @@ if __name__ == "__main__":
             in_dtype=args.in_dtype,
             acc_dtype=args.acc_dtype,
             sm=args.sm,
+            only_once=args.only_once
         )
         costs.append((ss, cost))
 
