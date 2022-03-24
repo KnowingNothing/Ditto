@@ -57,7 +57,7 @@ if __name__ == "__main__":
     costs = []
     for ss in shapes[args.begin : args.begin + args.num]:
         B, M, N, K, L = ss
-        cost = main(B, M, N, K, K, args.only_once)
+        cost = main(B, M, N, K, L, args.only_once)
         costs.append((ss, cost))
     print("B,M,N,K,cost")
     for cc in costs:
