@@ -1,0 +1,346 @@
+==PROF== Connected to process 14235 (/home/CORP.PKUSC.ORG/zchno/venv/torch-1.10-trt/bin/python3)
+==PROF== Profiling "ampere_fp16_s16816gemm_fp16_1..." - 1: 0%....50%....100% - 10 passes
+==PROF== Profiling "softmax_warp_forward" - 2: 0%....50%....100% - 10 passes
+==PROF== Profiling "unrolled_elementwise_kernel" - 3: 0%....50%....100% - 10 passes
+==PROF== Profiling "ampere_fp16_s16816gemm_fp16_6..." - 4: 0%....50%....100% - 10 passes
+==PROF== Profiling "ampere_fp16_s16816gemm_fp16_1..." - 5: 0%....50%....100% - 10 passes
+==PROF== Profiling "softmax_warp_forward" - 6: 0%....50%....100% - 10 passes
+==PROF== Profiling "unrolled_elementwise_kernel" - 7: 0%....50%....100% - 10 passes
+==PROF== Profiling "ampere_fp16_s16816gemm_fp16_1..." - 8: 0%....50%....100% - 10 passes
+==PROF== Profiling "ampere_fp16_s16816gemm_fp16_1..." - 9: 0%....50%....100% - 10 passes
+==PROF== Profiling "softmax_warp_forward" - 10: 0%....50%....100% - 10 passes
+==PROF== Profiling "unrolled_elementwise_kernel" - 11: 0%....50%....100% - 10 passes
+==PROF== Profiling "ampere_fp16_s16816gemm_fp16_1..." - 12: 0%....50%....100% - 10 passes
+==PROF== Profiling "ampere_fp16_s16816gemm_fp16_1..." - 13: 0%....50%....100% - 10 passes
+==PROF== Profiling "softmax_warp_forward" - 14: 0%....50%....100% - 10 passes
+==PROF== Profiling "unrolled_elementwise_kernel" - 15: 0%....50%....100% - 10 passes
+==PROF== Profiling "ampere_fp16_s16816gemm_fp16_6..." - 16: 0%....50%....100% - 10 passes
+==PROF== Profiling "ampere_fp16_s16816gemm_fp16_1..." - 17: 0%....50%....100% - 10 passes
+==PROF== Profiling "softmax_warp_forward" - 18: 0%....50%....100% - 10 passes
+==PROF== Profiling "unrolled_elementwise_kernel" - 19: 0%....50%....100% - 10 passes
+==PROF== Profiling "ampere_fp16_s16816gemm_fp16_6..." - 20: 0%....50%....100% - 10 passes
+==PROF== Profiling "ampere_fp16_s16816gemm_fp16_1..." - 21: 0%....50%....100% - 10 passes
+==PROF== Profiling "softmax_warp_forward" - 22: 0%....50%....100% - 10 passes
+==PROF== Profiling "unrolled_elementwise_kernel" - 23: 0%....50%....100% - 10 passes
+==PROF== Profiling "ampere_fp16_s16816gemm_fp16_1..." - 24: 0%....50%....100% - 10 passes
+B,M,N,K,L,dtype,cost
+8,512,64,64,512,float16,-1
+12,512,64,64,512,float16,-1
+16,512,64,64,512,float16,-1
+12,256,64,64,256,float16,-1
+16,256,64,64,256,float16,-1
+16,256,80,80,256,float16,-1
+==PROF== Disconnected from process 14235
+[14235] python3@127.0.0.1
+  ampere_fp16_s16816gemm_fp16_128x128_ldg8_f2f_stages_32x5_nn, 2022-Mar-24 15:21:11, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                          59.05
+    Mem Busy                                                                             %                          25.26
+    Max Bandwidth                                                                        %                          18.71
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          89.28
+    Mem Pipes Busy                                                                       %                          10.93
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  void <unnamed>::softmax_warp_forward<c10::Half, float, float, (int)9, (bool)0>(T2 *, const T1 *, int, int, int), 2022-Mar-24 15:21:11, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         190.79
+    Mem Busy                                                                             %                          33.51
+    Max Bandwidth                                                                        %                          27.47
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          74.71
+    Mem Pipes Busy                                                                       %                          14.28
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  void at::native::unrolled_elementwise_kernel<at::native::copy_device_to_device(at::TensorIterator &, bool)::[lambda() (instance 3)]::operator ()() const::[lambda() (instance 20)]::operator ()() const::[lambda(c10::Half) (instance 1)], at::detail::Array<char *, (int)2>, TrivialOffsetCalculator<(int)1, unsigned int>, TrivialOffsetCalculator<(int)1, unsigned int>, at::native::memory::LoadWithCast<(int)1>, at::native::memory::StoreWithCast>(int, T1, T2, T3, T4, T5, T6), 2022-Mar-24 15:21:12, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         330.16
+    Mem Busy                                                                             %                          30.46
+    Max Bandwidth                                                                        %                          24.46
+    L1/TEX Hit Rate                                                                      %                          16.67
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          51.35
+    Mem Pipes Busy                                                                       %                           8.07
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  ampere_fp16_s16816gemm_fp16_64x64_ldg8_f2f_stages_64x6_nn, 2022-Mar-24 15:21:13, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         306.58
+    Mem Busy                                                                             %                          28.55
+    Max Bandwidth                                                                        %                          22.27
+    L1/TEX Hit Rate                                                                      %                           2.94
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          50.48
+    Mem Pipes Busy                                                                       %                           7.12
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  ampere_fp16_s16816gemm_fp16_128x128_ldg8_f2f_stages_32x5_nn, 2022-Mar-24 15:21:14, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                          87.64
+    Mem Busy                                                                             %                          37.36
+    Max Bandwidth                                                                        %                          27.20
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          89.12
+    Mem Pipes Busy                                                                       %                          16.27
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  void <unnamed>::softmax_warp_forward<c10::Half, float, float, (int)9, (bool)0>(T2 *, const T1 *, int, int, int), 2022-Mar-24 15:21:15, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         231.04
+    Mem Busy                                                                             %                          38.76
+    Max Bandwidth                                                                        %                          32.08
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          76.18
+    Mem Pipes Busy                                                                       %                          16.83
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  void at::native::unrolled_elementwise_kernel<at::native::copy_device_to_device(at::TensorIterator &, bool)::[lambda() (instance 3)]::operator ()() const::[lambda() (instance 20)]::operator ()() const::[lambda(c10::Half) (instance 1)], at::detail::Array<char *, (int)2>, TrivialOffsetCalculator<(int)1, unsigned int>, TrivialOffsetCalculator<(int)1, unsigned int>, at::native::memory::LoadWithCast<(int)1>, at::native::memory::StoreWithCast>(int, T1, T2, T3, T4, T5, T6), 2022-Mar-24 15:21:15, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         392.44
+    Mem Busy                                                                             %                          34.44
+    Max Bandwidth                                                                        %                          28.02
+    L1/TEX Hit Rate                                                                      %                          16.67
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          50.90
+    Mem Pipes Busy                                                                       %                           9.26
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  ampere_fp16_s16816gemm_fp16_128x64_ldg8_f2f_stages_32x6_nn, 2022-Mar-24 15:21:16, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         404.37
+    Mem Busy                                                                             %                          36.65
+    Max Bandwidth                                                                        %                          28.65
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          64.53
+    Mem Pipes Busy                                                                       %                          13.34
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  ampere_fp16_s16816gemm_fp16_128x128_ldg8_f2f_stages_32x5_nn, 2022-Mar-24 15:21:17, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                          82.45
+    Mem Busy                                                                             %                          35.12
+    Max Bandwidth                                                                        %                          25.30
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          89.67
+    Mem Pipes Busy                                                                       %                          15.33
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  void <unnamed>::softmax_warp_forward<c10::Half, float, float, (int)9, (bool)0>(T2 *, const T1 *, int, int, int), 2022-Mar-24 15:21:18, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         250.90
+    Mem Busy                                                                             %                          41.84
+    Max Bandwidth                                                                        %                          34.20
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          74.32
+    Mem Pipes Busy                                                                       %                          18.07
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  void at::native::unrolled_elementwise_kernel<at::native::copy_device_to_device(at::TensorIterator &, bool)::[lambda() (instance 3)]::operator ()() const::[lambda() (instance 20)]::operator ()() const::[lambda(c10::Half) (instance 1)], at::detail::Array<char *, (int)2>, TrivialOffsetCalculator<(int)1, unsigned int>, TrivialOffsetCalculator<(int)1, unsigned int>, at::native::memory::LoadWithCast<(int)1>, at::native::memory::StoreWithCast>(int, T1, T2, T3, T4, T5, T6), 2022-Mar-24 15:21:18, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         428.18
+    Mem Busy                                                                             %                          37.11
+    Max Bandwidth                                                                        %                          30.36
+    L1/TEX Hit Rate                                                                      %                          16.67
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          50.57
+    Mem Pipes Busy                                                                       %                          10.00
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  ampere_fp16_s16816gemm_fp16_128x64_ldg8_f2f_stages_32x6_nn, 2022-Mar-24 15:21:19, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         382.15
+    Mem Busy                                                                             %                          33.32
+    Max Bandwidth                                                                        %                          26.17
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          64.52
+    Mem Pipes Busy                                                                       %                          12.18
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  ampere_fp16_s16816gemm_fp16_128x64_ldg8_f2f_stages_32x6_nn, 2022-Mar-24 15:21:20, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                          66.26
+    Mem Busy                                                                             %                          18.73
+    Max Bandwidth                                                                        %                          11.68
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          83.56
+    Mem Pipes Busy                                                                       %                           7.86
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  void <unnamed>::softmax_warp_forward<c10::Half, float, float, (int)8, (bool)0>(T2 *, const T1 *, int, int, int), 2022-Mar-24 15:21:21, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         116.76
+    Mem Busy                                                                             %                          22.53
+    Max Bandwidth                                                                        %                          18.36
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          74.83
+    Mem Pipes Busy                                                                       %                          11.08
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  void at::native::unrolled_elementwise_kernel<at::native::copy_device_to_device(at::TensorIterator &, bool)::[lambda() (instance 3)]::operator ()() const::[lambda() (instance 20)]::operator ()() const::[lambda(c10::Half) (instance 1)], at::detail::Array<char *, (int)2>, TrivialOffsetCalculator<(int)1, unsigned int>, TrivialOffsetCalculator<(int)1, unsigned int>, at::native::memory::LoadWithCast<(int)1>, at::native::memory::StoreWithCast>(int, T1, T2, T3, T4, T5, T6), 2022-Mar-24 15:21:21, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         208.28
+    Mem Busy                                                                             %                          19.99
+    Max Bandwidth                                                                        %                          15.55
+    L1/TEX Hit Rate                                                                      %                          16.67
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          51.96
+    Mem Pipes Busy                                                                       %                           5.13
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  ampere_fp16_s16816gemm_fp16_64x64_ldg8_f2f_stages_64x6_nn, 2022-Mar-24 15:21:22, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         154.78
+    Mem Busy                                                                             %                          15.04
+    Max Bandwidth                                                                        %                          11.40
+    L1/TEX Hit Rate                                                                      %                           5.56
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          51.69
+    Mem Pipes Busy                                                                       %                           4.30
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  ampere_fp16_s16816gemm_fp16_128x64_ldg8_f2f_stages_32x6_nn, 2022-Mar-24 15:21:23, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                          78.60
+    Mem Busy                                                                             %                          21.17
+    Max Bandwidth                                                                        %                          13.21
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          83.10
+    Mem Pipes Busy                                                                       %                           8.94
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  void <unnamed>::softmax_warp_forward<c10::Half, float, float, (int)8, (bool)0>(T2 *, const T1 *, int, int, int), 2022-Mar-24 15:21:24, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         142.18
+    Mem Busy                                                                             %                          26.79
+    Max Bandwidth                                                                        %                          21.65
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          76.14
+    Mem Pipes Busy                                                                       %                          13.14
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  void at::native::unrolled_elementwise_kernel<at::native::copy_device_to_device(at::TensorIterator &, bool)::[lambda() (instance 3)]::operator ()() const::[lambda() (instance 20)]::operator ()() const::[lambda(c10::Half) (instance 1)], at::detail::Array<char *, (int)2>, TrivialOffsetCalculator<(int)1, unsigned int>, TrivialOffsetCalculator<(int)1, unsigned int>, at::native::memory::LoadWithCast<(int)1>, at::native::memory::StoreWithCast>(int, T1, T2, T3, T4, T5, T6), 2022-Mar-24 15:21:24, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         208.06
+    Mem Busy                                                                             %                          21.97
+    Max Bandwidth                                                                        %                          17.42
+    L1/TEX Hit Rate                                                                      %                          16.67
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          51.89
+    Mem Pipes Busy                                                                       %                           5.75
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  ampere_fp16_s16816gemm_fp16_64x64_ldg8_f2f_stages_64x6_nn, 2022-Mar-24 15:21:25, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         193.24
+    Mem Busy                                                                             %                          19.31
+    Max Bandwidth                                                                        %                          14.64
+    L1/TEX Hit Rate                                                                      %                           5.56
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          50.37
+    Mem Pipes Busy                                                                       %                           5.54
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  ampere_fp16_s16816gemm_fp16_128x64_ldg8_f2f_stages_32x6_nn, 2022-Mar-24 15:21:26, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                          90.44
+    Mem Busy                                                                             %                          21.89
+    Max Bandwidth                                                                        %                          13.13
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          82.77
+    Mem Pipes Busy                                                                       %                           9.42
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  void <unnamed>::softmax_warp_forward<c10::Half, float, float, (int)8, (bool)0>(T2 *, const T1 *, int, int, int), 2022-Mar-24 15:21:27, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                            145
+    Mem Busy                                                                             %                          26.83
+    Max Bandwidth                                                                        %                          21.64
+    L1/TEX Hit Rate                                                                      %                              0
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          75.34
+    Mem Pipes Busy                                                                       %                          13.15
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  void at::native::unrolled_elementwise_kernel<at::native::copy_device_to_device(at::TensorIterator &, bool)::[lambda() (instance 3)]::operator ()() const::[lambda() (instance 20)]::operator ()() const::[lambda(c10::Half) (instance 1)], at::detail::Array<char *, (int)2>, TrivialOffsetCalculator<(int)1, unsigned int>, TrivialOffsetCalculator<(int)1, unsigned int>, at::native::memory::LoadWithCast<(int)1>, at::native::memory::StoreWithCast>(int, T1, T2, T3, T4, T5, T6), 2022-Mar-24 15:21:27, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         208.72
+    Mem Busy                                                                             %                          20.38
+    Max Bandwidth                                                                        %                          16.10
+    L1/TEX Hit Rate                                                                      %                          16.67
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          53.09
+    Mem Pipes Busy                                                                       %                           5.32
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
+  ampere_fp16_s16816gemm_fp16_128x64_ldg8_f2f_stages_32x6_nn, 2022-Mar-24 15:21:28, Context 1, Stream 7
+    Section: Memory Workload Analysis
+    ---------------------------------------------------------------------- --------------- ------------------------------
+    Memory Throughput                                                         Gbyte/second                         197.30
+    Mem Busy                                                                             %                          20.18
+    Max Bandwidth                                                                        %                          14.22
+    L1/TEX Hit Rate                                                                      %                           5.01
+    L2 Compression Success Rate                                                          %                              0
+    L2 Compression Ratio                                                                                                0
+    L2 Hit Rate                                                                          %                          67.74
+    Mem Pipes Busy                                                                       %                           7.58
+    ---------------------------------------------------------------------- --------------- ------------------------------
+
