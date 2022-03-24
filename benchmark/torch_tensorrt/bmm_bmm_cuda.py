@@ -143,6 +143,6 @@ if __name__ == "__main__":
         B, M, N, K, L = ss
         cost = main(B, M, N, K, L, args.dtype, args.only_once)
         costs.append((ss, cost))
-    print("B,M,N,K,dtype,cost")
+    print("B,M,N,K,L,dtype,cost")
     for cc in costs:
-        print(f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{args.dtype},{cc[1]}")
+        print(f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.dtype},{cc[1]}")

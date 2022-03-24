@@ -12,6 +12,7 @@ class Attention(nn.Module):
 
     def forward(self, q, k, v):
         x = torch.bmm(q, k)
+        x = self.softmax(x)
         x = torch.bmm(x, v)
         return x
     
@@ -25,7 +26,7 @@ def export_model(B, M, N, K, L, dtype):
 
     inputs_torch = [torch.tensor(x).cuda() for x in inputs_np]
     model = Attention()
-    torch.onnx.export(model, args=tuple(inputs_torch), f=f"bmm_bmm-{B}-{M}-{N}-{K}-{L}-{dtype}.onnx", verbose=True)
+    torch.onnx.export(model, args=tuple(inputs_torch), f=f"bmm_softmax_bmm-{B}-{M}-{N}-{K}-{L}-{dtype}.onnx", verbose=True)
 
 def main(B, M, N, K, L, dtype, only_once=False):
     export_model(B, M, N, K, L, dtype)
@@ -33,7 +34,7 @@ def main(B, M, N, K, L, dtype, only_once=False):
     builder = trt.Builder(logger)
     network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
     parser = trt.OnnxParser(network, logger)
-    success = parser.parse_from_file(f"bmm_bmm-{B}-{M}-{N}-{K}-{L}-{dtype}.onnx")
+    success = parser.parse_from_file(f"bmm_softmax_bmm-{B}-{M}-{N}-{K}-{L}-{dtype}.onnx")
     for idx in range(parser.num_errors):
         print(parser.get_error(idx))
 
@@ -90,7 +91,7 @@ def main(B, M, N, K, L, dtype, only_once=False):
 
 example_text = """
  example:
-    python bmm_bmm.py --dtype float16 --begin 0 --num 1
+    python bmm_softmax_bmm.py --dtype float16 --begin 0 --num 1
 """
 
 shapes = [

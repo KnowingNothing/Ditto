@@ -349,8 +349,8 @@ if __name__ == "__main__":
         )
         costs.append((ss, cost))
 
-    print("B,M,N,K,in_dtype,acc_dtype,sm,cost")
+    print("B,M,N,K,L,in_dtype,acc_dtype,sm,cost")
     for cc in costs:
         print(
-            f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{args.in_dtype},{args.acc_dtype},{args.sm},{cc[1]}"
+            f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.in_dtype},{args.acc_dtype},{args.sm},{cc[1]}"
         )

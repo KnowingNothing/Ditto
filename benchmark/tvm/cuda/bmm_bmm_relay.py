@@ -34,9 +34,9 @@ def relay_bmm_bmm(
     return [[batch, M, K], [batch, K, L], [batch, L, N]], [[batch, M, N]], module
 
 
-def main(B, M, N, K, L, dtype, only_once):
-    in_dtype = dtype
-    acc_dtype = dtype
+def main(B, M, N, K, L, in_dtype, acc_dtype, only_once):
+    in_dtype = in_dtype
+    acc_dtype = acc_dtype
     target = "cuda -libs=cublas,cudnn"
     ins, outs, module = relay_bmm_bmm(
         B, M, N, K, L, in_dtype=in_dtype, acc_dtype=acc_dtype, target=target
@@ -68,7 +68,7 @@ def main(B, M, N, K, L, dtype, only_once):
 
 example_text = """
  example:
-    python bmm_bmm_cuda.py --dtype float16 --begin 0 --num 1
+    python bmm_bmm_cuda.py --in_dtype float16 --acc_dtype float32 --begin 0 --num 1
 """
 
 shapes = [
@@ -90,9 +90,15 @@ if __name__ == "__main__":
     )
     parser.add_argument("--only_once", action="store_true")
     parser.add_argument(
-        "--dtype",
+        "--in_dtype",
         type=str,
         choices=["float16", "int8"],
+        default="float16",
+    )
+    parser.add_argument(
+        "--acc_dtype",
+        type=str,
+        choices=["float16", "float32", "int32"],
         default="float16",
     )
     parser.add_argument(
@@ -106,8 +112,8 @@ if __name__ == "__main__":
     costs = []
     for ss in shapes[args.begin : args.begin + args.num]:
         B, M, N, K, L = ss
-        cost = main(B, M, N, K, L, args.dtype, args.only_once)
+        cost = main(B, M, N, K, L, args.in_dtype, args.acc_dtype, args.only_once)
         costs.append((ss, cost))
-    print("B,M,N,K,dtype,cost")
+    print("B,M,N,K,L,in_dtype,acc_dtype,cost")
     for cc in costs:
-        print(f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{args.dtype},{cc[1]}")
+        print(f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.in_dtype},{args.acc_dtype},{cc[1]}")
