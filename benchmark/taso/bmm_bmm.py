@@ -59,6 +59,6 @@ if __name__ == "__main__":
         B, M, N, K, L = ss
         cost = main(B, M, N, K, L, args.only_once)
         costs.append((ss, cost))
-    print("B,M,N,K,cost")
+    print("B,M,N,K,L,cost")
     for cc in costs:
-        print(f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[1]}")
+        print(f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{cc[1]}")

@@ -140,13 +140,13 @@ def BatchGemmGemm(
         name="E_frag",
     )
 
-    # F = tvm.te.compute(
-    #     [batch, M, N],
-    #     lambda b, m, n: E_frag[b, m // MI, n // NI, m % MI, n % NI].astype(in_dtype),
-    #     name="F",
-    # )
+    F = tvm.te.compute(
+        [batch, M, N],
+        lambda b, m, n: E_frag[b, m // MI, n // NI, m % MI, n % NI].astype(in_dtype),
+        name="F",
+    )
 
-    return [A, B, C], [E_frag]
+    return [A, B, C], [F]
 
 
 def main(
@@ -164,9 +164,9 @@ def main(
         batch=batch, M=M, N=N, K=K, L=L, in_dtype=in_dtype, acc_dtype=acc_dtype
     )
     A, B, C = ins
-    (E_frag,) = outs
+    (F,) = outs
 
-    # E_frag = F.op.input_tensors[0]
+    E_frag = F.op.input_tensors[0]
     cast, C_ext = E_frag.op.input_tensors
     D_frag = cast.op.input_tensors[0]
     A_shared, B_shared = D_frag.op.input_tensors
@@ -199,7 +199,7 @@ def main(
 
     second_match_info = at.match_info(choice, second_packed)
 
-    layer = ac.layer([E_frag.op], inputs=[A, B, C])
+    layer = ac.layer([F.op], inputs=[A, B, C])
     tensorize_state = at.tensorize_hyper_fusion_state(
         layer, fuse_choice, {D_frag.op: first_match_info, E_frag.op: second_match_info}
     )
@@ -358,10 +358,10 @@ if __name__ == "__main__":
         )
         costs.append((ss, cost))
 
-    print("B,M,N,K,in_dtype,acc_dtype,sm,cost")
+    print("B,M,N,K,L,in_dtype,acc_dtype,sm,cost")
     for cc in costs:
         print(
-            f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{args.in_dtype},{args.acc_dtype},{args.sm},{cc[1]}"
+            f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.in_dtype},{args.acc_dtype},{args.sm},{cc[1]}"
         )
     for cc in costs:
         print(cc[1])

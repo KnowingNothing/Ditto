@@ -1,0 +1,19 @@
+--------------------------------- ------------------------------------- ------- --------------------------------------------------
+Identifier                        Display Name                          Enabled Filename                                          
+--------------------------------- ------------------------------------- ------- --------------------------------------------------
+ComputeWorkloadAnalysis           Compute Workload Analysis             no      ...21.2.2/Sections/ComputeWorkloadAnalysis.section
+InstructionStats                  Instruction Statistics                no      ...2021.2.2/Sections/InstructionStatistics.section
+LaunchStats                       Launch Statistics                     yes     ...pute/2021.2.2/Sections/LaunchStatistics.section
+MemoryWorkloadAnalysis            Memory Workload Analysis              no      ...021.2.2/Sections/MemoryWorkloadAnalysis.section
+MemoryWorkloadAnalysis_Chart      Memory Workload Analysis Chart        no      ...2/Sections/MemoryWorkloadAnalysis_Chart.section
+MemoryWorkloadAnalysis_Deprecated (Deprecated) Memory Workload Analysis no      ...tions/MemoryWorkloadAnalysis_Deprecated.section
+MemoryWorkloadAnalysis_Tables     Memory Workload Analysis Tables       no      .../Sections/MemoryWorkloadAnalysis_Tables.section
+Nvlink                            NVLink                                no      ...Nsight Compute/2021.2.2/Sections/Nvlink.section
+Nvlink_Tables                     NVLink Tables                         no      ...Compute/2021.2.2/Sections/Nvlink_Tables.section
+Nvlink_Topology                   NVLink Topology                       no      ...mpute/2021.2.2/Sections/Nvlink_Topology.section
+Occupancy                         Occupancy                             yes     ...ght Compute/2021.2.2/Sections/Occupancy.section
+SchedulerStats                    Scheduler Statistics                  no      ...e/2021.2.2/Sections/SchedulerStatistics.section
+SourceCounters                    Source Counters                       no      ...ompute/2021.2.2/Sections/SourceCounters.section
+SpeedOfLight                      GPU Speed Of Light Throughput         yes     ... Compute/2021.2.2/Sections/SpeedOfLight.section
+SpeedOfLight_RooflineChart        GPU Speed Of Light Roofline Chart     no      ...2.2/Sections/SpeedOfLight_RooflineChart.section
+WarpStateStats                    Warp State Statistics                 no      ...e/2021.2.2/Sections/WarpStateStatistics.section
