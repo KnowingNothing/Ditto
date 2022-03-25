@@ -20,12 +20,41 @@ NI1 = 16
 KI1 = 64
 NI2 = 16
 KI2 = 16
-REPEAT = 3000
-PARALLEL = 20
+REPEAT = 500
+PARALLEL = 32
+PEAKGFLOPS = int()
+WORKLOAD = int()
+SERVER = None
 
+ServerConfig = {
+    'sc':{
+        'parallelism': 20,
+        'cacheSizes': [32 * 16, 32 * 1024, 256 * 1024, 25344 * 1024],
+        'corePerLevel': [1.0,1.0,1.0,10.0],
+        'bandwidth': [293.72, 81.72, 38.54, 13.14],
+        'isa': 'avx2',
+        'peakgflops': 704.20
+    },
+    'sccc':{
+        'parallelism': 32,
+        'cacheSizes': [32 * 16, 32 * 1024, 1024 * 1024, 25344 * 1024],
+        'corePerLevel': [1.0,1.0,1.0,16.0],
+        'bandwidth': [293.72, 81.72, 38.54, 13.14],
+        'isa': 'avx512',
+        'peakgflops': 2150.50
+    },
+    'scccc':{
+        'parallelism': 36,
+        'cacheSizes': [32 * 16, 32 * 1024, 1024 * 1024, 25344 * 1024],
+        'corePerLevel': [1.0,1.0,1.0,18.0],
+        'bandwidth': [293.72, 81.72, 38.54, 13.14],
+        'isa': 'avx512',
+        'peakgflops': 2995.20
+    },
+}
 
 def BatchGemmReluGemm(
-    batch=1, M=516, N=64, K=64, L=512, in_dtype="float32", acc_dtype="float32"
+    batch=1, M=516, N=64, K=64, L=512, dtype="float32"
 ):
     assert M % MI == 0
     assert N % NI2 == 0
@@ -33,9 +62,9 @@ def BatchGemmReluGemm(
     assert L % NI1 == 0
     assert L % KI2 == 0
 
-    A = tvm.te.placeholder([batch, M, K], name="A", dtype=in_dtype)
-    B = tvm.te.placeholder([batch, K, L], name="B", dtype=in_dtype)
-    C = tvm.te.placeholder([batch, L, N], name="C", dtype=in_dtype)
+    A = tvm.te.placeholder([batch, M, K], name="A", dtype=dtype)
+    B = tvm.te.placeholder([batch, K, L], name="B", dtype=dtype)
+    C = tvm.te.placeholder([batch, L, N], name="C", dtype=dtype)
 
     A_shared = tvm.te.compute(
         [batch, M // MI, K // KI1, MI, KI1],
@@ -54,8 +83,8 @@ def BatchGemmReluGemm(
     D_frag = tvm.te.compute(
         [batch, M // MI, L // NI1, MI, NI1],
         lambda b, mo, lo, mi, li: tvm.te.sum(
-            A_shared[b, mo, rko, mi, rki].astype(acc_dtype)
-            * B_shared[b, rko, lo, rki, li].astype(acc_dtype),
+            A_shared[b, mo, rko, mi, rki].astype(dtype)
+            * B_shared[b, rko, lo, rki, li].astype(dtype),
             axis=[rko, rki],
         ),
         name="D_frag",
@@ -65,7 +94,7 @@ def BatchGemmReluGemm(
         [batch, M // MI, L // NI1, MI, NI1],
         lambda b, mo, lo, mi, li: tvm.tir.if_then_else(
             D_frag[b, mo, lo, mi, li] > 0, D_frag[b, mo, lo, mi, li], 0
-        ).astype(in_dtype),
+        ).astype(dtype),
         name="relu",
     )
 
@@ -80,8 +109,8 @@ def BatchGemmReluGemm(
     E_frag = tvm.te.compute(
         [batch, M // MI, N // NI2, MI, NI2],
         lambda b, mo, no, mi, ni: tvm.te.sum(
-            relu[b, mo, rlo, mi, rli].astype(acc_dtype)
-            * C_ext[b, rlo, no, rli, ni].astype(acc_dtype),
+            relu[b, mo, rlo, mi, rli].astype(dtype)
+            * C_ext[b, rlo, no, rli, ni].astype(dtype),
             axis=[rlo, rli],
         ),
         name="E_frag",
@@ -89,7 +118,8 @@ def BatchGemmReluGemm(
 
     F = tvm.te.compute(
         [batch, M, N],
-        lambda b, m, n: E_frag[b, m // MI, n // NI2, m % MI, n % NI2].astype(in_dtype),
+        lambda b, m, n: E_frag[b, m // MI, n // NI2, m %
+                               MI, n % NI2].astype(dtype),
         name="F",
     )
 
@@ -97,6 +127,7 @@ def BatchGemmReluGemm(
         [A, B, C],
         [F]
     )
+
 
 doubleGEMMShapes = [
     # (batch, M, N, K, L)
@@ -108,34 +139,40 @@ doubleGEMMShapes = [
     [16, 258, 1280 // 16, 1280 // 16, 256],  # ViT-Huge/14
 ]
 
+
 def test_double_gemm(
-    batch, M, N, K, L, instructionSet="avx2", prefix="", config={}
+    batch, M, N, K, L, config={}
 ):
     print(f"doubleGEMM({batch},{M},{N},{K},{L})")
 
-    cacheSizes = [32 * 16, 32 * 1024, 256 * 1024, 35840 * 1024]
+    cacheSizes = [32 * 16, 32 * 1024, 1024 * 1024, 11264 * 1024]
     bandwidth = [293.72, 81.72, 38.54, 13.14]
     tensorWeight = [1.0, 2.0]
     searchType = "stochastic"
     mode = "survey"
     parallelism = 1
     verbose = False
-
-    if "cacheSizes" in config:
-        cacheSizes = config["cacheSizes"]
-    if "bandwidth" in config:
-        bandwidth = config["bandwidth"]
+    isa = "avx2"
+    dtype = "float32"
+    if SERVER:
+        cacheSizes = SERVER['cacheSizes']
+        bandwidth = SERVER['bandwidth']
+        parallelism = SERVER['parallelism']
+        isa = SERVER['isa']
     if "tensorWeight" in config:
         tensorWeight = config["tensorWeight"]
     if "searchType" in config:
         searchType = config["searchType"]
     if "mode" in config:
         mode = config["mode"]
-    if "parallelism" in config:
-        parallelism = config["parallelism"]
     if "verbose" in config:
         verbose = config['verbose']
-    
+    if "dtype" in config:
+        dtype = config['dtype']
+    print("begin test ...")
+    print("shape,cacheSizes,bandwidth,tensorWeight,searchType,mode,parallelism,isa,dtype")
+    print(batch, M, N, K, L, cacheSizes, bandwidth, tensorWeight,
+          searchType, mode, parallelism, isa, dtype)
     CPU = hardware_param(
         register_per_processor_kb=-1,
         shared_memory_per_group_kb=-1,
@@ -148,12 +185,12 @@ def test_double_gemm(
         launch_latency_s=-1,
         cacheSizes=cacheSizes,
         bandwidth=bandwidth,
-        coresPerCacheLevel=[1.0, 1.0, 1.0, 10.0],
+        coresPerCacheLevel=[1.0, 1.0, 1.0, 16.0],
         tensorWeight=tensorWeight,
         platform="CPU",
     )
-    
-    ins, outs = BatchGemmReluGemm(batch, M, N, K, L)
+
+    ins, outs = BatchGemmReluGemm(batch, M, N, K, L, dtype=dtype)
 
     layer = ac.layer([outs[0].op], inputs=ins)
 
@@ -162,22 +199,25 @@ def test_double_gemm(
     op1, op2 = sfs.first_op, sfs.second_op
 
     def get_match_info(op, shape, prefix):
-        packed, code = at.cpu_intrin("gemm", shape, dtype = "float32", prefix = prefix)
-        choices = at.intrinsic_match(op.output(0), packed, ['InnerMost', 'SameRange'])
+        # cpu_intrin(op, shape, instructionSet, dtype, prefix="")
+        packed, code = at.cpu_intrin(
+            op="gemm", shape=shape, instructionSet=isa, dtype=dtype, prefix=prefix)
+        choices = at.intrinsic_match(op.output(0), packed, [
+                                     'InnerMost', 'SameRange'])
         choice = choices[0]
         match_info = at.match_info(choice, packed, code)
-        return match_info 
+        return match_info
 
     first_match_info = get_match_info(op1, (MI, NI1, KI1), "gemm1")
 
     second_match_info = get_match_info(op2, (MI, NI2, KI2), "gemm2")
-    
+
     tensorizeAxes = list(first_match_info.axis) + list(second_match_info.axis)
-    
+
     sfs.register_tensorize_axes(tensorizeAxes)
-    
+
     fuse_choice = at.build_fusion_choice(
-        sfs, hw_param=CPU, dtype="float32", simple_mode=-1
+        sfs, hw_param=CPU, dtype=dtype, simple_mode=-1
     )
 
     tensorize_state = at.tensorize_hyper_fusion_state(
@@ -194,7 +234,7 @@ def test_double_gemm(
         tensorize_state,
         data_path,
         hw_param=CPU,
-        dtype="float32",
+        dtype=dtype,
         searchType=searchType,
         mode=mode,
     )
@@ -215,7 +255,7 @@ def test_double_gemm(
     func(*inputs, *outputs)
 
     top = float()
-    top5 = 0.0
+    top5 = float('inf')
     assert fusionContext.size > 5
     for iter in range(5):
         print("run", iter)
@@ -230,43 +270,59 @@ def test_double_gemm(
 
         func(*inputs_tvm, *outputs_tvm)
 
-        # for (a, b) in zip(outputs, outputs_tvm):
-        #     tvm.testing.assert_allclose(a.numpy(), b.numpy(), atol=1e-3, rtol=1)
+        for (a, b) in zip(outputs, outputs_tvm):
+            tvm.testing.assert_allclose(a.numpy(), b.numpy(), atol=1, rtol=1e-6)
 
         evaluator = func.time_evaluator(
-            func.entry_name, ctx, min_repeat_ms=100, repeat=1000
+            func.entry_name, ctx, min_repeat_ms=10, repeat=REPEAT
         )
 
-        cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
-        computation = B * (M * N * L + M * K * L)
-        ratioToPeak = computation / 1e6 / cost / 35.2 / parallelism
-        
+
+        cost = evaluator(*inputs_tvm, *outputs_tvm).mean
+
         if iter == 0:
-            top = ratioToPeak
-        if ratioToPeak > top5:
-            top5 = ratioToPeak
-        
+            top = cost
+        if cost < top5:
+            top5 = cost
+        print(f'iter{iter}: ', cost)
     return {'top1': top, 'top5': top5}
 
-def setGlobals(instructionSet="avx2"):
-    global MI, NI1, KI1, NI2, KI2
-    if instructionSet == "avx2":
+
+def setGlobals(B, M, N, K, L, dtype):
+    global MI, NI1, KI1, NI2, KI2, WORKLOAD, PEAKGFLOPS
+    WORKLOAD = B * M * L * (K + N)
+    if SERVER['isa'] == "avx2":
         MI = 6
         NI1 = 16
-        KI1 = 32
+        KI1 = math.gcd(K, L)
         KI2 = 16
         NI2 = 16
-    elif instructionSet == "avx512":
+    elif SERVER['isa'] == "avx512":
         MI = 6
+        NI1 = 32
+        KI1 = 16
+        KI2 = 32
+        NI2 = 32
 
-def main(batch, M, N, K, L, dtype = "float32"):
-    setGlobals("avx2")
-    torch.set_num_threads(PARALLEL)
-    ret = test_double_gemm(B, M, N, K, L, config = {'searchType': 'normal', 'mode': 'survey', 'parallelism': PARALLEL})
-    print(ret)
-    return ret['top1']
-        
-example_text = ""
+
+def main(batch, M, N, K, L, dtype, server):
+    global SERVER
+    SERVER = ServerConfig[server]
+    setGlobals(batch, M, N, K, L,dtype= dtype)
+    print ("B,M,N,K,L,dtype,WORKLOAD,SERVER")
+    print(B,M,N,K,L,dtype,WORKLOAD,SERVER)
+    time = test_double_gemm(B, M, N, K, L, config={
+                           'searchType': 'normal', 'verbose':False, 'mode': 'best', 'dtype': dtype})
+    ret = {}
+    for k in time:
+        ret[k] = {} 
+        ret[k]['time(s)'] = time[k]
+        ret[k]['%peak'] = (WORKLOAD / time[k] / 1e9) / SERVER['peakgflops']
+    print(batch, M, N, K, L, dtype,":",ret)
+    return ret
+
+
+example_text = "python ./bmm_bmm_cpu.py --server sc --isa avx2"
 
 shapes = [
     # (batch, M, N, K, L)
@@ -275,7 +331,7 @@ shapes = [
     (16, 516, 1024 // 16, 1024 // 16, 512),  # Bert-Large
     (12, 258, 768 // 12, 768 // 12, 256),  # ViT-Base/14
     (16, 258, 1024 // 16, 1024 // 16, 256),  # ViT-Large/14
-    (16, 258, 1280 // 16, 1280 // 16, 256),  # ViT-Huge/14
+    (16, 258, 96, 1280 // 16, 256),  # ViT-Huge/14
 ]
 
 if __name__ == "__main__":
@@ -289,7 +345,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dtype",
         type=str,
-        choices=["float32"],
+        choices=["float32", 'float64'],
         default="float32",
     )
     parser.add_argument(
@@ -298,25 +354,30 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
+    parser.add_argument(
+        "--server", type=str, choices=['sc', 'sccc', 'scccc']
+    )
 
     args = parser.parse_args()
 
     costs = []
-    for ss in shapes[args.begin : args.begin + args.num]:
+    for ss in shapes[args.begin: args.begin + args.num]:
         B, M, N, K, L = ss
         cost = main(
             batch=B,
             M=M,
             N=N,
             K=K,
-            L=L
+            L=L,
+            dtype=args.dtype,
+            server = args.server
         )
         costs.append((ss, cost))
 
-    print("B,M,N,K,in_dtype,acc_dtype,sm,cost")
+    print("B,M,N,K,L,dtype,args,sm,cost")
     for cc in costs:
         print(
-            f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{args.in_dtype},{args.acc_dtype},{args.sm},{cc[1]}"
+            f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.dtype},{args.dtype},{args.sm},{cc[1]}"
         )
     for cc in costs:
         print(cc[1])

@@ -836,6 +836,7 @@ CostAndFactor ScheduleHelper(
   dfsTileSize({0.0}, beginCacheLevel, delayedWeight_init, factor);
   std::sort(candidates.begin(), candidates.end(),
             [](CostAndFactor &a, CostAndFactor &b) { return a.sum < b.sum; });
+  CHECK(candidates.size()) << "no valid candidates" << std::endl;
   if (data) {
     std::vector<CostAndFactor> candidates_;
     if (mode == "best")
@@ -847,7 +848,6 @@ CostAndFactor ScheduleHelper(
       }
     *data = candidates_;
   }
-  CHECK(candidates.size()) << "no valid candidates" << std::endl;
   return candidates[0];
 }
 

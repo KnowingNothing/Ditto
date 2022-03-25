@@ -1557,7 +1557,6 @@ void setTemplatesAndSearchLightWeight(
           if (!valid)
             return;
           if (itemCnt >= MAX_CANDIDATES_NUMBER) return;
-
           FusionInfo fusionInfo;
           fusionInfo.cacheOccupancy = occupancy;
           fusionInfo.cost = cost;
@@ -1578,6 +1577,7 @@ void setTemplatesAndSearchLightWeight(
                 secondOpTilingFactors[idx]);
           fusionInfo.memUse = memUse;
           candidates[itemCnt++] = fusionInfo;
+
           return;
         }
         int pos = secondOpUnsetIndices[idx];
@@ -1630,12 +1630,15 @@ void setTemplatesAndSearchLightWeight(
   if (data) {
     if (mode == "best"){
       std::vector <FusionInfo> candidates_;
-      std::set<int> levels;
+      std::unordered_map <int, int> candidateSize;
+      for(auto fusionLevel: ig->fusionLevels){
+        candidateSize[fusionLevel] = 0;
+      }
       for (auto candidate: candidates){
-        if (!levels.count(candidate.fusionLevel)){
-          candidates_.push_back(candidate);
-          levels.insert(candidate.fusionLevel);
-        }
+        candidateSize[candidate.fusionLevel] += 1;
+        if (candidateSize[candidate.fusionLevel] > SELECT_TOP)
+          continue;
+        candidates_.push_back(candidate);
       }
       *data = {candidates_};
     }
@@ -1714,9 +1717,9 @@ FusionChoice buildFusionChoice(SerialFusionState sfs,
     std::tie(bestCost, bestFusionItem) =
         setTemplatesAndSearch(ig, searchDriver);
   }
-  std::cout << "best fusionItem: \n" << bestFusionItem;
+  // std::cout << "best fusionItem: \n" << bestFusionItem;
   // ig->setFusion(bestFusionItem);
-  std::cout << "best candidate, cost: " << bestCost << std::endl;
+  // std::cout << "best candidate, cost: " << bestCost << std::endl;
   // ig->visualize();
 
   FusionResult fusionResult = GetRef<FusionResult>(
