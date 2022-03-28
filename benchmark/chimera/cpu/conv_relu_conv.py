@@ -1,3 +1,21 @@
+import tvm
+import tvm.testing
+from ditto import auto_compute as ac
+from ditto import auto_tensorize as at
+import math
+import numpy as np
+from ditto.hardware.hw_param import hardware_param
+import time
+import random
+import pickle as pkl
+import subprocess
+import torch
+import regex as re
+import math
+import numpy as np
+import argparse
+
+
 class MicroKernel:
     def __init__(self, N=1, K=4, H=3, W=8, C=1, R=3, S=3) -> None:
         self.N = N
@@ -33,8 +51,42 @@ class MicroKernel:
         )
 
 
-# 1,128,388,388,64,3,3,64,3,3
+mk1 = None
+mk2 = None
+REPEAT = 500
+PARALLEL = 32
+WORKLOAD = int()
+SERVER = None
 
+ServerConfig = {
+    'sc': {
+        'parallelism': 20,
+        'cacheSizes': [32 * 16, 32 * 1024, 256 * 1024, 25344 * 1024],
+        'corePerLevel': [1.0, 1.0, 1.0, 10.0],
+        'bandwidth': [293.72, 81.72, 38.54, 13.14],
+        'isa': 'avx2',
+        'peakgflops': 704.20
+    },
+    'sccc': {
+        'parallelism': 32,
+        'cacheSizes': [32 * 16, 32 * 1024, 1024 * 1024, 25344 * 1024],
+        'corePerLevel': [1.0, 1.0, 1.0, 16.0],
+        'bandwidth': [293.72, 81.72, 38.54, 13.14],
+        'isa': 'avx512',
+        'peakgflops': 2150.50
+    },
+    'scccc': {
+        'parallelism': 36,
+        'cacheSizes': [32 * 16, 32 * 1024, 1024 * 1024, 25344 * 1024],
+        'corePerLevel': [1.0, 1.0, 1.0, 18.0],
+        'bandwidth': [293.72, 81.72, 38.54, 13.14],
+        'isa': 'avx512',
+        'peakgflops': 2995.20
+    },
+}
+
+
+# 1,128,388,388,64,3,3,64,3,3
 
 def ConvReluConv(
     shape,
@@ -42,50 +94,55 @@ def ConvReluConv(
     padding2=1,
     stride1=1,
     stride2=1,
-    in_dtype="float32",
-    mk1=MicroKernel(),
-    mk2=MicroKernel(),
+    dtype="float32"
 ):
     """
-            N1 K4 H3 W8 C1 R3 S3
-    Conv1   N C1 P0 Q0 C0 R1 S1
-    Conv1   N C2 P1 Q1 C1 R2 S2
+            N1 K4 H3 W16 C1 R3 S3
+    Conv1   N C1 P1 Q1 C0 R1 S1
+    Conv1   N C2 P2 Q2 C1 R2 S2
     """
     assert len(shape) == 10
     N, C0, P0, Q0, C1, R1, S1, C2, R2, S2 = shape
-    P1 = (P0 + 2 * padding1 - R1) // stride1 + 1
-    Q1 = (Q0 + 2 * padding1 - S1) // stride1 + 1
-    P2 = (P1 + 2 * padding2 - R2) // stride2 + 1
-    Q2 = (Q1 + 2 * padding2 - S2) // stride2 + 1
+    P0_pad = P0 + 2 * padding1
+    Q0_pad = Q0 + 2 * padding1
+    P1 = (P0_pad - R1) // stride1 + 1
+    Q1 = (Q0_pad - S1) // stride1 + 1
+    P1_pad = P1 + 2 * padding2
+    Q1_pad = Q1 + 2 * padding2
+    P2 = (P1_pad - R2) // stride2 + 1
+    Q2 = (Q1_pad - S2) // stride2 + 1
+    global mk1, mk2
     assert C1 % mk1.K == 0
     assert C2 % mk2.K == 0
-    assert P0 % mk1.H == 0
-    assert P1 % mk2.H == 0
-    assert Q0 % mk1.W == 0
-    assert Q1 % mk2.W == 0
+    assert P1 % mk1.H == 0
+    assert P2 % mk2.H == 0
+    assert Q1 % mk1.W == 0
+    assert Q2 % mk2.W == 0
     assert C0 % mk1.C == 0
     assert C1 % mk2.C == 0
-
-    Img = tvm.te.placeholder([N, C0, P0, Q0], dtype=in_dtype, name="Img")
-    Weight1 = tvm.te.placeholder([C1, C0, R1, S1], dtype=in_dtype, name="Weight1")
-    Weight2 = tvm.te.placeholder([C2, C1, R2, S2], dtype=in_dtype, name="Weight2")
+    
+    Img = tvm.te.placeholder([N, C0, P0, Q0], dtype=dtype, name="Img")
+    Weight1 = tvm.te.placeholder([C1, C0, R1, S1], dtype=dtype, name="Weight1")
+    Weight2 = tvm.te.placeholder([C2, C1, R2, S2], dtype=dtype, name="Weight2")
 
     Pad1 = tvm.te.compute(
-        [N, C0, P0 + 2 * padding1, Q0 + 2 * padding1],
+        [N, C0, P0_pad, Q0_pad],
         lambda n, c, p, q: tvm.tir.if_then_else(
             tvm.tir.all(
                 p >= padding1, p < P0 + padding1, q >= padding1, q < Q0 + padding1
             ),
             Img[n, c, p - padding1, q - padding1],
-            tvm.tir.const(0, in_dtype),
+            tvm.tir.const(0, dtype),
         ),
         name="pad1",
     )
-
     r1 = tvm.te.reduce_axis((0, R1), name="rr1")
     s1 = tvm.te.reduce_axis((0, S1), name="rs1")
     co1 = tvm.te.reduce_axis((0, C0 // mk1.C), name="rco1")
+    
+
     ci1 = tvm.te.reduce_axis((0, mk1.C), name="rci1")
+
     Conv1 = tvm.te.compute(
         [N // mk1.N, mk1.N, C1 // mk1.K, mk1.K, P1 // mk1.H, mk1.H, Q1 // mk1.W, mk1.W],
         lambda no1, ni1, ko1, ki1, ho1, hi1, wo1, wi1: tvm.te.sum(
@@ -100,6 +157,7 @@ def ConvReluConv(
         ),
         name="conv1",
     )
+    choice1 = [Conv1.op.axis[_]for _ in [1,3,5,7]] + [ci1, r1, s1]
     Conv1_rfact = tvm.te.compute(
         [N, C1, P1, Q1],
         lambda n, c, p, q: Conv1[
@@ -119,23 +177,22 @@ def ConvReluConv(
         lambda n, c, p, q: tvm.tir.if_then_else(
             Conv1_rfact[n, c, p, q] > 0,
             Conv1_rfact[n, c, p, q],
-            tvm.tir.const(0, in_dtype),
+            tvm.tir.const(0, dtype),
         ),
         name="relu",
     )
 
     Pad2 = tvm.te.compute(
-        [N, C1, P1 + 2 * padding2, Q1 + 2 * padding2],
+        [N, C1, P1_pad, Q1_pad],
         lambda n, c, p, q: tvm.tir.if_then_else(
             tvm.tir.all(
                 p >= padding2, p < P0 + padding2, q >= padding2, q < Q0 + padding2
             ),
             Conv1_relu[n, c, p - padding2, q - padding2],
-            tvm.tir.const(0, in_dtype),
+            tvm.tir.const(0, dtype),
         ),
         name="pad2",
     )
-
     r2 = tvm.te.reduce_axis((0, R2), name="rr2")
     s2 = tvm.te.reduce_axis((0, S2), name="rs2")
     co2 = tvm.te.reduce_axis((0, C1 // mk2.C), name="rco2")
@@ -148,12 +205,12 @@ def ConvReluConv(
                 co2 * mk2.C + ci2,
                 ho2 * mk2.H + hi2 + r2,
                 wo2 * mk2.W + wi2 + s2,
-            ]
-            * Weight2[ko2 * mk2.K + ki2, co2 * mk2.C + ci2, r2, s2],
+            ]* Weight2[ko2 * mk2.K + ki2, co2 * mk2.C + ci2, r2, s2],
             axis=[co2, ci2, r2, s2],
-        ),
+        ).astype(dtype),
         name="conv2_fact",
     )
+    choice2 = [Conv2_fact.op.axis[_]for _ in [1,3,5,7]] + [ci2, r2, s2]
     Conv2 = tvm.te.compute(
         [N, C2, P2, Q2],
         lambda n, c, p, q: Conv2_fact[
@@ -170,6 +227,260 @@ def ConvReluConv(
     )
     return (
         [Img, Weight1, Weight2],
-        [Conv2]
+        [Conv2],
+        (choice1, choice2, choice1+choice2)
     )
 
+def test_double_conv(
+    shape, config={}
+):
+    cacheSizes = [32 * 16, 32 * 1024, 1024 * 1024, 11264 * 1024]
+    bandwidth = [293.72, 81.72, 38.54, 13.14]
+    tensorWeight = [1.0, 2.0]
+    searchType = "stochastic"
+    mode = "survey"
+    parallelism = 1
+    verbose = False
+    isa = "avx2"
+    dtype = "float32"
+    if SERVER:
+        cacheSizes = SERVER['cacheSizes']
+        bandwidth = SERVER['bandwidth']
+        parallelism = SERVER['parallelism']
+        isa = SERVER['isa']
+    if "tensorWeight" in config:
+        tensorWeight = config["tensorWeight"]
+    if "searchType" in config:
+        searchType = config["searchType"]
+    if "mode" in config:
+        mode = config["mode"]
+    if "verbose" in config:
+        verbose = config['verbose']
+    if "dtype" in config:
+        dtype = config['dtype']
+    print("begin test ...")
+    print("shape,cacheSizes,bandwidth,tensorWeight,searchType,mode,parallelism,isa,dtype")
+    print(shape, cacheSizes, bandwidth, tensorWeight,
+          searchType, mode, parallelism, isa, dtype)
+    CPU = hardware_param(
+        register_per_processor_kb=-1,
+        shared_memory_per_group_kb=-1,
+        shared_memory_bandwidth_gbs=-1,
+        global_memory_gb=-1,
+        global_memory_bandwidth_gbs=-1,
+        num_processors_per_group=-1,
+        num_groups=parallelism,
+        fp32_peak_perf_gflops=-1,
+        launch_latency_s=-1,
+        cacheSizes=cacheSizes,
+        bandwidth=bandwidth,
+        coresPerCacheLevel=[1.0, 1.0, 1.0, 16.0],
+        tensorWeight=tensorWeight,
+        platform="CPU",
+    )
+
+    ins, outs, (choice1, choice2, tensorizeAxes) = ConvReluConv(
+        shape, dtype=dtype)
+
+    layer = ac.layer([outs[0].op], inputs=ins)
+
+    sfs = at.build_serial_fusion_state(layer)
+
+    op1, op2 = sfs.first_op, sfs.second_op
+    print(op1, op2)
+    # def get_match_info(op, shape, prefix):
+    #     # cpu_intrin(op, shape, instructionSet, dtype, prefix="")
+    #     packed, code = at.cpu_intrin(
+    #         op="conv", shape=shape, isa=isa, dtype=dtype, prefix=prefix)
+    #     choices = at.intrinsic_match(op.output(0), packed, [])
+    #     choice = choices[0]
+    #     match_info = at.match_info(choice, packed, code)
+    #     return match_info
+
+    # first_match_info = get_match_info(op1, (mk1.N, mk1.K, mk1.H, mk1.W, mk1.C, mk1.R,mk1.S), "conv1")
+
+    # second_match_info = get_match_info(op2, (mk2.N, mk2.K, mk2.H, mk2.W, mk2.C, mk2.R, mk2.S), "conv2")
+
+    # tensorizeAxes = list(first_match_info.axis) + list(second_match_info.axis)
+
+    packed1, code1 = at.cpu_intrin(op="conv", shape=(
+        mk1.N, mk1.K, mk1.H, mk1.W, mk1.C, mk1.R, mk1.S), isa=isa, dtype=dtype, prefix="conv1")
+    first_match_info = at.match_info(choice1, packed1, code1)
+
+    packed2, code2 = at.cpu_intrin(op="conv", shape=(
+        mk2.N, mk2.K, mk2.H, mk2.W, mk2.C, mk2.R, mk2.S), isa=isa, dtype=dtype, prefix="conv2")
+    second_match_info = at.match_info(choice2, packed2, code2)
+
+    sfs.register_tensorize_axes(tensorizeAxes)
+
+    fuse_choice = at.build_fusion_choice(
+        sfs, hw_param=CPU, dtype=dtype, simple_mode=-1
+    )
+
+    tensorize_state = at.tensorize_hyper_fusion_state(
+        layer, fuse_choice, {op1: first_match_info, op2: second_match_info}
+    )
+
+    data_path = ""
+
+    print("mode is ", mode)
+    fusionContext = at.build_fusion_context(
+        sfs,
+        layer,
+        tensorize_state,
+        data_path,
+        hw_param=CPU,
+        dtype=dtype,
+        searchType=searchType,
+        mode=mode,
+    )
+
+    sch0 = tvm.te.create_schedule(outs[0].op)
+    func = tvm.build(sch0, layer.schedule_tensors, name="conv_relu_conv")
+    ctx = tvm.cpu()
+    inputs_np = [
+        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(dtype)
+        for y in ins
+    ]
+    outputs_np = [
+        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(dtype)
+        for y in outs
+    ]
+    inputs = [tvm.nd.array(x, ctx) for x in inputs_np]
+    outputs = [tvm.nd.array(x, ctx) for x in outputs_np]
+    func(*inputs, *outputs)
+
+    if mode == "best":
+        top = float()
+        top5 = float('inf')
+        R = 5
+        assert fusionContext.size > 5
+    elif mode =="test":
+        R = 1
+    for iter in range(R):
+        print("run", iter)
+        sch = tvm.te.create_schedule(outs[0].op)
+
+        sch = fusionContext.run(iter, sch, verbose=verbose)
+
+        print ("schedule success!")
+        if (mode == "test"):
+            lowerCode = tvm.lower(sch, layer.schedule_tensors, simple_mode = True)
+        with open ("tmp.txt", 'w') as f:
+            f.write(str(lowerCode))
+        
+        func = tvm.build(sch, layer.schedule_tensors, name="conv_relu_conv")
+
+        inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
+        outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
+
+        func(*inputs_tvm, *outputs_tvm)
+
+        for (a, b) in zip(outputs, outputs_tvm):
+            tvm.testing.assert_allclose(
+                a.numpy(), b.numpy(), atol=1, rtol=1e-6)
+        
+        print("test passed!")
+
+        evaluator = func.time_evaluator(
+            func.entry_name, ctx, min_repeat_ms=10, repeat=REPEAT
+        )
+
+        print("begin evaluate ...")
+        cost = evaluator(*inputs_tvm, *outputs_tvm).mean
+        
+        if iter == 0:
+            top = cost
+        if cost < top5:
+            top5 = cost
+        print(f'{shape} iter{iter}: ', cost)
+    return {'top1': top, 'top5': top5}
+
+
+def setGlobals(shape):
+    global MI, NI1, KI1, NI2, KI2, WORKLOAD, mk1, mk2
+    N, C0, H, W, C1, R1, S1, C2, R2, S2 = shape
+    WORKLOAD = N * (C0 * H * W * C1 * R1 * S1 + C1 * H * W * C2 * R2 * S2)
+    if SERVER['isa'] == "avx2":
+        mk1 = MicroKernel(N=1, K=4, H=3, W=8, C=16, R=3, S=3)
+        mk2 = MicroKernel(N=1, K=4, H=3, W=8, C=4, R=3, S=3)
+    elif SERVER['isa'] == "avx512":
+        mk1 = MicroKernel(N=1, K=4, H=3, W=16, C=16, R=3, S=3)
+        mk2 = MicroKernel(N=1, K=4, H=3, W=16, C=4, R=3, S=3)
+
+
+def main(shape, dtype, server):
+    global SERVER
+    SERVER = ServerConfig[server]
+    setGlobals(shape)
+    print("shape,dtype,WORKLOAD,SERVER")
+    print(shape, dtype, WORKLOAD, SERVER)
+    time = test_double_conv(shape, config={
+        'searchType': 'normal', 'verbose': False, 'mode': 'best', 'dtype': dtype})
+    ret = {}
+    for k in time:
+        ret[k] = {}
+        ret[k]['time(s)'] = time[k]
+        ret[k]['%peak'] = (WORKLOAD / time[k] / 1e9) / SERVER['peakgflops']
+        ret[k]['gflops'] = (WORKLOAD / time[k] / 1e9)
+    print(shape, dtype, ":", ret)
+    return ret
+
+
+example_text = "python ./conv_relu_conv.py --server sc --isa avx2"
+
+shapes = [
+    # (batch, C0, H1, W1, C1, R1, S1, C2, R2, S2)
+    [1, 128, 390, 400, 64, 3, 3, 64, 3, 3],  # resnet
+    [1, 64, 285, 288, 128, 3, 3, 128, 3, 3],# u_net
+    [1, 128, 141, 144, 256, 3, 3, 256, 3, 3],
+    [1, 256, 69, 80, 512, 3, 3, 512, 3, 3],
+    [1, 512, 33, 32, 1024, 3, 3, 1024, 3, 3],
+    [1, 1024, 57, 64, 512, 3, 3, 512, 3, 3],
+    [1, 256, 201, 208, 128, 3, 3, 128, 3, 3],
+    [1, 128, 393, 400, 64, 3, 3, 64, 3, 3]
+]
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        prog="base_maker",
+        description="template maker",
+        epilog=example_text,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--only_once", action="store_true")
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        choices=["float32", 'float64'],
+        default="float32",
+    )
+    parser.add_argument(
+        "--begin", type=int, choices=list(range(len(shapes))), default=0
+    )
+    parser.add_argument(
+        "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
+    )
+    parser.add_argument(
+        "--server", type=str, choices=['sc', 'sccc', 'scccc']
+    )
+
+    args = parser.parse_args()
+
+    costs = []
+    for ss in shapes[args.begin: args.begin + args.num]:
+        cost = main(
+            ss,
+            dtype=args.dtype,
+            server=args.server
+        )
+        costs.append((ss, cost))
+
+    print("shape,dtype,args,sm,cost")
+    for cc in costs:
+        print(
+            f"{cc[0]},{args.dtype},{args.server},{cc[1]}"
+        )
+    for cc in costs:
+        print(cc[1])

@@ -201,7 +201,7 @@ def test_double_gemm(
     def get_match_info(op, shape, prefix):
         # cpu_intrin(op, shape, instructionSet, dtype, prefix="")
         packed, code = at.cpu_intrin(
-            op="gemm", shape=shape, instructionSet=isa, dtype=dtype, prefix=prefix)
+            op="gemm", shape=shape, isa=isa, dtype=dtype, prefix=prefix)
         choices = at.intrinsic_match(op.output(0), packed, [
                                      'InnerMost', 'SameRange'])
         choice = choices[0]
@@ -256,8 +256,12 @@ def test_double_gemm(
 
     top = float()
     top5 = float('inf')
-    assert fusionContext.size > 5
-    for iter in range(5):
+    if mode == "test":
+        R = 1
+    elif mode == "best":
+        R = 5
+        assert fusionContext.size > 5
+    for iter in range(R):
         print("run", iter)
         sch = tvm.te.create_schedule(outs[0].op)
 
@@ -312,7 +316,7 @@ def main(batch, M, N, K, L, dtype, server):
     print ("B,M,N,K,L,dtype,WORKLOAD,SERVER")
     print(B,M,N,K,L,dtype,WORKLOAD,SERVER)
     time = test_double_gemm(B, M, N, K, L, config={
-                           'searchType': 'normal', 'verbose':False, 'mode': 'best', 'dtype': dtype})
+                           'searchType': 'normal', 'verbose':False, 'mode': 'test', 'dtype': dtype})
     ret = {}
     for k in time:
         ret[k] = {} 
@@ -377,7 +381,7 @@ if __name__ == "__main__":
     print("B,M,N,K,L,dtype,args,sm,cost")
     for cc in costs:
         print(
-            f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.dtype},{args.dtype},{args.sm},{cc[1]}"
+            f"{cc[0]},{args.dtype},{args.server},{cc[1]}"
         )
     for cc in costs:
         print(cc[1])
