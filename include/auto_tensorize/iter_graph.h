@@ -221,10 +221,10 @@ public:
   /*! \brief the cost for read/write tensor */
   std::vector<double> tensorWeight;
   size_t attachPos = 0; // default: independent loops
+  bool configSet; // the config is set
   std::vector<double> cacheSizes;
   std::vector<double> cacheBandwidth;
   int fusionLevel;
-  String resultPath;
   int totalFp;
   double parallelism_ = -1;
   std::unordered_map<int, IntImm> _parallelSchedule;
@@ -327,8 +327,6 @@ public:
   std::pair<bool, double> getCost(double *occupancy = NULL, double * parallelism = NULL, double * memUse = NULL);
   /*! \brief looplike lightweight visualize */
   void visualize();
-  /*! \brief write result */
-  void writeResult(FusionResult res);
   /*! \brief scheduleOuterParallel */
   void scheduleParallel();
   /*! \brief get the problem size after parallel */
@@ -336,6 +334,7 @@ public:
   /*! \brief set hardware related param */
   void setConfig(hardware::HardwareParam hw_param, int bytePerEle_){
     bytePerEle = bytePerEle_;
+    configSet = true;
     if (hw_param->platform == "CPU"){
       cacheSizes = hw_param->cacheSizePerThread;
       tensorWeight = hw_param->tensorWeight;
@@ -381,8 +380,7 @@ public:
                     AccessFunction secondOpWriteAccessFunc, int readProducerPos,
                     te::Operation op1, te::Operation op2,
                     Array<IterVar> firstOpTensorizeIters,
-                    Array<IterVar> secondOpTensorizeIters,
-                    String path = "");
+                    Array<IterVar> secondOpTensorizeIters);
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(IterGraph, ObjectRef, IterGraphNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(IterGraphNode);
 };

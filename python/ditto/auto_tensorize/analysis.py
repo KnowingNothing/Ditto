@@ -54,3 +54,5 @@ def share_axis_analysis(
 class FusionResult(Object):
     def getLog(self):
         return _ffi_api.getLog(self)
+
+tvm._ffi._init_api("analysis", __name__)

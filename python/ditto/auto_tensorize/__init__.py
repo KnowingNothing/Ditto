@@ -5,6 +5,8 @@ from .intrinsic import *
 from .pattern import *
 from .space import FusionTileSpace
 
+from .analysis import FusionResult
+
 from .state import (
     build_serial_fusion_state,
     SerialFusionState,

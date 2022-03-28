@@ -13,13 +13,13 @@ from ditto.hardware import hw_param
 
 @tvm._ffi.register_object("ditto.auto_tensorize.SerialFusionState")
 class SerialFusionState(Object):
-    pass
+    def register_tensorize_axes(self, tensorizeAxes: List[tvm.tir.IterVar]):
+        _ffi_api.registerTensorizeAxes(self, tensorizeAxes)
 
 def build_serial_fusion_state(
     layer: ac.Layer
 ):
     return _ffi_api.build_serial_fusion_state(layer)
-
 
 def single_op_schedule(
     op: tvm.te.operation,
@@ -82,10 +82,7 @@ class schedule_context(Object):
     ):
         return _ffi_api.run(self, i, sch, op, tensorizeAxes, intrin, code, path)
 
-@tvm._ffi.register_object("ditto.auto_tensorize.SerialFusionState")
-class SerialFusionState(Object):
-    def register_tensorize_axes(self, tensorizeAxes):
-        return _ffi_api.registerTensorizeAxes(self, tensorizeAxes)
+
 
 
 tvm._ffi._init_api("state", __name__)

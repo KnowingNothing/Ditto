@@ -30,7 +30,21 @@ class IterGraph(Object):
     def set_fusion(self, fusionItem: FusionItem):
         _ffi_api.setFusion(self, fusionItem)
 
-    def analyse(self, hw_param, bytePerEle, writeThrough):
+    def set_config(self, hw_param, dtype):
+        """Set the configuration for analysis
+        Parameters
+        ---------
+        hw_param: hardware params
+        dtype: [float32|float64|int32|int64]
+        """
+        print(dtype)
+        dtypeToBytes = {'float16':2, 'float32': 4, "float64": 8, "int32": 4, "int64": 8}
+        if dtype not in dtypeToBytes:
+            raise 
+        bytePerEle = dtypeToBytes[dtype]
+        return _ffi_api.setConfig(self, hw_param, bytePerEle)
+
+    def analyse(self):
         """Get the analysis result
 
         Parameters
@@ -47,13 +61,13 @@ class IterGraph(Object):
             The analysis result
         """
 
-        return _ffi_api.getAnalyticalResult(self, hw_param, bytePerEle, writeThrough)
+        return _ffi_api.getAnalyticalResult(self)
 
     def display(self):
         return _ffi_api.display(self)
 
 
 def build_iter_graph(
-    sfstate: SerialFusionState, tensorizeItervars: List[tvm.tir.IterVar], path: str = "", tensorWeight: List[float] = [1.0, 1.0] 
+    sfstate: SerialFusionState
 ):
-    return _ffi_api.build_iter_graph(sfstate, tensorizeItervars, tensorWeight, path)
+    return _ffi_api.build_iter_graph(sfstate)

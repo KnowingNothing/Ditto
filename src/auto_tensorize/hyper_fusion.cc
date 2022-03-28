@@ -81,6 +81,7 @@ TensorizeHyperFusionState::TensorizeHyperFusionState(
   helper = [&](te::Operation op) {
     // TODO: finish this function
     const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
+    std::cout << "op: " << op << std::endl;
     if (!cop) {
       return std::make_pair(false, false);
     }
@@ -109,7 +110,7 @@ TensorizeHyperFusionState::TensorizeHyperFusionState(
         bool inp_met_first{false}, inp_met_second{false};
         std::tie(inp_met_first, inp_met_second) = helper(inp->op);
         CHECK(!inp_met_second);
-        CHECK(first_op_found && (!second_op_found));
+        CHECK(first_op_found && (!second_op_found)) << "first op found: " << first_op_found << " second op found: " << second_op_found << std::endl;
         // update to see if first_op is in producers
         first_op_in_producer |= inp_met_first;
         if (prefix_array.count(inp->op)) {
@@ -148,6 +149,7 @@ TensorizeHyperFusionState::TensorizeHyperFusionState(
   };
 
   CHECK(layer->ops.size() == 1U);
+  std::cout << "layer->ops[0]: " << layer->ops[0] << std::endl;
   helper(layer->ops[0]);
   if (prefix_array.count(layer->ops[0])) {
     node->epilogue = prefix_array.at(layer->ops[0]);
@@ -1590,7 +1592,7 @@ void setTemplatesAndSearchLightWeight(
           secondOpTilingFactors[secondOpUnsetIndices[i]] =
               secondOpBounds[secondOpUnsetIndices[i]];
         }
-        if (mode == "best") {
+        if (mode == "best" || mode == "test") {
           std::tie(valid, cost) = getCost();
           if (cost > bestLevelCost)
             return;
@@ -1642,6 +1644,9 @@ void setTemplatesAndSearchLightWeight(
       }
       *data = {candidates_};
     }
+    else if (mode == "test"){
+      *data = {candidates[0]};
+    }
     else if (mode == "survey") {
       std::vector<FusionInfo> candidates_;
       for (size_t i = 0; i < std::min(candidates.size(), (size_t)SELECT_TOP); i++){
@@ -1687,9 +1692,9 @@ void setTemplatesAndSearchLightWeight(
 /*! build the fusion choice*/
 FusionChoice buildFusionChoice(SerialFusionState sfs,
                                hardware::HardwareParam hw_param, String dtype,
-                               String path, int simple_mode) {
+                               int simple_mode) {
   CHECK(sfs->tensorizeAxes.defined());
-  IterGraph ig = buildIterGraph(sfs, sfs->tensorizeAxes, path);
+  IterGraph ig = buildIterGraph(sfs);
   SearchDriver searchDriver =
       buildSearchDriver(ig, {"static analysis"}, "bruteForce", hw_param, dtype);
 
@@ -1771,18 +1776,17 @@ FusionChoice buildFusionChoice(SerialFusionState sfs,
 
 FusionContext::FusionContext(SerialFusionState sfs,
                              std::vector<CPUTensorizeParam> schParams,
-                             Layer layer, TensorizeHyperFusionState state, String path,
+                             Layer layer, TensorizeHyperFusionState state,String path,
                              hardware::HardwareParam hw_param, int bytePerEle) {
   auto node = make_object<FusionContextNode>();
   node->sfs = sfs;
   node->layer = layer;
   node->state = state;
-  node->path = path;
   node->hw_param = hw_param;
   node->bytePerEle = bytePerEle;
   node->schParams = schParams;
-  node->path = path;
   node->size = schParams.size();
+  node->path = path;
   data_ = node;
 }
 
@@ -1855,7 +1859,7 @@ FusionContext buildFusionContext(SerialFusionState sfs, Layer layer,
     it.valid = 0;
   std::vector<CPUTensorizeParam> schParams;
   CHECK(sfs->tensorizeAxes.defined());
-  IterGraph ig = buildIterGraph(sfs, sfs->tensorizeAxes, path);
+  IterGraph ig = buildIterGraph(sfs);
   std::unordered_map<std::string, int32_t> m = {{"float32", 4}, {"float64", 8},
                                                 {"float16", 2}, {"int16", 2},
                                                 {"int32", 4},   {"int64", 8}};
@@ -1865,6 +1869,9 @@ FusionContext buildFusionContext(SerialFusionState sfs, Layer layer,
                                    &fusionInfo);
   OpHyperState op1, op2;
   std::tie(op1, op2) = sfs->getCubicOpPair();
+  auto share_axes = share_axis_analysis(op1->op, op2->op);
+  std::cout << "shared axes: " << std::endl;
+  std::cout << share_axes << std::endl;
   size_t cnt = 0;
   for (auto info : fusionInfo) {
     if (!info.valid)
@@ -1913,7 +1920,7 @@ TVM_REGISTER_GLOBAL("ditto.auto_tensorize.getPredCostList")
 
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildFusionContext")
     .set_body_typed([](SerialFusionState sfs, Layer layer,
-                       TensorizeHyperFusionState state,
+                       TensorizeHyperFusionState state, 
                        String data_path, hardware::HardwareParam hw_param,
                        String searchType, String mode, String dtype) {
       return buildFusionContext(sfs, layer, state, data_path, hw_param,
@@ -1962,8 +1969,8 @@ TVM_REGISTER_GLOBAL("ditto.auto_tensorize.TensorizeCUDA")
     });
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildFusionChoice")
     .set_body_typed([](SerialFusionState sfs, hardware::HardwareParam hw_param,
-                       String dtype, String path, int simple_mode) {
-      return buildFusionChoice(sfs, hw_param, dtype, path, simple_mode);
+                       String dtype, int simple_mode) {
+      return buildFusionChoice(sfs, hw_param, dtype, simple_mode);
     });
 } // namespace auto_tensorize
 

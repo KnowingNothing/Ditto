@@ -198,9 +198,7 @@ buildSerialFusionState(Layer layer) {
  * \brief The IterGraph builder
  * \param
  */
-IterGraph buildIterGraph(SerialFusionState sfState,
-                         Array<te::IterVar> tensorizeAxes,
-                          String path);
+IterGraph buildIterGraph(SerialFusionState sfState);
 
 inline OpHyperState buildOpHyperState(te::Operation op, size_t idx) {
   return OpHyperState(op, idx);

@@ -205,10 +205,10 @@ namespace ditto
                          AccessFunction secondOpWriteAccessFunc,
                          int readProducerPos, te::Operation op1, te::Operation op2,
                          Array<IterVar> firstOpTensorizeIters,
-                         Array<IterVar> secondOpTensorizeIters,
-                         String path)
+                         Array<IterVar> secondOpTensorizeIters)
     {
       auto n = make_object<IterGraphNode>();
+      n->configSet = false;
       n->_firstOpIters = firstOpIters;
       n->_secondOpIters = secondOpIters;
       n->_firstOpReadAccessFuncs = firstOpReadAccessFuncs;
@@ -228,18 +228,10 @@ namespace ditto
       n->readProducerPos = readProducerPos;
       n->op1 = op1;
       n->op2 = op2;
-      n->resultPath = path;
       Map<tir::Var, IntImm> bounds;
 
       n->firstOpTensorizeIters = firstOpTensorizeIters;
       n->secondOpTensorizeIters = secondOpTensorizeIters;
-      struct stat buffer;
-      if (stat(path.c_str(), &buffer) == 0)
-      {
-        // LOG(WARNING) << path << "exists. Results will not be written to any
-        // file.";
-        n->resultPath = "";
-      }
       n->setTotalFp();
       data_ = std::move(n);
     }
@@ -296,8 +288,8 @@ namespace ditto
       Array<IterVar> outer, inner;
       for (size_t i = 0; i < factors.size(); i++)
       {
-        IterVar parent = firstOpIters[i];
-        CHECK(factors[i] <= parent->ext) << "tiling factor larger than axis extent";
+        IterVar parent = _firstOpIters[i];
+        CHECK(factors[i] <= parent->ext) << "tiling factor " << i << "," << factors[i] << " larger than axis extent for " << parent;
         IterVar outer_, inner_;
         outer_ = IterVar(parent->index, -1, parent->iv_type,
                          parent->name.copy_with_suffix(".outer"), tir::Var());
@@ -350,7 +342,7 @@ namespace ditto
       Array<IterVar> outer, inner;
       for (size_t i = 0; i < factors.size(); i++)
       {
-        IterVar parent = secondOpIters[i];
+        IterVar parent = _secondOpIters[i];
         CHECK(factors[i] <= parent->ext)
             << "tiling factor larger than axis extent. iv: " << _secondOpIters[i]
             << " " << factors[i] << " > " << parent->ext;
@@ -676,36 +668,6 @@ namespace ditto
       return fp * bytePerEle;
     }
 
-    void IterGraphNode::writeResult(FusionResult res)
-    {
-      if (!resultPath->size)
-        return;
-      std::ofstream outfile;
-      outfile.open(std::string(resultPath),
-                   std::ios_base::app); // append instead of overwrite
-      outfile << "{";
-      outfile << "outerIter:";
-      outfile << "[";
-      for (auto iter : commonIters)
-      {
-        outfile << "{";
-        for (auto split : splitRelations)
-          if (split->outer == iter)
-          {
-            outfile << "name: " << split->parent->name << ", ";
-            outfile << "factor: " << split->inner->ext;
-          }
-        outfile << " }, ";
-      }
-      outfile << "],";
-      outfile << "locality: " << res->locality << ", ";
-      outfile << "parallelism: " << res->parallelism << ", ";
-      outfile << "redundancy: " << res->redundancy << ", ";
-      outfile << "valid: " << res->valid << ", ";
-      outfile << "}\n";
-      outfile.close();
-    }
-
     /*! \brief get the problem size after parallel */
     Map<tir::Var, IntImm> getPbsz();
 
@@ -713,6 +675,7 @@ namespace ditto
     FusionResult
     IterGraphNode::getAnalyticalResult()
     {
+      CHECK(configSet) << "please set config first";
       applyAll();
       bounds = inferBound();
       scheduleParallel();
@@ -736,7 +699,6 @@ namespace ditto
                        firstOpBufferSize, secondOpDataVolume, secondOpWorkload,
                        secondOpBufferSize, locality, parallelism, redundancy,
                        n_blocks, valid, fusionLevel, bytePerEle, cacheSize, memUse);
-      writeResult(res);
       return res;
     }
 
@@ -748,7 +710,7 @@ namespace ditto
         if (l == fusionLevel_)
           found = true;
       }
-      CHECK(found);
+      CHECK(found) << "have you set config? ";
       fusionLevel = fusionLevel_;
       return;
     }
@@ -1011,10 +973,9 @@ namespace ditto
       }
       return true;
     }
-    inline IterGraph buildIterGraph(SerialFusionState sfState,
-                                    Array<te::IterVar> tensorizeAxes,
-                                    String path)
+    inline IterGraph buildIterGraph(SerialFusionState sfState)
     {
+      Array<tir::IterVar> tensorizeAxes = sfState->tensorizeAxes;
       OpHyperState ops1, ops2;
       std::tie(ops1, ops2) = sfState->getCubicOpPair();
       Array<IterVar> firstOpIters_ = ops1->getAllIters();
@@ -1066,7 +1027,7 @@ namespace ditto
                        firstOpReadAccessFunction, secondOpReadAccessFunction,
                        firstOpWriteAccessFunc, secondOpWriteAccessFunc,
                        readProducerPos, ops1->op, ops2->op, firsrOpTensorizeIters,
-                       secondOpTensorizeAxis, path);
+                       secondOpTensorizeAxis);
     }
 
     TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
@@ -1111,6 +1072,8 @@ namespace ditto
         .set_body_method<IterGraph>(&IterGraphNode::visualize);
     TVM_REGISTER_GLOBAL("ditto.auto_tensorize.getAnalyticalResult")
         .set_body_method<IterGraph>(&IterGraphNode::getAnalyticalResult);
+    TVM_REGISTER_GLOBAL("ditto.auto_tensorize.setConfig")
+        .set_body_method<IterGraph>(&IterGraphNode::setConfig);
   } // namespace auto_tensorize
 
 } // namespace ditto
