@@ -74,93 +74,116 @@ def uround(x, y):
     return int(ceil(x, y) * y)
 
 
-def Depthwise3x3Conv1x1(
+def Conv1x1Depthwise3x3(
     batch,
     in_channel,
     H,
     W,
     out_channel,
-    factor=16,
+    factor=1,
     stride1=1,
     stride2=1,
     in_dtype="float16",
     acc_dtype="float32",
 ):
-    assert stride2 == 1
+    assert stride1 == 1
     P1 = uround(H // stride1, MI)
     Q1 = uround(W // stride1, MI)
-    fusePQ = P1 * Q1
-    fuseRS = uround(9, KI)
+    P2 = uround(P1 // stride2, MI)
+    Q2 = uround(Q1 // stride2, MI)
+    fusePQ1 = P1 * Q1
+    fusePQ2 = P2 * Q2
     assert in_channel % KI == 0
     assert out_channel % NI == 0
     assert out_channel % KI == 0
     # assume after padding
-    Img = tvm.te.placeholder([batch, P1 * stride1 + 2, Q1 + stride1 + 2, in_channel], name="Img", dtype=in_dtype)
-    # assume after padding
-    W1 = tvm.te.placeholder(
-        [in_channel, fuseRS//KI, uround(factor, NI)//NI, KI, NI], name="W1", dtype=in_dtype
+    Img = tvm.te.placeholder([batch, P1, Q1, in_channel], name="Img", dtype=in_dtype)
+    W1 = tvm.te.placeholder([in_channel//KI, out_channel//NI, KI, NI], name="W1", dtype=in_dtype)
+    W2 = tvm.te.placeholder(
+        [out_channel, uround(3 * 3, KI) // KI, uround(factor, NI) // NI, KI, NI], name="W2", dtype=in_dtype
     )
-    W2 = tvm.te.placeholder([in_channel, uround(factor, KI)//KI, out_channel//NI, KI, NI], name="W2", dtype=in_dtype)
 
     Img_shared = tvm.te.compute(
-        [batch, in_channel, fusePQ // MI, fuseRS//KI, MI, KI],
-        lambda b, ic, mo, ko, mi, ki:
+        [batch, fusePQ1 // MI, in_channel // KI, MI, KI],
+        lambda b, mo, ko, mi, ki: 
             Img[
                 b,
-                (mo * MI + mi) // Q1 * stride1 + (ko * KI + ki)//3,
-                (mo * MI + mi) % Q1 * stride2 + (ko * KI + ki) % 3,
-                ic
+                (mo * MI + mi) // Q1 * stride1,
+                (mo * MI + mi) % Q1 * stride2,
+                ko * KI + ki,
             ],
         name="Img_shared",
     )
 
     W1_shared = tvm.te.compute(
-        [in_channel, fuseRS//KI, uround(factor, NI)//NI, KI, NI],
-        lambda ic, ko, lo, ki, li: W1[ic, ko, lo, ki, li],
+        [in_channel // KI, out_channel // NI, KI, NI],
+        lambda ko, lo, ki, li: W1[ko, lo, ki, li],
         name="W1_shared",
     )
 
-    rko = tvm.te.reduce_axis([0, fuseRS // KI], "rko")
+    rko = tvm.te.reduce_axis([0, in_channel // KI], "rko")
     rki = tvm.te.reduce_axis([0, KI], "rki")
-    Dep_frag = tvm.te.compute(
-        [batch, in_channel, fusePQ // MI, uround(factor, NI) // NI, MI, NI],
-        lambda b, ic, mo, lo, mi, li: tvm.te.sum(
-            Img_shared[b, ic, mo, rko, mi, rki].astype(acc_dtype)
-            * W1_shared[ic, rko, lo, rki, li].astype(acc_dtype),
+    Conv1_frag = tvm.te.compute(
+        [batch, fusePQ1 // MI, out_channel // NI, MI, NI],
+        lambda b, mo, lo, mi, li: tvm.te.sum(
+            Img_shared[b, mo, rko, mi, rki].astype(acc_dtype)
+            * W1_shared[rko, lo, rki, li].astype(acc_dtype),
             axis=[rko, rki],
+        ),
+        name="Conv1_frag",
+    )
+
+    cast = tvm.te.compute(
+        [batch, fusePQ1 // MI, out_channel // NI, MI, NI],
+        lambda b, mo, lo, mi, li: Conv1_frag[b, mo, lo, mi, li].astype(in_dtype),
+        name="cast",
+    )
+    
+    fract = tvm.te.compute(
+        [batch, P1, Q1, out_channel],
+        lambda b, p, q, oc: cast[b, (p * Q1 + q) // MI, oc // NI, (p * Q1 + q) % MI, oc % NI]
+    )
+
+    pad = tvm.te.compute(
+        [batch, out_channel, fusePQ2 // MI, uround(3 * 3, KI) // KI, MI, KI],
+        lambda b, oc, mo, lo, mi, li: tvm.tir.if_then_else(
+            tvm.tir.all(
+                ((mo * MI + mi) // Q2 * stride2 + (lo * KI + li) // 3) < P1,
+                ((mo * MI + mi) % Q2 * stride2 + (lo * KI + li) % 3) < Q1
+            ),
+            fract[
+                b,
+                ((mo * MI + mi) // Q2 * stride2 + (lo * KI + li) // 3),
+                ((mo * MI + mi) % Q2 * stride2 + (lo * KI + li) % 3),
+                oc
+            ],
+            tvm.tir.const(0, in_dtype),
+        ),
+        name="pad",
+    )
+
+    W2_shared = tvm.te.compute(
+        [out_channel, uround(3 * 3, KI) // KI, uround(factor, NI) // NI, KI, NI],
+        lambda b, lo, no, li, ni: W2[b, lo, no, li, ni],
+        name="W2_shared",
+    )
+
+    rlo = tvm.te.reduce_axis([0, uround(3 * 3, KI) // KI], "rlo")
+    rli = tvm.te.reduce_axis([0, KI], "rli")
+    Dep_frag = tvm.te.compute(
+        [batch, out_channel, fusePQ2 // MI, uround(factor, NI) // NI, MI, NI],
+        lambda b, oc, mo, no, mi, ni: tvm.te.sum(
+            pad[b, oc, mo, rlo, mi, rli].astype(acc_dtype)
+            * W2_shared[oc, rlo, no, rli, ni].astype(acc_dtype),
+            axis=[rlo, rli],
         ),
         name="Dep_frag",
     )
 
-    cast = tvm.te.compute(
-        [batch, in_channel, fusePQ // MI, uround(factor, NI) // NI, MI, NI],
-        lambda b, ic, mo, lo, mi, li: Dep_frag[b, ic, mo, lo, mi, li].astype(in_dtype),
-        name="cast",
-    )
-
-    W2_shared = tvm.te.compute(
-        [in_channel, uround(factor, KI)//KI, out_channel//NI, KI, NI],
-        lambda ic, lo, no, li, ni: W2[ic, lo, no, li, ni],
-        name="W2_shared",
-    )
-
-    ric = tvm.te.reduce_axis([0, in_channel], "ric")
-    rlo = tvm.te.reduce_axis([0, uround(factor, KI) // KI], "rlo")
-    rli = tvm.te.reduce_axis([0, KI], "rli")
-    Conv_frag = tvm.te.compute(
-        [batch, fusePQ // MI, out_channel//NI, MI, NI],
-        lambda b, mo, no, mi, ni: tvm.te.sum(
-            cast[b, ric, mo, rlo, mi, rli].astype(acc_dtype)
-            * W2_shared[ric, rlo, no, rli, ni].astype(acc_dtype),
-            axis=[ric, rlo, rli],
-        ),
-        name="Conv_frag",
-    )
-
     Out = tvm.te.compute(
-        [batch, fusePQ, out_channel],
-        lambda b, m, n: Conv_frag[
-            b, m // MI, n // NI, m % MI, n % NI
+        [batch, P2, Q2, out_channel * uround(factor, NI)],
+        lambda b, p, q, oc: Dep_frag[
+            b, oc // factor, (p * Q2 + q) // MI, oc % factor // NI, (p * Q2 + q) % MI, oc % factor % NI
         ].astype(in_dtype),
         name="Out",
     )
@@ -182,7 +205,7 @@ def main(
     sm="70",
     only_once=False,
 ):
-    ins, outs = Depthwise3x3Conv1x1(
+    ins, outs = Conv1x1Depthwise3x3(
         batch,
         in_channel,
         H,
@@ -198,13 +221,15 @@ def main(
     (F,) = outs
 
     E_frag = F.op.input_tensors[0]
-    cast, C_ext = E_frag.op.input_tensors
+    pad, C_ext = E_frag.op.input_tensors
+    fract = pad.op.input_tensors[0]
+    cast = fract.op.input_tensors[0]
     D_frag = cast.op.input_tensors[0]
     A_shared, B_shared = D_frag.op.input_tensors
 
-    b, m, n, mi, ni = E_frag.op.axis
-    ric, rlo, rli = E_frag.op.reduce_axis
-    fuse_choice = at.fusion_choice(D_frag.op, E_frag.op, [b, m, n, ric, rlo, mi, ni, rli], 4)
+    b, oc, m, n, mi, ni = E_frag.op.axis
+    rlo, rli = E_frag.op.reduce_axis
+    fuse_choice = at.fusion_choice(D_frag.op, E_frag.op, [b, oc, m, n, rlo, mi, ni, rli], 4)
 
     first_packed = at.cuda_wmma(
         M=MI, N=NI, K=KI, in_dtype=in_dtype, out_dtype=acc_dtype, scope="shared"
@@ -214,9 +239,9 @@ def main(
         D_frag, first_packed, ["InnerMost", "SameRange"]
     )
 
-    first_choice = first_match_info_choices[0]
+    choice = first_match_info_choices[0]
 
-    first_match_info = at.match_info(first_choice, first_packed)
+    first_match_info = at.match_info(choice, first_packed)
 
     second_packed = at.cuda_wmma(
         M=MI, N=NI, K=KI, in_dtype=in_dtype, out_dtype=acc_dtype, scope="global"
@@ -226,9 +251,9 @@ def main(
         E_frag, second_packed, ["InnerMost", "SameRange"]
     )
 
-    second_choice = second_match_info_choices[0]
+    choice = second_match_info_choices[0]
 
-    second_match_info = at.match_info(second_choice, second_packed)
+    second_match_info = at.match_info(choice, second_packed)
 
     layer = ac.layer([F.op], inputs=[A, B, C])
     tensorize_state = at.tensorize_hyper_fusion_state(
@@ -243,21 +268,18 @@ def main(
         device = hw.query_hw_param("gpu.cuda.RTX3090")
     else:
         raise RuntimeError(f"SM_{sm} is not supported.")
-    
-    # state = at.build_serial_fusion_state(layer)
-    # ig = at.build_iter_graph(state, list(first_choice) + list(second_choice))
 
     tensorize_param = at.cuda_tensorize_param(
         warp_size=32,
-        ty_size=2,
-        tz_size=2,
+        ty_size=1,
+        tz_size=1,
         input_vector_len=4,
-        serial_y=2,
-        serial_z=2,
+        serial_y=1,
+        serial_z=1,
         block_rx=1,
-        warp_rx=2,
+        warp_rx=1,
         block_ry=1,
-        warp_ry=2,
+        warp_ry=1,
         unroll_steps=64,
     )
 
@@ -308,21 +330,21 @@ supported_dtypes = set(
 
 example_text = """
  example:
-    python depthwise3x3_conv1x1_cuda.py --in_dtype float16 --acc_dtype float32 --begin 0 --num 1
+    python conv1x1_depthwise3x3_cuda.py --in_dtype float16 --acc_dtype float32 --begin 0 --num 1
 """
 
 
 shapes = [
     # (C, H, W, K, stride1, stride2)
     # mobilenet-v1
-    (32, 112, 112, 64, 1, 1),
-    (64, 112, 112, 128, 2, 1),
-    (128, 56, 56, 128, 1, 1),
-    (128, 56, 56, 256, 2, 1),
-    (256, 28, 28, 256, 1, 1),
-    (256, 28, 28, 512, 2, 1),
+    # (32, 112, 112, 64, 1, 2),
+    (64, 56, 56, 128, 1, 1),
+    (128, 56, 56, 128, 1, 2),
+    (128, 28, 28, 256, 1, 1),
+    (256, 28, 28, 256, 1, 2),
+    (256, 14, 14, 512, 1, 1),
     (512, 14, 14, 512, 1, 1),
-    (512, 14, 14, 1024, 2, 1),
+    (512, 7, 7, 1024, 1, 2),
 ]
 
 

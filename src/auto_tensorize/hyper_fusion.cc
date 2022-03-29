@@ -431,8 +431,12 @@ std::vector<int> CUDATensorizeContextNode::GetSpatialExtentsByInferBound(
     CHECK(bound.count(iv));
     PrimExpr extent = bound.at(iv)->extent;
     const IntImmNode *as_int = extent.as<IntImmNode>();
-    CHECK(as_int) << "Can't infer constant range during scheduling.\n" << extent;
-    ret.push_back(as_int->value);
+    // CHECK(as_int) << "Can't infer constant range during scheduling.\n" << extent;
+    if (as_int) {
+      ret.push_back(as_int->value);
+    } else {
+      ret.push_back(-1); // can't infer
+    }
   }
   return ret;
 }
