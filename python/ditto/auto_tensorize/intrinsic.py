@@ -526,11 +526,11 @@ def conv_impl(shape, isa, dtype, prefix):
         assert W == 4
 
     cc_code = """
-#include <unistd.h>
+// #include <unistd.h>
     extern "C" int %sconv_update_avx2(float *In, float *Weight, float *Out, int HW_s_, int W_s_, int C_in_,
                                 int HRWS_s_, int WS_s_, int CRS_s_, int RS_s_, int S_s_)
 {
-    getpid(); // this is a walk around for the problem of incorrect precision; any syscall works
+    // getpid(); // this is a walk around for the problem of incorrect precision; any syscall works
     unsigned long long HW_s = HW_s_;
     unsigned long long W_s = W_s_;
     unsigned long long C_in = C_in_;
@@ -1155,7 +1155,6 @@ def intrin_conv(shape, dtype, prefix):
     )
 
 def cpu_intrin(op, shape, isa, dtype, prefix=""):
-    print("intrin: ", prefix, op, shape, isa, dtype)
     loads = []
     if op == "gemm":
         compute = intrin_gemm(

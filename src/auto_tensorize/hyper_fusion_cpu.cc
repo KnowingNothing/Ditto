@@ -166,7 +166,13 @@ CPUTensorizeContextNode::splitSpatialWithReduce(const te::Operation op,
   }
   return {Spatial, Reduce};
 }
-
+CPUTensorizeParam::CPUTensorizeParam(
+    bool valid) {
+  auto node = make_object<CPUTensorizeParamNode>();
+  CHECK(valid == false);
+  node->valid = valid;
+  data_ = node;
+}
 CPUTensorizeParam::CPUTensorizeParam(
     OpHyperState op1, OpHyperState op2, int parallelism,
     std::vector<std::vector<int>> firstOpLoopOrder,
@@ -194,6 +200,7 @@ CPUTensorizeParam::CPUTensorizeParam(
   node->secondOpCosts = secondOpCosts;
   node->commCosts = commCosts, node->cacheOccupancy = cacheOccupancy;
   node->log = log;
+  node->valid = true;
   data_ = node;
 }
 
@@ -472,19 +479,11 @@ void ScheduleFirstOpCPU(te::Schedule sch, CPUTensorizeContext ctx,
   sch[cur_op].compute_at(sch[ctx->state->second_op],
                          ctx->first_frag_attach_axis);
   // 2. the body tiling
-  Array<tir::IterVar> bodyLoops; //=
-      // splitAndReorder(sch[cur_op], idx2iv, tensorize_param->firstOpTilingFactor,
-      //                 tensorize_param->firstOpLoopOrder);
+  Array<tir::IterVar> bodyLoops =
+      splitAndReorder(sch[cur_op], idx2iv, tensorize_param->firstOpTilingFactor,
+                     tensorize_param->firstOpLoopOrder);
   
   Array<tir::IterVar> tensorizeLoops = ctx->GetTensorizeIters(cur_op);
-
-  for (auto kv: idx2iv){
-    bool found = false;
-    for (auto iv: tensorizeLoops){
-      if (iv.same_as(kv.second)) found = true;
-    }
-    if (!found) bodyLoops.push_back(kv.second);
-  }
 
   // 3. reorder
   Array<tir::IterVar> loopOrder;
@@ -758,7 +757,7 @@ CostAndFactor ScheduleHelper(
                   baseTileSize[idx].second;
               size_t n_trial =
                   (searchType == "stochastic" ? std::min(bound, 10) : bound);
-              for (size_t trial = 0; trial <= n_trial; trial++) {
+              for (size_t trial = 0; trial < n_trial; trial++) {
                 int ext = (trial + 1) * baseTileSize[idx].second;
                 if (searchType == "stochastic")
                   ext = (random() % bound + 1) * baseTileSize[idx].second;
@@ -855,46 +854,46 @@ CostAndFactor ScheduleHelper(
   std::sort(candidates.begin(), candidates.end(),
             [](CostAndFactor &a, CostAndFactor &b) { return a.sum < b.sum; });
   
-  if (! candidates.size()){
-    std::cout << "begin schedule helper with param: \n";
+  if (! candidates.size()){    
+    // std::cout << std::endl;
+    // std::cout << "bounds: " << std::endl;
+    // std::cout << bounds << std::endl;
+    // std::cout << "fixed tileSize" << std::endl;
+    // std::cout << fixedTileSize << std::endl;
+    // std::cout << "begin/end: " << beginCacheLevel << ":" << endCacheLevel <<
+    // std::endl; std::cout << "cacheSizes: " << cacheSizes.size() << std::endl;
+    // std::cout << "weightPerCacheLevel.size()" << weightPerCacheLevel.size() <<
+    // std::endl; std::cout << "delayedWeightInit.size()" <<
+    // delayedWeight_init.size() << std::endl; std::cout <<
+    // "weightPerTensor.size()" << weightPerTensor.size() << std::endl; std::cout
+    // << "acf.size()" << accessFunctions.size() << std::endl;
+    // std::cout << "access functions:";
+    // for (auto acf: accessFunctions) 
+    //   std::cout <<acf << " " << acf->absentVars << std::endl;
+    // if (verbose) {
+    //   for (auto acf : accessFunctions)
+    //     std::cout << "access_indices" << acf->access_indices
+    //               << "absentVars: " << acf->absentVars
+    //               << ", presentVars: " << acf->presentVars << std::endl;
+    //   std::cout << std::endl;
+    //   std::cout << "tensorWeight:";
+    //   for (auto tswt : weightPerTensor)
+    //     std::cout << tswt << " ";
+    //   std::cout << std::endl;
+    //   std::cout << "weightPerCacheLevel:";
+    //   for (auto wpcl : weightPerCacheLevel)
+    //     std::cout << wpcl << " ";
+    //   std::cout << std::endl;
+    // }
+    LOG(WARNING) << "no valid candidates found";
     for (auto idxFactors: factor.tileSize){
       int idx = idxFactors.first;
       auto factors = idxFactors.second;
       std::cout << "[" << idx2var[idx] << " , (" << factors[0] << ", " <<
       bounds[idx2var[idx]] << ")], ";
     }
-    std::cout << std::endl;
-    std::cout << "bounds: " << std::endl;
-    std::cout << bounds << std::endl;
-    std::cout << "fixed tileSize" << std::endl;
-    std::cout << fixedTileSize << std::endl;
-    std::cout << "begin/end: " << beginCacheLevel << ":" << endCacheLevel <<
-    std::endl; std::cout << "cacheSizes: " << cacheSizes.size() << std::endl;
-    std::cout << "weightPerCacheLevel.size()" << weightPerCacheLevel.size() <<
-    std::endl; std::cout << "delayedWeightInit.size()" <<
-    delayedWeight_init.size() << std::endl; std::cout <<
-    "weightPerTensor.size()" << weightPerTensor.size() << std::endl; std::cout
-    << "acf.size()" << accessFunctions.size() << std::endl;
-    std::cout << "access functions:";
-    for (auto acf: accessFunctions) 
-      std::cout <<acf << " " << acf->absentVars << std::endl;
-    if (verbose) {
-      for (auto acf : accessFunctions)
-        std::cout << "access_indices" << acf->access_indices
-                  << "absentVars: " << acf->absentVars
-                  << ", presentVars: " << acf->presentVars << std::endl;
-      std::cout << std::endl;
-      std::cout << "tensorWeight:";
-      for (auto tswt : weightPerTensor)
-        std::cout << tswt << " ";
-      std::cout << std::endl;
-      std::cout << "weightPerCacheLevel:";
-      for (auto wpcl : weightPerCacheLevel)
-        std::cout << wpcl << " ";
-      std::cout << std::endl;
-    }
+    return CostAndFactor(false);
   }
-  CHECK(candidates.size()) << "no valid candidates" << std::endl;
   if (data) {
     std::vector<CostAndFactor> candidates_;
     if (mode == "best")
@@ -1068,6 +1067,9 @@ CPUTensorizeParam buildCPUTensorizeParam(SerialFusionState sfs,
                           bytePerEle, "normal", "best", NULL, "op2");
   CostAndFactor commCaf = scheduleCommonLoop(
       op1, op2, hw_param, fusionInfo, bytePerEle, "normal", "best", NULL, "comm");
+
+  if (!op1caf.valid || !op2caf.valid || !commCaf.valid)
+    return CPUTensorizeParam(false);
 
   SingleCubicScheduleFactor op1Schedule = op1caf.factor;
   SingleCubicScheduleFactor op2Schedule = op2caf.factor;

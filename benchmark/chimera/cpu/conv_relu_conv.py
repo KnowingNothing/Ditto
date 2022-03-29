@@ -14,7 +14,7 @@ import regex as re
 import math
 import numpy as np
 import argparse
-
+import pickle as pkl
 
 class MicroKernel:
     def __init__(self, N=1, K=4, H=3, W=8, C=1, R=3, S=3) -> None:
@@ -77,9 +77,9 @@ ServerConfig = {
     },
     'scccc': {
         'parallelism': 36,
-        'cacheSizes': [32 * 16, 32 * 1024, 1024 * 1024, 25344 * 1024],
+        'cacheSizes': [32 * 16, 32 * 1024, 1024 * 1024 * 0.8, 25344 * 1024 * 0.8],
         'corePerLevel': [1.0, 1.0, 1.0, 18.0],
-        'bandwidth': [293.72, 81.72, 38.54, 13.14],
+        'bandwidth': [293.72, 100.72, 50.54, 13.14],
         'isa': 'avx512',
         'peakgflops': 2995.20
     },
@@ -243,6 +243,7 @@ def test_double_conv(
     verbose = False
     isa = "avx2"
     dtype = "float32"
+    topn = 5
     if SERVER:
         cacheSizes = SERVER['cacheSizes']
         bandwidth = SERVER['bandwidth']
@@ -258,6 +259,8 @@ def test_double_conv(
         verbose = config['verbose']
     if "dtype" in config:
         dtype = config['dtype']
+    if "topn" in config:
+        topn = config['topn']
     print("begin test ...")
     print("shape,cacheSizes,bandwidth,tensorWeight,searchType,mode,parallelism,isa,dtype")
     print(shape, cacheSizes, bandwidth, tensorWeight,
@@ -287,7 +290,6 @@ def test_double_conv(
     sfs = at.build_serial_fusion_state(layer)
 
     op1, op2 = sfs.first_op, sfs.second_op
-    print(op1, op2)
     # def get_match_info(op, shape, prefix):
     #     # cpu_intrin(op, shape, instructionSet, dtype, prefix="")
     #     packed, code = at.cpu_intrin(
@@ -313,8 +315,9 @@ def test_double_conv(
 
     sfs.register_tensorize_axes(tensorizeAxes)
 
+    print("begin building fusion choice...")
     fuse_choice = at.build_fusion_choice(
-        sfs, hw_param=CPU, dtype=dtype, simple_mode=-1
+        sfs, hw_param=CPU, dtype=dtype, simple_mode=1
     )
 
     tensorize_state = at.tensorize_hyper_fusion_state(
@@ -350,11 +353,11 @@ def test_double_conv(
     outputs = [tvm.nd.array(x, ctx) for x in outputs_np]
     func(*inputs, *outputs)
 
+    top = float()
+    topn_time = float('inf')
     if mode == "best":
-        top = float()
-        top5 = float('inf')
-        R = 5
-        assert fusionContext.size > 5
+        R = topn
+        assert fusionContext.size >= topn
     elif mode =="test":
         R = 1
     for iter in range(R):
@@ -366,8 +369,8 @@ def test_double_conv(
         print ("schedule success!")
         if (mode == "test"):
             lowerCode = tvm.lower(sch, layer.schedule_tensors, simple_mode = True)
-        with open ("tmp.txt", 'w') as f:
-            f.write(str(lowerCode))
+            with open ("tmp.txt", 'w') as f:
+                f.write(str(lowerCode))
         
         func = tvm.build(sch, layer.schedule_tensors, name="conv_relu_conv")
 
@@ -376,25 +379,29 @@ def test_double_conv(
 
         func(*inputs_tvm, *outputs_tvm)
 
-        for (a, b) in zip(outputs, outputs_tvm):
-            tvm.testing.assert_allclose(
-                a.numpy(), b.numpy(), atol=1, rtol=1e-6)
+        # for (a, b) in zip(outputs, outputs_tvm):
+        #     tvm.testing.assert_allclose(
+        #         a.numpy(), b.numpy(), atol=1, rtol=1e-6)
         
-        print("test passed!")
+        # print("test passed!")
 
         evaluator = func.time_evaluator(
             func.entry_name, ctx, min_repeat_ms=10, repeat=REPEAT
         )
 
         print("begin evaluate ...")
-        cost = evaluator(*inputs_tvm, *outputs_tvm).mean
+        cost = evaluator(*inputs_tvm, *outputs_tvm)
+
+        cost = np.mean(cost.results[100:])
         
         if iter == 0:
             top = cost
-        if cost < top5:
-            top5 = cost
+        if mode == "test":
+            break
+        if cost < topn_time:
+            topn_time = cost
         print(f'{shape} iter{iter}: ', cost)
-    return {'top1': top, 'top5': top5}
+    return {'top1': top, 'topn': topn_time}
 
 
 def setGlobals(shape):
@@ -405,7 +412,7 @@ def setGlobals(shape):
         mk1 = MicroKernel(N=1, K=4, H=3, W=8, C=16, R=3, S=3)
         mk2 = MicroKernel(N=1, K=4, H=3, W=8, C=4, R=3, S=3)
     elif SERVER['isa'] == "avx512":
-        mk1 = MicroKernel(N=1, K=4, H=3, W=16, C=16, R=3, S=3)
+        mk1 = MicroKernel(N=1, K=4, H=3, W=16, C=32, R=3, S=3)
         mk2 = MicroKernel(N=1, K=4, H=3, W=16, C=4, R=3, S=3)
 
 
@@ -416,7 +423,7 @@ def main(shape, dtype, server):
     print("shape,dtype,WORKLOAD,SERVER")
     print(shape, dtype, WORKLOAD, SERVER)
     time = test_double_conv(shape, config={
-        'searchType': 'normal', 'verbose': False, 'mode': 'best', 'dtype': dtype})
+        'searchType': 'normal', 'verbose': True, 'mode': 'best', 'dtype': dtype, 'topn': 1})
     ret = {}
     for k in time:
         ret[k] = {}
@@ -427,7 +434,7 @@ def main(shape, dtype, server):
     return ret
 
 
-example_text = "python ./conv_relu_conv.py --server sc --isa avx2"
+example_text = "python ./conv_relu_conv.py --server sc"
 
 shapes = [
     # (batch, C0, H1, W1, C1, R1, S1, C2, R2, S2)
@@ -484,3 +491,5 @@ if __name__ == "__main__":
         )
     for cc in costs:
         print(cc[1])
+    with open("conv_res.pkl", "wb") as f:
+        pkl.dump(costs, f)

@@ -620,6 +620,7 @@ public:
 class CPUTensorizeParamNode : public Object {
 public:
   /*! \brief The parallelism */
+  bool valid;
   int parallelism;
   OpHyperState op1;
   OpHyperState op2;
@@ -649,6 +650,7 @@ public:
 class CPUTensorizeParam : public ObjectRef {
 public:
   TVM_DLL
+  CPUTensorizeParam(bool valid);
   CPUTensorizeParam(OpHyperState op1, OpHyperState op2, int parallelism,
                     std::vector<std::vector<int>> firstOpLoopOrder,
                     std::vector<std::vector<int>> secondOpLoopOrder,
@@ -679,12 +681,15 @@ struct SingleCubicScheduleFactor {
 struct CostAndFactor {
   std::vector<double> costs;
   SingleCubicScheduleFactor factor;
+  bool valid;
   double sum;
+  CostAndFactor(bool valid_):valid(valid_){}
   CostAndFactor(std::vector<double> costs_, SingleCubicScheduleFactor factor_)
       : costs(costs_), factor(factor_) {
     sum = 0;
     for (auto _ : costs)
       sum += _;
+    valid = true;
   }
 };
 
