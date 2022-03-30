@@ -458,8 +458,15 @@ namespace ditto
         tir::IterVar iv = cop->axis[ind];
         PrimExpr ext = iv->dom->extent;
         const IntImmNode *as_int = ext.as<IntImmNode>();
-        CHECK(as_int) << "Currently only static shape is supported.\n";
-        ret.push_back(as_int->value);
+        // CHECK(as_int) << "Can't infer constant range during scheduling.\n" << extent;
+        if (as_int)
+        {
+          ret.push_back(as_int->value);
+        }
+        else
+        {
+          ret.push_back(-1); // can't infer
+        }
       }
       return ret;
     }
@@ -1962,8 +1969,8 @@ namespace ditto
       cost_t bestCost = 0;
       FusionItem bestFusionItem = {};
       std::unordered_map<std::string, int32_t> m = {
-            {"float32", 4}, {"float64", 8}, {"float16", 2}, {"int16", 2}, {"int32", 4}, {"int64", 8}};
-        CHECK(m.count(dtype));
+          {"float32", 4}, {"float64", 8}, {"float16", 2}, {"int16", 2}, {"int32", 4}, {"int64", 8}};
+      CHECK(m.count(dtype));
       int bytePerEle = m[dtype];
       if (simple_mode == 1)
       {
@@ -1975,18 +1982,19 @@ namespace ditto
           return ret;
         };
         std::vector<int> simpleTiling, simplePermute;
-        for  (int i = 0; i < ig->_firstOpIters.size(); i++){
+        for (int i = 0; i < ig->_firstOpIters.size(); i++)
+        {
           simpleTiling.push_back(1);
           simplePermute.push_back(i);
         }
-        
+
         bestFusionItem =
             buildFusionItem(vec2array(simpleTiling), vec2array(simpleTiling),
                             vec2array(simplePermute), vec2array(simplePermute), 1, ig->fusionLevels[0]);
       }
       else if (simple_mode == -1)
       {
-        
+
         setTemplatesAndSearchLightWeight(ig, hw_param, m[dtype], "normal", "best",
                                          NULL, &bestCost, &bestFusionItem);
       }

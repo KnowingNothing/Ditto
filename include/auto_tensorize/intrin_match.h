@@ -359,6 +359,7 @@ protected:
       return item.second;
     }
     // return make_zero(op->dtype);
+    CHECK(bounds.count(op)) << "Can't find Var " << GetRef<Var>(op);
     return bounds[op].get()->min;
   }
 
