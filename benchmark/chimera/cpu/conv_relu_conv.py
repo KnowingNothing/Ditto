@@ -243,7 +243,7 @@ def test_double_conv(
     verbose = False
     isa = "avx2"
     dtype = "float32"
-    topn = 5
+    topn = 10
     if SERVER:
         cacheSizes = SERVER['cacheSizes']
         bandwidth = SERVER['bandwidth']
@@ -356,8 +356,7 @@ def test_double_conv(
     top = float()
     topn_time = float('inf')
     if mode == "best":
-        R = topn
-        assert fusionContext.size >= topn
+        R = fusionContext.size if fusionContext.size < topn else topn
     elif mode =="test":
         R = 1
     for iter in range(R):
@@ -423,7 +422,7 @@ def main(shape, dtype, server):
     print("shape,dtype,WORKLOAD,SERVER")
     print(shape, dtype, WORKLOAD, SERVER)
     time = test_double_conv(shape, config={
-        'searchType': 'normal', 'verbose': True, 'mode': 'best', 'dtype': dtype, 'topn': 1})
+        'searchType': 'normal', 'verbose': True, 'mode': 'best', 'dtype': dtype, 'topn': 10})
     ret = {}
     for k in time:
         ret[k] = {}
@@ -445,7 +444,16 @@ shapes = [
     [1, 512, 33, 32, 1024, 3, 3, 1024, 3, 3],
     [1, 1024, 57, 64, 512, 3, 3, 512, 3, 3],
     [1, 256, 201, 208, 128, 3, 3, 128, 3, 3],
-    [1, 128, 393, 400, 64, 3, 3, 64, 3, 3]
+    [1, 128, 393, 400, 64, 3, 3, 64, 3, 3],
+    [1, 32, 114, 112, 64, 3, 3, 64, 3, 3],
+    [1, 64, 57, 64, 128, 3, 3, 128, 3, 3],
+    [1, 128, 57, 64, 256, 3, 3, 256, 3, 3],
+    [1, 256, 30, 32, 512, 3, 3, 256, 3, 3],
+    [1, 256, 30, 32, 512, 3, 3, 512, 3, 3],
+    [1, 64, 57, 64, 64, 3, 3, 256, 3, 3],
+    [1, 128, 30, 32, 128, 3, 3, 512, 3, 3],
+    [1, 256, 15, 16, 256, 3, 3, 1024, 3, 3],
+    [1, 512, 9, 16, 512, 3, 3, 2048, 3, 3]
 ]
 
 

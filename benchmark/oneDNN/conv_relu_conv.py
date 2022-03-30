@@ -1,6 +1,7 @@
 import subprocess
 import argparse
 import regex as re
+import pickle as pkl
 peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995}
 def main(shape, server):
     args = ["cpu"] + shape + [peakflops[server]]
@@ -24,7 +25,16 @@ shapes = [
     [1, 512, 33, 32, 1024, 3, 3, 1024, 3, 3],
     [1, 1024, 57, 64, 512, 3, 3, 512, 3, 3],
     [1, 256, 201, 208, 128, 3, 3, 128, 3, 3],
-    [1, 128, 393, 400, 64, 3, 3, 64, 3, 3]
+    [1, 128, 393, 400, 64, 3, 3, 64, 3, 3],
+    [1, 32, 114, 112, 64, 3, 3, 64, 3, 3],
+    [1, 64, 57, 64, 128, 3, 3, 128, 3, 3],
+    [1, 128, 57, 64, 256, 3, 3, 256, 3, 3],
+    [1, 256, 30, 32, 512, 3, 3, 256, 3, 3],
+    [1, 256, 30, 32, 512, 3, 3, 512, 3, 3],
+    [1, 64, 57, 64, 64, 3, 3, 256, 3, 3],
+    [1, 128, 30, 32, 128, 3, 3, 512, 3, 3],
+    [1, 256, 15, 16, 256, 3, 3, 1024, 3, 3],
+    [1, 512, 9, 16, 512, 3, 3, 2048, 3, 3]
 ]
 
 example_text = "python ./conv_relu_conv.py --dtype float32 --begin 0 --num 1 --server sc"
@@ -67,3 +77,5 @@ if __name__ == "__main__":
         print(
             f"{cc[0]},{args.server},{cc[1]}"
         )
+    with open ("conv_res.pkl", 'wb') as f:
+        pkl.dump(f, costs)
