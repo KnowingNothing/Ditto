@@ -13,7 +13,7 @@ NI = 1
 KI = 4
 HI = 3
 WI = 16
-CI = 1
+CI = 32
 def conv(N, K, H, W, C, R, S):
     assert N % NI == 0
     assert K % KI == 0
@@ -645,6 +645,7 @@ extern "C" int conv_reset(float *Out, int KHW, int HW, int W,
                 }
     return 0;
 }
+
     """
     from tvm.contrib import utils, clang
     temp = utils.tempdir()
@@ -755,10 +756,13 @@ def test_intrin(N, K, H, W, C, R, S, dtype):
     func(*inputs, *outputs)
     
     evaluator = func.time_evaluator(
-            func.entry_name, ctx, min_repeat_ms=10, repeat=1000
+            func.entry_name, ctx, min_repeat_ms=10, repeat=100
         )
     
-    cost = evaluator(*inputs, *outputs).mean
+    cost = evaluator(*inputs, *outputs)
+
+    cost = np.mean(cost.results[10:])
+    print(cost)
 
     absolute_difference = np.max(outputs[0].numpy() - outputs_gt[0].numpy())
     print("max atol: ", absolute_difference)
@@ -777,5 +781,5 @@ if __name__ == "__main__":
     assert len(l) == 8
     l, dtype = l[:-1], l[-1] 
     l = [int(_) for _ in l]
-    test_intrin(*l, dtype)
-    # test_intrin_no_tensorize(*l)
+    # test_intrin(*l, dtype)
+    test_intrin_no_tensorize(*l)
