@@ -4,26 +4,26 @@ import argparse
 import time
 
 
-def torch_bmm_bmm_cuda(A, B, C):
+def torch_conv1x1_conv3x3_cuda(A, B, C, stride1, stride2):
     with torch.autocast("cuda"):
-        D = torch.bmm(A, B)
-        F = torch.bmm(D, C)
+        D = torch.nn.functional.conv2d(A, B, stride=stride1, padding=0)
+        F = torch.nn.functional.conv2d(D, C, stride=stride2, padding=1)
 
     return F
 
 
-def main(B, M, N, K, L, dtype, only_once=False):
+def main(batch, C, H, W, K1, K2, stride1, stride2, dtype, only_once=False):
     in_dtype = dtype
 
     repeat = 600
     inputs_np = [
         np.random.uniform(-1, 1, [int(x) for x in y]).astype(in_dtype)
-        for y in [[B, M, K], [B, K, L], [B, L, N]]
+        for y in [[batch, C, H, W], [K1, C, 1, 1], [K2, K1, 3, 3]]
     ]
 
     if only_once:
         inputs_torch = [torch.tensor(x).cuda() for x in inputs_np]
-        output = torch_bmm_bmm_cuda(*inputs_torch)
+        output = torch_conv1x1_conv3x3_cuda(*inputs_torch, stride1, stride2)
         cost = -1
     else:
         inputs_torch = [
@@ -32,14 +32,14 @@ def main(B, M, N, K, L, dtype, only_once=False):
         # measure time
         # warm up
         for i in range(repeat):
-            output = torch_bmm_bmm_cuda(*inputs_torch[i])
+            output = torch_conv1x1_conv3x3_cuda(*inputs_torch[i], stride1, stride2)
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
         torch.cuda.synchronize()
         # beg = time.time()
         start.record()
         for i in range(repeat):
-            output = torch_bmm_bmm_cuda(*inputs_torch[i])
+            output = torch_conv1x1_conv3x3_cuda(*inputs_torch[i], stride1, stride2)
         end.record()
         torch.cuda.synchronize()
         # stop = time.time()
@@ -51,7 +51,7 @@ def main(B, M, N, K, L, dtype, only_once=False):
 
 example_text = """
  example:
-    python bmm_bmm_cuda.py --dtype float16 --begin 0 --num 1
+    python conv1x1_conv3x3_cuda.py --dtype float16 --begin 0 --num 1
 """
 
 
@@ -64,19 +64,7 @@ def uround(x, y):
 
 
 shapes = [
-    # (batch, M, N, K, L)
-    (8, 512, 512 // 8, 512 // 8, 512),  # Bert-Small
-    (12, 512, 768 // 12, 768 // 12, 512),  # Bert-Base
-    (16, 512, 1024 // 16, 1024 // 16, 512),  # Bert-Large
-    (12, 256, 768 // 12, 768 // 12, 256),  # ViT-Base/14
-    (16, 256, 1024 // 16, 1024 // 16, 256),  # ViT-Large/14
-    (16, 256, 1280 // 16, 1280 // 16, 256),  # ViT-Huge/14
-    (12, uround(196, 16), 768 // 12, 768 // 12, uround(196, 16)),  # ViT-Base/16
-    (16, uround(196, 16), 1024 // 16, 1024 // 16, uround(196, 16)),  # ViT-Large/16
-    (16, uround(196, 16), 1280 // 16, 1280 // 16, uround(196, 16)),  # ViT-Huge/16
-    (1, 512, uround(49, 16), uround(49, 16), 256),  # Mixer-Small/32-S
-    (1, 768, uround(49, 16), uround(49, 16), 384),  # Mixer-Base/32-S
-    (1, 1024, uround(49, 16), uround(49, 16), 512),  # Mixer-Large/32-S
+    (64, 56, 56, 64, 64, 1, 1),  # ResNet-50
 ]
 
 if __name__ == "__main__":
@@ -100,6 +88,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
+    parser.add_argument(
+        "--batch", type=int, default=1
+    )
 
     args = parser.parse_args()
 
@@ -110,11 +101,11 @@ if __name__ == "__main__":
         torch.backends.cudnn.enabled = False
     costs = []
     for ss in shapes[args.begin : args.begin + args.num]:
-        B, M, N, K, L = ss
-        cost = main(B, M, N, K, L, args.dtype, args.only_once)
+        C, H, W, K1, K2, stride1, stride2 = ss
+        cost = main(args.batch, C, H, W, K1, K2, stride1, stride2, args.dtype, args.only_once)
         costs.append((ss, cost))
-    print("B,M,N,K,L,dtype,cost")
+    print("batch,C,H,W,K1,K2,stride1,stride2,dtype,cost")
     for cc in costs:
         print(
-            f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.dtype},{cc[1]}"
+            f"{args.batch}," + ",".join(map(str, cc[0])) + f",{args.dtype},{cc[1]}"
         )

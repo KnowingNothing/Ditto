@@ -159,6 +159,13 @@ example_text = """
     python bmm_bmm_ansor.py --in_dtype float16 --acc_dtype float32 --begin 0 --num 1 --sm 80
 """
 
+def ceil(x, y):
+    return (x + y - 1) // y
+
+
+def uround(x, y):
+    return int(ceil(x, y) * y)
+
 shapes = [
     # (batch, M, N, K, L)
     (8, 512, 512 // 8, 512 // 8, 512),  # Bert-Small
@@ -167,6 +174,12 @@ shapes = [
     (12, 256, 768 // 12, 768 // 12, 256),  # ViT-Base/14
     (16, 256, 1024 // 16, 1024 // 16, 256),  # ViT-Large/14
     (16, 256, 1280 // 16, 1280 // 16, 256),  # ViT-Huge/14
+    (12, uround(196, 16), 768 // 12, 768 // 12, uround(196, 16)),  # ViT-Base/16
+    (16, uround(196, 16), 1024 // 16, 1024 // 16, uround(196, 16)),  # ViT-Large/16
+    (16, uround(196, 16), 1280 // 16, 1280 // 16, uround(196, 16)),  # ViT-Huge/16
+    (1, 512, uround(49, 16), uround(49, 16), 256),  # Mixer-Small/32-S
+    (1, 768, uround(49, 16), uround(49, 16), 384),  # Mixer-Base/32-S
+    (1, 1024, uround(49, 16), uround(49, 16), 512),  # Mixer-Large/32-S
 ]
 
 if __name__ == "__main__":

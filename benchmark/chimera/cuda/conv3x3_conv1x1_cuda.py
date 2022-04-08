@@ -248,47 +248,34 @@ def main(
     else:
         raise RuntimeError(f"SM_{sm} is not supported.")
     
-    # state = at.build_serial_fusion_state(layer)
-    # ig = at.build_iter_graph(state, list(first_choice) + list(second_choice))
-    
-    ty_choices = [1, 2, 4]
-    tz_choices = [1, 2, 4]
-    input_vector_len_choices = [2, 4, 8]
-    serial_y_choices = [1, 2, 4]
-    serial_z_choices = [1, 2, 4]
-    serial_y_choices = [1, 2, 4]
-    block_rx_choices = [1, 2, 4, 8]
-    warp_rx_choices = [1, 2, 4, 8]
-    block_ry_choices = [1, 2, 4, 8]
-    warp_ry_choices = [1, 2, 4, 8]
-    
 
+    # 0-3
+    # tensorize_param = at.cuda_tensorize_param(
+    #     warp_size=32,
+    #     ty_size=2,
+    #     tz_size=4,
+    #     input_vector_len=8,
+    #     serial_y=2,
+    #     serial_z=4,
+    #     block_rx=2,
+    #     warp_rx=4,
+    #     block_ry=1,
+    #     warp_ry=4,
+    #     unroll_steps=512,
+    # )
     tensorize_param = at.cuda_tensorize_param(
         warp_size=32,
         ty_size=2,
         tz_size=2,
-        input_vector_len=4,
+        input_vector_len=8,
         serial_y=2,
         serial_z=2,
         block_rx=1,
         warp_rx=2,
         block_ry=1,
         warp_ry=2,
-        unroll_steps=64,
+        unroll_steps=512,
     )
-    # tensorize_param = at.cuda_tensorize_param(
-    #     warp_size=32,
-    #     ty_size=4,
-    #     tz_size=2,
-    #     input_vector_len=4,
-    #     serial_y=2,
-    #     serial_z=2,
-    #     block_rx=1,
-    #     warp_rx=4,
-    #     block_ry=1,
-    #     warp_ry=4,
-    #     unroll_steps=64,
-    # )
 
     sch = at.tensorize_cuda(layer, tensorize_state, device, tensorize_param)
     if only_once:
@@ -337,24 +324,16 @@ supported_dtypes = set(
 
 example_text = """
  example:
-    python depthwise3x3_conv1x1_cuda.py --in_dtype float16 --acc_dtype float32 --begin 0 --num 1
+    python conv3x3_conv1x1_cuda.py --in_dtype float16 --acc_dtype float32 --begin 0 --num 1
 """
 
 
 shapes = [
-    # (C, H, W, K1, k2, stride1, stride2)
-    (32, 112, 112, 64, 64, 1, 1), # dummy
-    (64, 56, 56, 128, 128, 1, 1), # dummy
-    (64, 112, 112, 192, 128, 2, 1), # Yolo
-    # (128, 56, 56, 256, 256, 1, 1), # Yolo
-    # (256, 56, 56, 512, 256, 2, 1), # Yolo
-    # (256, 28, 28, 512, 256, 1, 1), # Yolo
-    # (256, 28, 28, 512, 512, 1, 1), # Yolo
-    # (512, 28, 28, 1024, 512, 2, 1), # Yolo
-    # (64, 56, 56, 64, 256, 1, 1), # Res50-2a
-    # (128, 28, 28, 128, 512, 1, 1), # Res50-2c
-    # (256, 14, 14, 256, 1024, 1, 1), # Res50-3d
-    # (512, 7, 7, 512, 2048, 1, 1),   # Res50-4f
+    (64, 112, 112, 192, 128, 2, 1),  # Yolo
+    (32, 147, 147, 64, 80, 2, 1), # Inception-V3
+    (64, 56, 56, 128, 64, 1, 1), # Darknet-19
+    (128, 28, 28, 256, 128, 1, 1), # Darknet-19
+    (16, 227, 227, 64, 16, 4, 1), # Squeezenet-V1.1
 ]
 
 
