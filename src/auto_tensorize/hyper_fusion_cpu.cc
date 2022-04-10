@@ -7,6 +7,7 @@
 #include <stack>
 #include <tvm/driver/driver_api.h>
 #include <tvm/te/schedule_pass.h>
+#include <utils/iter_domain.h>
 #include <iomanip>
 namespace ditto
 {
@@ -233,6 +234,41 @@ namespace ditto
       data_ = node;
     }
 
+
+    tir::IterVar getAttachAxis(te::Schedule sch, te::Operation consumer, te::Operation producer, tir::IterVar begin, Array<tir::IterVar> ivs){
+      Array<tir::Var> producer_vars = utils::GetAccessVars(consumer, producer);
+      std::unordered_map<tir::IterVar, bool> isProducerIV;
+      for (auto iv: sch[consumer]->all_iter_vars){
+        isProducerIV[iv] = false;
+        for (auto var: producer_vars){
+          if (var.same_as(iv->var)){
+            isProducerIV[iv] = true;
+            break;
+          }
+        }
+      }
+      for (auto rel: sch[consumer]->relations){
+        if (const te::SplitNode * s = rel.as<te::SplitNode>()){
+          isProducerIV[s->outer] = isProducerIV[s->inner] = isProducerIV[s->parent];
+        }
+        else if (const te::FuseNode * s = rel.as<te::FuseNode>()){
+          isProducerIV[s->fused] = (isProducerIV[s->inner] && isProducerIV[s->outer]);
+        }
+      }
+      tir::IterVar last = begin;
+      // std::cout << "begin: " << begin << std::endl;
+      // for (auto iv: sch[consumer]->leaf_iter_vars){
+      //   std::cout << "iv: " << iv << " " << isProducerIV[iv] << std::endl;
+      // }
+      for (auto iv: ivs){
+        if (!(iv->dom.defined() && iv->dom->extent.as<te::IntImmNode>() && iv->dom->extent.as<te::IntImmNode>()->value == 1) && !isProducerIV[iv]){
+          break;
+        }
+        last = iv;
+      }
+      // std::cout << "end get attach axis" << std::endl;
+      return last;
+    }
     ScheduleContext::ScheduleContext(std::vector<CostAndFactor> data,
                                      int parallelism)
     {
@@ -266,17 +302,42 @@ namespace ditto
       }
     }
 
+    void SimpleSchedule(te::Stage s, CPUTensorizeParam tensorize_param){
+      const te::ComputeOpNode * cop = s->op.as<te::ComputeOpNode>();
+      if (!cop)
+        return;
+      Array<tir::IterVar> ivs = cop->axis;
+      tir::IterVar fused;
+      s.fuse(ivs, &fused);
+      tir::IterVar outer, inner;
+      s.split_by_nparts(fused, tensorize_param->parallelism, &outer, &inner);
+      // s.parallel(outer);
+      return;
+    }
+
     void ScheduleFirstOpPrologue(te::Schedule sch, CPUTensorizeContext ctx,
                                  CPUTensorizeParam tensorize_param)
     {
       for (auto op_list : ctx->state->first_op_prologue)
       {
+        bool isFirst = true;
         for (auto op : op_list)
         {
-          tir::IterVar outer, inner;
-          auto iv = ctx->FuseAll(sch, op);
-          sch[op].split_by_nparts(iv, tensorize_param->parallelism, &outer, &inner);
-          sch[op].parallel(outer);
+          if (isFirst){
+            // tir::IterVar attach = getAttachAxis(sch, ctx->state->first_op, op, {}, sch[ctx->state->first_op]->leaf_iter_vars);
+            // // std::cout << "firstOpPrologue attach: " << attach << std::endl;
+            // if (attach.defined()){
+            //   sch[op].compute_at(sch[ctx->state->first_op], attach);
+            // }
+            // else{
+            //   SimpleSchedule(sch[op], tensorize_param);
+            // }
+            SimpleSchedule(sch[op], tensorize_param);
+            isFirst = false;
+          }
+          else{
+            sch[op].compute_inline();
+          }
         }
       }
     }
@@ -300,15 +361,26 @@ namespace ditto
       }
       for (size_t i = 0; i < loopOrder.size(); i++)
         unOrderedloopOrder.push_back(std::unordered_map<int, tir::IterVar>());
-
       for (auto idxFactor : tileFactor)
       {
         int idx = idxFactor.first;
+        if (!idx2iv.count(idx)) continue;
         n_level = 0;
         Array<IntImm> factors = idxFactor.second;
         CHECK(factors.size() == loopOrder.size() - 1) << idx2iv[idx];
         for (auto factor : factors)
         {
+          if (idx2iv[idx]->dom.defined() && idx2iv[idx]->dom->extent.defined()){
+            if (const tir::IntImmNode * t =  idx2iv[idx]->dom->extent.as<tir::IntImmNode>()){
+              if (t->value <= factor->value){
+                break;
+              }
+            }
+          }
+          if (factor->value == 1){
+            n_level += 1;
+            continue;
+          }
           tir::IterVar outer, inner;
           s.split(idx2iv[idx], factor, &outer, &inner);
           if (isSpatial_p)
@@ -320,7 +392,6 @@ namespace ditto
           idx2iv[idx] = outer;
           n_level += 1;
         }
-        CHECK(n_level == loopOrder.size() - 1) << "nlevel is " << n_level;
         unOrderedloopOrder[n_level][idx] = idx2iv[idx];
       }
       Array<tir::IterVar> ret;
@@ -328,7 +399,8 @@ namespace ditto
       {
         for (auto idx : loopOrder[level - 1])
         {
-          ret.push_back(unOrderedloopOrder[level - 1][idx]);
+          if (unOrderedloopOrder[level - 1].count(idx))
+            ret.push_back(unOrderedloopOrder[level - 1][idx]);
         }
       }
       if (isSpatial_p)
@@ -439,7 +511,6 @@ namespace ditto
       std::unordered_map<int, tir::IterVar> idx2iv;
       std::unordered_map<int, tir::IterVar> idx2iv_outer;
       Array<tir::IterVar> outerParallel;
-
       Array<tir::IterVar> allIters = ctx->GetAllIters(cur_op);
       for (size_t i = 0; i < allIters.size(); i++)
         idx2iv[i] = allIters[i];
@@ -452,6 +523,10 @@ namespace ditto
         tir::IterVar outer, inner;
         int factor = fusionInfo.secondOpOuterTilingFactors[i];
         tir::IterVar iv = idx2iv[idx];
+        if (const IntImmNode * t = iv->dom->extent.as<tir::IntImmNode>()){
+          if (t->value <= factor)
+            continue;
+        }
         sch[cur_op].split(iv, factor, &outer, &inner);
         idx2iv[idx] = inner;
         idx2iv_outer[idx] = outer;
@@ -460,6 +535,8 @@ namespace ditto
       for (auto idxFactor : fusionInfo.parallelFactor)
       {
         tir::IterVar iv, outer, inner;
+        if (!idx2iv_outer.count(idxFactor.first))
+          continue;
         iv = idx2iv_outer.at(idxFactor.first);
         sch[cur_op].split_by_nparts(iv, idxFactor.second, &outer, &inner);
         outerParallel.push_back(outer);
@@ -474,6 +551,19 @@ namespace ditto
           sch[cur_op], idx2iv_outer, tensorize_param->commonTilingFactor,
           tensorize_param->commonLoopOrder);
       Array<tir::IterVar> tensorizeLoops = ctx->GetTensorizeIters(cur_op);
+      // for (auto kv: idx2iv){
+      //   bool found = false;
+      //   for (auto iv: tensorizeLoops){
+      //     if (kv.second.same_as(iv)){
+      //       found = true;
+      //     }
+          
+      //   }
+      //   if (!found)
+      //     bodyLoops.push_back(kv.second);
+      // }
+      std::cout << "body loops: " << bodyLoops << std::endl;
+      std::cout << "common loops: " << commonLoops << std::endl;
 
       // 3. reorder
       Array<tir::IterVar> loopOrder;
@@ -498,23 +588,27 @@ namespace ditto
 
       // 6. set attach
       if (commonLoops.size())
-        ctx->path_attach_axis = commonLoops[commonLoops.size() - 1];
-      else
-        ctx->path_attach_axis = outerFused;
-      ctx->first_frag_attach_axis = ctx->path_attach_axis;
-      std::cout << "first_frag_attach_axis: " << ctx->path_attach_axis << std::endl;
+        ctx->first_frag_attach_axis = *commonLoops.rbegin();
+      else ctx->first_frag_attach_axis = outerFused;
+      ctx->path_attach_axis = getAttachAxis(sch, cur_op, ctx->InterPathRootOp(), ctx->first_frag_attach_axis, bodyLoops);
       ctx->path_attach_tensor = cur_op;
       ctx->secondOpOuterMostAxis = outerFused;
       return;
     }
+    
 
     void ScheduleInterPath(te::Schedule sch, CPUTensorizeContext ctx,
                            CPUTensorizeParam tensorize_param)
     {
       te::Operation root_op = ctx->InterPathRootOp();
+      
+      CHECK(ctx->path_attach_axis.defined());
+      
+      sch[root_op].compute_at(sch[ctx->state->second_op], ctx->path_attach_axis);
       // sch[root_op].set_scope("shared");
       CHECK(ctx->path_attach_tensor.defined() && ctx->path_attach_axis.defined());
       sch[root_op].compute_at(sch[ctx->path_attach_tensor], ctx->path_attach_axis);
+      std::cout << "path_attach_axis: " << ctx->path_attach_axis << std::endl;
       for (auto op : ctx->InterPathNonRootOps())
       {
         CHECK(ctx->CanInline(op));
@@ -529,20 +623,33 @@ namespace ditto
       te::Operation cur_op = ctx->state->first_op;
       std::unordered_map<int, tir::IterVar> idx2iv;
       size_t idx = 0;
-      for (auto it : ctx->GetAllIters(cur_op))
-      {
+      for (auto it : ctx->GetAllIters(cur_op)){
         idx2iv[idx++] = it;
       }
 
       // 1. compute_at second op
       sch[cur_op].compute_at(sch[ctx->state->second_op],
                              ctx->first_frag_attach_axis);
+      std::cout << "ctx->first_frag_attach_axis: " << ctx->first_frag_attach_axis << std::endl;
       // 2. the body tiling
-      Array<tir::IterVar> bodyLoops =
+      Array<tir::IterVar> bodyLoops = 
           splitAndReorder(sch[cur_op], idx2iv, tensorize_param->firstOpTilingFactor,
                           tensorize_param->firstOpLoopOrder);
+      std::cout << "first op bodyloops: " << bodyLoops << std::endl;
+      // Array<tir::IterVar> bodyLoops;
 
       Array<tir::IterVar> tensorizeLoops = ctx->GetTensorizeIters(cur_op);
+
+      // for (auto it : ctx->GetAllIters(cur_op)){
+      //   bool found = false;
+      //   for (auto tiv: tensorizeLoops){
+      //     if (it.same_as(tiv)){
+      //       found = true;
+      //       break;
+      //     }
+      //   }
+      //   if (!found) bodyLoops.push_back(it);
+      // }
 
       // 3. reorder
       Array<tir::IterVar> loopOrder;
@@ -552,13 +659,13 @@ namespace ditto
         loopOrder.push_back(iv);
 
       sch[cur_op].reorder(loopOrder);
+      std::cout << "first Op LoopOrder: " << loopOrder << std::endl;
 
       // 4. tensorize
       PackedIntrinsic pintrin = ctx->state->tensorize_intrinsics.at(cur_op);
       sch[cur_op].tensorize(tensorizeLoops[0], pintrin->compute_intrinsic);
 
       // 6. set attach
-      ctx->first_prologue_shared_attach_axis = bodyLoops[bodyLoops.size() - 1];
       ctx->firstOpOuterMostAxis = loopOrder[0];
       return;
     }
@@ -584,18 +691,20 @@ namespace ditto
    */
       for (auto op_list : ctx->state->second_op_prologue)
       {
-        bool isFirstOp = false;
+        bool isFirstOp = true;
         for (auto op : op_list)
         {
-          CHECK(ctx->CanInline(op));
-          sch[op].compute_inline();
-          if (!isFirstOp)
-            sch[op].compute_at(sch[ctx->path_attach_tensor], ctx->path_attach_axis);
-          else
+          if (isFirstOp){
+            SimpleSchedule(sch[op], tensorize_param);
+          }
+          else{
+            CHECK(ctx->CanInline(op));
             sch[op].compute_inline();
-          isFirstOp = true;
+          }
+          isFirstOp = false;
         }
       }
+
       /*
    * Schedule inter path
    */
