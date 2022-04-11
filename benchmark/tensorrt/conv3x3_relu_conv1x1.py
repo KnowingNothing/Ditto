@@ -13,6 +13,7 @@ class ConvChain(nn.Module):
 
     def forward(self, x):
         x = self.conv1(x)
+        x = torch.relu(x)
         x = self.conv2(x)
         return x
     
@@ -26,7 +27,7 @@ def export_model(batch, C, H, W, K1, K2, stride1, stride2, dtype):
 
     inputs_torch = [torch.tensor(x).cuda() for x in inputs_np]
     model = ConvChain(C, K1, K2, stride1, stride2).half().cuda()
-    torch.onnx.export(model, args=tuple(inputs_torch), f=f"conv3x3_conv1x1-{batch}-{C}-{H}-{W}-{K1}-{K2}-{stride1}-{stride2}-{dtype}.onnx", verbose=True)
+    torch.onnx.export(model, args=tuple(inputs_torch), f=f"conv3x3_relu_conv1x1-{batch}-{C}-{H}-{W}-{K1}-{K2}-{stride1}-{stride2}-{dtype}.onnx", verbose=True)
 
 def main(batch, C, H, W, K1, K2, stride1, stride2, dtype, only_once=False):
     export_model(batch, C, H, W, K1, K2, stride1, stride2, dtype)
@@ -34,7 +35,7 @@ def main(batch, C, H, W, K1, K2, stride1, stride2, dtype, only_once=False):
     builder = trt.Builder(logger)
     network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
     parser = trt.OnnxParser(network, logger)
-    success = parser.parse_from_file(f"conv3x3_conv1x1-{batch}-{C}-{H}-{W}-{K1}-{K2}-{stride1}-{stride2}-{dtype}.onnx")
+    success = parser.parse_from_file(f"conv3x3_relu_conv1x1-{batch}-{C}-{H}-{W}-{K1}-{K2}-{stride1}-{stride2}-{dtype}.onnx")
     for idx in range(parser.num_errors):
         print(parser.get_error(idx))
 
@@ -91,7 +92,7 @@ def main(batch, C, H, W, K1, K2, stride1, stride2, dtype, only_once=False):
 
 example_text = """
  example:
-    python conv3x3_conv1x1.py --dtype float16 --begin 0 --num 1
+    python conv3x3_relu_conv1x1.py --dtype float16 --begin 0 --num 1
 """
 
 shapes = [

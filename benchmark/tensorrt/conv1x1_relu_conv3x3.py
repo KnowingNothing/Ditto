@@ -8,11 +8,12 @@ import argparse
 class ConvChain(nn.Module):
     def __init__(self, C, K1, K2, stride1, stride2):
         super(ConvChain, self).__init__()
-        self.conv1 = torch.nn.Conv2d(C, K1, 3, stride=stride1, padding=1, bias=False)
-        self.conv2 = torch.nn.Conv2d(K1, K2, 1, stride=stride2, padding=0, bias=False)
+        self.conv1 = torch.nn.Conv2d(C, K1, 1, stride=stride1, padding=0, bias=False)
+        self.conv2 = torch.nn.Conv2d(K1, K2, 3, stride=stride2, padding=1, bias=False)
 
     def forward(self, x):
         x = self.conv1(x)
+        x = torch.relu(x)
         x = self.conv2(x)
         return x
     
@@ -26,7 +27,7 @@ def export_model(batch, C, H, W, K1, K2, stride1, stride2, dtype):
 
     inputs_torch = [torch.tensor(x).cuda() for x in inputs_np]
     model = ConvChain(C, K1, K2, stride1, stride2).half().cuda()
-    torch.onnx.export(model, args=tuple(inputs_torch), f=f"conv3x3_conv1x1-{batch}-{C}-{H}-{W}-{K1}-{K2}-{stride1}-{stride2}-{dtype}.onnx", verbose=True)
+    torch.onnx.export(model, args=tuple(inputs_torch), f=f"conv1x1_relu_conv3x3-{batch}-{C}-{H}-{W}-{K1}-{K2}-{stride1}-{stride2}-{dtype}.onnx", verbose=True)
 
 def main(batch, C, H, W, K1, K2, stride1, stride2, dtype, only_once=False):
     export_model(batch, C, H, W, K1, K2, stride1, stride2, dtype)
@@ -34,7 +35,7 @@ def main(batch, C, H, W, K1, K2, stride1, stride2, dtype, only_once=False):
     builder = trt.Builder(logger)
     network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
     parser = trt.OnnxParser(network, logger)
-    success = parser.parse_from_file(f"conv3x3_conv1x1-{batch}-{C}-{H}-{W}-{K1}-{K2}-{stride1}-{stride2}-{dtype}.onnx")
+    success = parser.parse_from_file(f"conv1x1_relu_conv3x3-{batch}-{C}-{H}-{W}-{K1}-{K2}-{stride1}-{stride2}-{dtype}.onnx")
     for idx in range(parser.num_errors):
         print(parser.get_error(idx))
 
@@ -91,15 +92,11 @@ def main(batch, C, H, W, K1, K2, stride1, stride2, dtype, only_once=False):
 
 example_text = """
  example:
-    python conv3x3_conv1x1.py --dtype float16 --begin 0 --num 1
+    python conv1x1_relu_conv3x3.py --dtype float16 --begin 0 --num 1
 """
 
 shapes = [
-    (64, 112, 112, 192, 128, 2, 1),  # Yolo
-    (32, 147, 147, 64, 80, 2, 1), # Inception-V3
-    (64, 56, 56, 128, 64, 1, 1), # Darknet-19
-    (128, 28, 28, 256, 128, 1, 1), # Darknet-19
-    (16, 227, 227, 64, 16, 4, 1), # Squeezenet-V1.1
+    (64, 56, 56, 64, 64, 1, 1),  # ResNet-50
 ]
 
 if __name__ == "__main__":

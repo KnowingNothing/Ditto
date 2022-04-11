@@ -2,12 +2,11 @@ import os
 
 import numpy as np
 import tvm
-from tvm import te, auto_scheduler
+from tvm import te, auto_scheduler, topi
 import argparse
 from pebble import concurrent
 from concurrent.futures import TimeoutError
 from pebble import ProcessPool, ProcessExpired
-
 
 
 EVALUTE_SCHEDULE_INPUTS = None
@@ -60,54 +59,65 @@ def evaluate_schedule(sch, args, ins, outs, sm):
 
 
 @auto_scheduler.register_workload  # Note the auto_scheduler decorator
-def bmm_softmax_bmm(batch, M, N, K, L, in_dtype, acc_dtype):
-    A = te.placeholder((batch, M, K), name="A", dtype=in_dtype)
-    B = te.placeholder((batch, K, L), name="B", dtype=in_dtype)
-    C = te.placeholder((batch, L, N), name="C", dtype=in_dtype)
+def conv_conv(batch, C, H, W, K1, K2, stride1, stride2, k1, k2, in_dtype, acc_dtype):
+    Img = te.placeholder((batch, C, H, W), name="Img", dtype=in_dtype)
+    W1 = te.placeholder((K1, C, k1, k1), name="W1", dtype=in_dtype)
+    W2 = te.placeholder((K2, K1, k2, k2), name="W2", dtype=in_dtype)
 
-    k = te.reduce_axis((0, K), name="k")
-    D = te.compute(
-        (batch, M, L),
-        lambda b, m, l: te.sum(A[b, m, k].astype(acc_dtype) * B[b, k, l].astype(acc_dtype), axis=k),
-        name="D"
+    conv1 = topi.nn.conv2d_nchw(
+        Img, W1, stride1, k1 // 2, out_dtype=acc_dtype, dilation=1
     )
-    exp = te.compute(
-        (batch, M, L),
-        lambda b, m, l: te.exp(D[b, m, l])
+    cast1 = tvm.te.compute(
+        conv1.shape, lambda *args: conv1(*args).astype(in_dtype), name="cast"
     )
-    rl = te.reduce_axis((0, L), name="rl")
-    sumv = te.compute(
-        (batch, M),
-        lambda b, m: te.sum(exp[b, m, rl], axis=rl)
+    relu = tvm.te.compute(
+        conv1.shape,
+        lambda *args: tvm.tir.if_then_else(
+            cast1(*args) >= tvm.tir.const(0, in_dtype),
+            cast1(*args),
+            tvm.tir.const(0, in_dtype),
+        ),
+        name="relu",
     )
-    softmax = te.compute(
-        (batch, M, L),
-        lambda b, m, l: (exp[b, m, l] / sumv[b, m]).astype(in_dtype)
+    conv2 = topi.nn.conv2d_nchw(
+        relu, W2, stride2, k2 // 2, out_dtype=acc_dtype, dilation=1
     )
-    rrl = te.reduce_axis((0, L), name="rrl")
-    E = te.compute(
-        (batch, M, N),
-        lambda b, m, n: te.sum(softmax[b, m, rrl].astype(acc_dtype) * C[b, rrl, n].astype(acc_dtype), axis=rrl),
-        name="E"
-    )
-    
-    out = te.compute(
-        (batch, M, N),
-        lambda b, m, n: E[b, m, n].astype(in_dtype),
-        name="out"
+    cast2 = tvm.te.compute(
+        conv2.shape, lambda *args: conv2(*args).astype(in_dtype), name="cast"
     )
 
-    return [A, B, C, out]
+    return [Img, W1, W2, cast2]
 
-def main(batch, M, N, K, L, in_dtype, acc_dtype, sm="70", only_once=False, test=False):
+
+def main(
+    batch,
+    C,
+    H,
+    W,
+    K1,
+    K2,
+    stride1,
+    stride2,
+    k1,
+    k2,
+    in_dtype,
+    acc_dtype,
+    sm="70",
+    only_once=False,
+    test=False,
+):
     target = tvm.target.Target(f"cuda -arch=sm_{sm}")
-    task = tvm.auto_scheduler.SearchTask(func=bmm_softmax_bmm, args=(batch, M, N, K, L, in_dtype, acc_dtype), target=target)
+    task = tvm.auto_scheduler.SearchTask(
+        func=conv_conv,
+        args=(batch, C, H, W, K1, K2, stride1, stride2, k1, k2, in_dtype, acc_dtype),
+        target=target,
+    )
 
     # # Inspect the computational graph
     # print("Computational DAG:")
     # print(task.compute_dag)
 
-    log_file = f"bmm_softmax_bmm_{batch}-{M}-{N}-{K}-{L}-{in_dtype}-{acc_dtype}.json"
+    log_file = f"conv_relu_conv_{batch}-{C}-{H}-{W}-{K1}-{K2}-{stride1}-{stride2}-{k1}-{k2}-{in_dtype}-{acc_dtype}.json"
     tune_option = auto_scheduler.TuningOptions(
         num_measure_trials=1000,
         measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
@@ -126,10 +136,10 @@ def main(batch, M, N, K, L, in_dtype, acc_dtype, sm="70", only_once=False, test=
 
     if only_once:
         func = tvm.build(sch, args, target)
-        a_np = np.random.uniform(size=(batch, M, K)).astype(in_dtype)
-        b_np = np.random.uniform(size=(batch, K, L)).astype(in_dtype)
-        c_np = np.random.uniform(size=(batch, L, N)).astype(in_dtype)
-        out_np = np.random.uniform(size=(batch, M, N)).astype(in_dtype)
+        a_np = np.random.uniform(size=[int(x) for x in A.shape]).astype(in_dtype)
+        b_np = np.random.uniform(size=[int(x) for x in B.shape]).astype(in_dtype)
+        c_np = np.random.uniform(size=[int(x) for x in C.shape]).astype(in_dtype)
+        out_np = np.random.uniform(size=[int(x) for x in out.shape]).astype(in_dtype)
         dev = tvm.cuda()
         a_tvm = tvm.nd.array(a_np, device=dev)
         b_tvm = tvm.nd.array(b_np, device=dev)
@@ -140,10 +150,10 @@ def main(batch, M, N, K, L, in_dtype, acc_dtype, sm="70", only_once=False, test=
     else:
         # cost = evaluate_schedule(sch, args, [A, B, C], [out], sm)
         func = tvm.build(sch, args, target)
-        a_np = np.random.uniform(size=(batch, M, K)).astype(in_dtype)
-        b_np = np.random.uniform(size=(batch, K, L)).astype(in_dtype)
-        c_np = np.random.uniform(size=(batch, L, N)).astype(in_dtype)
-        out_np = np.random.uniform(size=(batch, M, N)).astype(in_dtype)
+        a_np = np.random.uniform(size=[int(x) for x in A.shape]).astype(in_dtype)
+        b_np = np.random.uniform(size=[int(x) for x in B.shape]).astype(in_dtype)
+        c_np = np.random.uniform(size=[int(x) for x in C.shape]).astype(in_dtype)
+        out_np = np.random.uniform(size=[int(x) for x in out.shape]).astype(in_dtype)
         dev = tvm.cuda()
         a_tvm = tvm.nd.array(a_np, device=dev)
         b_tvm = tvm.nd.array(b_np, device=dev)
@@ -156,8 +166,9 @@ def main(batch, M, N, K, L, in_dtype, acc_dtype, sm="70", only_once=False, test=
 
 example_text = """
  example:
-    python bmm_softmax_bmm_ansor.py --in_dtype float16 --acc_dtype float32 --begin 0 --num 1 --sm 80
+    python conv_relu_conv_ansor.py --in_dtype float16 --acc_dtype float32 --begin 0 --num 1 --sm 80
 """
+
 
 def ceil(x, y):
     return (x + y - 1) // y
@@ -166,20 +177,17 @@ def ceil(x, y):
 def uround(x, y):
     return int(ceil(x, y) * y)
 
+
 shapes = [
-    # (batch, M, N, K, L)
-    (8, 512, 512 // 8, 512 // 8, 512),  # Bert-Small
-    (12, 512, 768 // 12, 768 // 12, 512),  # Bert-Base
-    (16, 512, 1024 // 16, 1024 // 16, 512),  # Bert-Large
-    (12, 256, 768 // 12, 768 // 12, 256),  # ViT-Base/14
-    (16, 256, 1024 // 16, 1024 // 16, 256),  # ViT-Large/14
-    (16, 256, 1280 // 16, 1280 // 16, 256),  # ViT-Huge/14
-    (12, uround(196, 16), 768 // 12, 768 // 12, uround(196, 16)),  # ViT-Base/16
-    (16, uround(196, 16), 1024 // 16, 1024 // 16, uround(196, 16)),  # ViT-Large/16
-    (16, uround(196, 16), 1280 // 16, 1280 // 16, uround(196, 16)),  # ViT-Huge/16
-    (1, 512, uround(49, 16), uround(49, 16), 256),  # Mixer-Small/32-S
-    (1, 768, uround(49, 16), uround(49, 16), 384),  # Mixer-Base/32-S
-    (1, 1024, uround(49, 16), uround(49, 16), 512),  # Mixer-Large/32-S
+    # C, H, W, K1, K2, st1, st2, k1, k2
+    (64, 112, 112, 192, 128, 2, 1, 3, 1),  # Yolo
+    (32, 147, 147, 64, 80, 2, 1, 3, 1),  # Inception-V3
+    (64, 56, 56, 128, 64, 1, 1, 3, 1),  # Darknet-19
+    (128, 28, 28, 256, 128, 1, 1, 3, 1),  # Darknet-19
+    (16, 227, 227, 64, 16, 4, 1, 3, 1),  # Squeezenet-V1.1
+    (64, 56, 56, 64, 64, 1, 1, 1, 3),  # ResNet-50
+    (64, 56, 56, 64, 64, 1, 1, 1, 1),  # modified ResNet-50
+    (256, 56, 56, 256, 64, 1, 1, 1, 1),  # modified ResNet-50
 ]
 
 if __name__ == "__main__":
@@ -215,28 +223,36 @@ if __name__ == "__main__":
         choices=["70", "80", "86"],
         default="70",
     )
+    parser.add_argument("--batch", type=int, default=1)
 
     args = parser.parse_args()
 
     costs = []
     for ss in shapes[args.begin : args.begin + args.num]:
-        B, M, N, K, L = ss
+        C, H, W, K1, K2, stride1, stride2, k1, k2 = ss
         cost = main(
-            batch=B,
-            M=M,
-            N=N,
-            K=K,
-            L=L,
+            args.batch,
+            C,
+            H,
+            W,
+            K1,
+            K2,
+            stride1,
+            stride2,
+            k1,
+            k2,
             in_dtype=args.in_dtype,
             acc_dtype=args.acc_dtype,
             sm=args.sm,
             only_once=args.only_once,
-            test=args.test
+            test=args.test,
         )
         costs.append((ss, cost))
 
-    print("B,M,N,K,L,in_dtype,acc_dtype,sm,cost")
+    print("batch,C,H,W,K1,K2,stride1,stride2,k1,k2,in_dtype,acc_dtype,cost")
     for cc in costs:
         print(
-            f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.in_dtype},{args.acc_dtype},{args.sm},{cc[1]}"
+            f"{args.batch},"
+            + ",".join(map(str, cc[0]))
+            + f",{args.in_dtype},{args.acc_dtype},{cc[1]}"
         )

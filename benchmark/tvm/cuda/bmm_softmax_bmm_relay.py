@@ -69,18 +69,30 @@ def main(B, M, N, K, L, in_dtype, acc_dtype, only_once):
 
 example_text = """
  example:
-    python bmm_softmax_bmm_cuda.py --in_dtype float16 --acc_dtype float32 --begin 0 --num 1
+    python bmm_softmax_bmm_relay.py --in_dtype float16 --acc_dtype float16 --begin 0 --num 1
 """
 
+def ceil(x, y):
+    return (x + y - 1) // y
+
+
+def uround(x, y):
+    return int(ceil(x, y) * y)
+
 shapes = [
-    [1, 64, 114, 112, 192, 3, 3, 128, 1, 1, 1, 0, 1, 1],
-    [1, 32, 147, 148, 64, 3, 3, 96, 1, 1, 1, 0, 1, 1], # modify
-    [1, 64, 57, 56, 128, 3, 3, 64, 1, 1, 1, 0, 1, 1],
-    [1, 128, 27, 28, 256, 3, 3, 128, 1, 1, 1, 0, 1, 1],
-    [1, 16, 228, 227, 64, 3, 3, 32, 1, 1, 0, 1, 1], # modify
-    [1, 64, 57, 56, 64, 1, 1, 64, 3, 3, 0, 1, 1, 1],
-    [1, 64, 57, 56, 64, 1, 1, 64, 1, 1, 0, 0, 1, 1],
-    [1, 256, 57, 56, 256, 1, 1, 64, 1, 1, 0, 0, 1, 1]
+    # (batch, M, N, K, L)
+    (8, 512, 512 // 8, 512 // 8, 512),  # Bert-Small
+    (12, 512, 768 // 12, 768 // 12, 512),  # Bert-Base
+    (16, 512, 1024 // 16, 1024 // 16, 512),  # Bert-Large
+    (12, 256, 768 // 12, 768 // 12, 256),  # ViT-Base/14
+    (16, 256, 1024 // 16, 1024 // 16, 256),  # ViT-Large/14
+    (16, 256, 1280 // 16, 1280 // 16, 256),  # ViT-Huge/14
+    (12, uround(196, 16), 768 // 12, 768 // 12, uround(196, 16)),  # ViT-Base/16
+    (16, uround(196, 16), 1024 // 16, 1024 // 16, uround(196, 16)),  # ViT-Large/16
+    (16, uround(196, 16), 1280 // 16, 1280 // 16, uround(196, 16)),  # ViT-Huge/16
+    (1, 512, uround(49, 16), uround(49, 16), 256),  # Mixer-Small/32-S
+    (1, 768, uround(49, 16), uround(49, 16), 384),  # Mixer-Base/32-S
+    (1, 1024, uround(49, 16), uround(49, 16), 512),  # Mixer-Large/32-S
 ]
 
 if __name__ == "__main__":

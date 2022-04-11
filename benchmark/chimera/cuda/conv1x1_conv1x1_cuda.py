@@ -59,109 +59,142 @@ def evaluate_schedule(sch, args, ins, outs):
                 # print(".T", end="", flush=True)
                 results = 1e10
             except Exception as error:
-                # print(error)
-                # print(".E", end="", flush=True)
+                print(error)
+                print(".E", end="", flush=True)
                 results = 1e10
 
         return results
 
 
-def BatchGemmGemm(
-    batch=12, M=512, N=64, K=64, L=512, in_dtype="float16", acc_dtype="float32"
+def ceil(x, y):
+    return (x + y - 1) // y
+
+
+def uround(x, y):
+    return int(ceil(x, y) * y)
+
+
+def Conv1x1Conv1x1(
+    batch,
+    in_channel,
+    H,
+    W,
+    out_channel1,
+    out_channel2,
+    stride1=1,
+    stride2=1,
+    in_dtype="float16",
+    acc_dtype="float32",
 ):
-    assert M % MI == 0, f"M={M}"
-    assert N % NI == 0, f"N={N}"
-    assert K % KI == 0, f"K={K}"
-    assert L % NI == 0, f"L={L}"
-    assert L % KI == 0, f"L={L}"
-    # def upper_round(x, b):
-    #     return (x + b - 1) // b * b
+    assert stride2 == 1
+    P1 = H // stride1
+    Q1 = uround(W // stride1, MI)
+    P2 = P1
+    Q2 = Q1
+    assert in_channel % KI == 0
+    assert out_channel1 % NI == 0
+    assert out_channel1 % KI == 0
+    assert out_channel2 % NI == 0
+    assert out_channel2 % KI == 0
+    # assume after padding
+    Img = tvm.te.placeholder([batch, in_channel//KI, H, W, KI], name="Img", dtype=in_dtype)
+    # assume after padding
+    W1 = tvm.te.placeholder(
+        [in_channel//KI, out_channel1//NI, KI, NI], name="W1", dtype=in_dtype
+    )
+    W2 = tvm.te.placeholder([out_channel1 // KI,  out_channel2 // NI, KI, NI], name="W2", dtype=in_dtype)
 
-    # M = upper_round(M, MI)
-    # N = upper_round(N, NI)
-    # K = upper_round(K, KI)
-    # L = upper_round(L, NI)
-    # L = upper_round(L, KI)
-
-    A = tvm.te.placeholder([batch, M, K], name="A", dtype=in_dtype)
-    B = tvm.te.placeholder([batch, K, L], name="B", dtype=in_dtype)
-    C = tvm.te.placeholder([batch, L, N], name="C", dtype=in_dtype)
-
-    A_shared = tvm.te.compute(
-        [batch, M // MI, K // KI, MI, KI],
-        lambda b, mo, ko, mi, ki: A[b, mo * MI + mi, ko * KI + ki],
-        name="A_shared",
+    Img_shared = tvm.te.compute(
+        [batch, in_channel//KI, P1, Q1//MI, MI, KI],
+        lambda b, ko, p, mo, mi, ki:
+            Img[
+                b,
+                ko,
+                p * stride1,
+                (mo * MI + mi) % Q1 * stride2,
+                ki
+            ],
+        name="Img_shared",
     )
 
-    B_shared = tvm.te.compute(
-        [batch, K // KI, L // NI, KI, NI],
-        lambda b, ko, lo, ki, li: B[b, ko * KI + ki, lo * NI + li],
-        name="B_shared",
+    W1_shared = tvm.te.compute(
+        [in_channel//KI, out_channel1//NI, KI, NI],
+        lambda ko, lo, ki, li: W1[ko, lo, ki, li],
+        name="W1_shared",
     )
 
-    rko = tvm.te.reduce_axis([0, K // KI], "rko")
+    rko = tvm.te.reduce_axis([0, in_channel // KI], "rko")
     rki = tvm.te.reduce_axis([0, KI], "rki")
-    D_frag = tvm.te.compute(
-        [batch, M // MI, L // NI, MI, NI],
-        lambda b, mo, lo, mi, li: tvm.te.sum(
-            A_shared[b, mo, rko, mi, rki].astype(acc_dtype)
-            * B_shared[b, rko, lo, rki, li].astype(acc_dtype),
+    Conv1_frag = tvm.te.compute(
+        [batch, out_channel1//NI, P1, Q1//MI, MI, NI],
+        lambda b, lo, p, mo, mi, li: tvm.te.sum(
+            Img_shared[b, rko, p, mo, mi, rki].astype(acc_dtype)
+            * W1_shared[rko, lo, rki, li].astype(acc_dtype),
             axis=[rko, rki],
         ),
-        name="D_frag",
+        name="Conv1_frag",
     )
 
     cast = tvm.te.compute(
-        [batch, M // MI, L // NI, MI, NI],
-        lambda b, mo, lo, mi, li: D_frag[b, mo, lo, mi, li].astype(in_dtype),
+        [batch, out_channel1//NI, P1, Q1//MI, MI, NI],
+        lambda b, lo, p, mo, mi, li: Conv1_frag[b, lo, p, mo, mi, li].astype(in_dtype),
         name="cast",
     )
 
-    # ext_N = 2 ** math.ceil(math.log2(N // NI + 1)) * NI
-    C_ext = tvm.te.compute(
-        [batch, L // KI, N // NI, KI, NI],
-        lambda b, lo, no, li, ni: tvm.tir.if_then_else(
-            no * NI + ni < N,
-            C[b, lo * NI + li, no * NI + ni],
-            tvm.tir.const(0, in_dtype),
-        ),
-        name="C_ext",
+    W2_shared = tvm.te.compute(
+        [out_channel1 // KI,  out_channel2 // NI, KI, NI],
+        lambda lo, no, li, ni: W2[lo, no, li, ni],
+        name="W2_shared",
     )
 
-    rlo = tvm.te.reduce_axis([0, L // KI], "rlo")
+    rlo = tvm.te.reduce_axis([0, out_channel2 // KI], "rlo")
     rli = tvm.te.reduce_axis([0, KI], "rli")
-    E_frag = tvm.te.compute(
-        [batch, M // MI, N // NI, MI, NI],
-        lambda b, mo, no, mi, ni: tvm.te.sum(
-            cast[b, mo, rlo, mi, rli].astype(acc_dtype)
-            * C_ext[b, rlo, no, rli, ni].astype(acc_dtype),
+    Conv2_frag = tvm.te.compute(
+        [batch, out_channel2//NI, P2, Q2//MI, MI, NI],
+        lambda b, no, p, mo, mi, ni: tvm.te.sum(
+            cast[b, rlo, p, mo, mi, rli].astype(acc_dtype)
+            * W2_shared[rlo, no, rli, ni].astype(acc_dtype),
             axis=[rlo, rli],
         ),
-        name="E_frag",
+        name="Conv2_frag",
     )
 
-    F = tvm.te.compute(
-        [batch, M, N],
-        lambda b, m, n: E_frag[b, m // MI, n // NI, m % MI, n % NI].astype(in_dtype),
-        name="F",
+    Out = tvm.te.compute(
+        [batch, out_channel2//NI, P2, Q2, NI],
+        lambda b, no, p, q, ni: Conv2_frag[
+            b, no, p, q//NI, q%NI, ni
+        ].astype(in_dtype),
+        name="Out",
     )
 
-    return [A, B, C], [F]
+    return [Img, W1, W2], [Out]
 
 
 def main(
-    batch=12,
-    M=512,
-    N=64,
-    K=64,
-    L=512,
+    batch,
+    in_channel,
+    H,
+    W,
+    out_channel1,
+    out_channel2,
+    stride1=1,
+    stride2=1,
     in_dtype="float16",
     acc_dtype="float32",
     sm="70",
     only_once=False,
 ):
-    ins, outs = BatchGemmGemm(
-        batch=batch, M=M, N=N, K=K, L=L, in_dtype=in_dtype, acc_dtype=acc_dtype
+    ins, outs = Conv1x1Conv1x1(
+        batch,
+        in_channel,
+        H,
+        W,
+        out_channel1,
+        out_channel2,
+        stride1=stride1,
+        stride2=stride2,
+        in_dtype=in_dtype,
+        acc_dtype=acc_dtype,
     )
     A, B, C = ins
     (F,) = outs
@@ -171,9 +204,9 @@ def main(
     D_frag = cast.op.input_tensors[0]
     A_shared, B_shared = D_frag.op.input_tensors
 
-    b, m, n, mi, ni = E_frag.op.axis
+    b, no, p, mo, mi, ni = E_frag.op.axis
     rlo, rli = E_frag.op.reduce_axis
-    fuse_choice = at.fusion_choice(D_frag.op, E_frag.op, [b, m, n, rlo, mi, ni, rli], 3)
+    fuse_choice = at.fusion_choice(D_frag.op, E_frag.op, [b, no, p, mo, rlo, mi, ni, rli], 4)
 
     first_packed = at.cuda_wmma(
         M=MI, N=NI, K=KI, in_dtype=in_dtype, out_dtype=acc_dtype, scope="shared"
@@ -183,9 +216,9 @@ def main(
         D_frag, first_packed, ["InnerMost", "SameRange"]
     )
 
-    choice = first_match_info_choices[0]
+    first_choice = first_match_info_choices[0]
 
-    first_match_info = at.match_info(choice, first_packed)
+    first_match_info = at.match_info(first_choice, first_packed)
 
     second_packed = at.cuda_wmma(
         M=MI, N=NI, K=KI, in_dtype=in_dtype, out_dtype=acc_dtype, scope="global"
@@ -195,9 +228,9 @@ def main(
         E_frag, second_packed, ["InnerMost", "SameRange"]
     )
 
-    choice = second_match_info_choices[0]
+    second_choice = second_match_info_choices[0]
 
-    second_match_info = at.match_info(choice, second_packed)
+    second_match_info = at.match_info(second_choice, second_packed)
 
     layer = ac.layer([F.op], inputs=[A, B, C])
     tensorize_state = at.tensorize_hyper_fusion_state(
@@ -212,35 +245,21 @@ def main(
         device = hw.query_hw_param("gpu.cuda.RTX3090")
     else:
         raise RuntimeError(f"SM_{sm} is not supported.")
+    
 
-    if N > 64:
-        tensorize_param = at.cuda_tensorize_param(
-            warp_size=32,
-            ty_size=4,
-            tz_size=2,
-            input_vector_len=4,
-            serial_y=2,
-            serial_z=1,
-            block_rx=8,
-            warp_rx=4,
-            block_ry=1,
-            warp_ry=4,
-            unroll_steps=512,
-        )
-    else:
-        tensorize_param = at.cuda_tensorize_param(
-            warp_size=32,
-            ty_size=2,
-            tz_size=2,
-            input_vector_len=8,
-            serial_y=2,
-            serial_z=1,
-            block_rx=8,
-            warp_rx=8,
-            block_ry=4,
-            warp_ry=4,
-            unroll_steps=64,
-        )
+    tensorize_param = at.cuda_tensorize_param(
+        warp_size=32,
+        ty_size=2,
+        tz_size=2,
+        input_vector_len=8,
+        serial_y=1,
+        serial_z=1,
+        block_rx=1,
+        warp_rx=2,
+        block_ry=1,
+        warp_ry=2,
+        unroll_steps=512,
+    )
 
     sch = at.tensorize_cuda(layer, tensorize_state, device, tensorize_param)
     if only_once:
@@ -289,37 +308,19 @@ supported_dtypes = set(
 
 example_text = """
  example:
-    python bmm_bmm_cuda.py --in_dtype float16 --acc_dtype float32 --begin 0 --num 1
+    python conv1x1_conv1x1_cuda.py --in_dtype float16 --acc_dtype float16 --begin 0 --num 1
 """
 
 
-def ceil(x, y):
-    return (x + y - 1) // y
-
-
-def uround(x, y):
-    return int(ceil(x, y) * y)
-
-
 shapes = [
-    # (batch, M, N, K, L)
-    (8, 512, 512 // 8, 512 // 8, 512),  # Bert-Small
-    (12, 512, 768 // 12, 768 // 12, 512),  # Bert-Base
-    (16, 512, 1024 // 16, 1024 // 16, 512),  # Bert-Large
-    (12, 256, 768 // 12, 768 // 12, 256),  # ViT-Base/14
-    (16, 256, 1024 // 16, 1024 // 16, 256),  # ViT-Large/14
-    (16, 256, 1280 // 16, 1280 // 16, 256),  # ViT-Huge/14
-    (12, uround(196, 16), 768 // 12, 768 // 12, uround(196, 16)),  # ViT-Base/16
-    (16, uround(196, 16), 1024 // 16, 1024 // 16, uround(196, 16)),  # ViT-Large/16
-    (16, uround(196, 16), 1280 // 16, 1280 // 16, uround(196, 16)),  # ViT-Huge/16
-    (1, 512, uround(49, 16), uround(49, 16), 256),  # Mixer-Small/32-S
-    (1, 768, uround(49, 16), uround(49, 16), 384),  # Mixer-Base/32-S
-    (1, 1024, uround(49, 16), uround(49, 16), 512),  # Mixer-Large/32-S
+    (64, 56, 56, 64, 64, 1, 1),  # modified ResNet-50
+    (256, 56, 56, 256, 64, 1, 1), # modified ResNet-50
 ]
 
 
-def cal_ai(B, M, N, K, L):
-    return (M * L / (M + L)), (M * N / (M + N))
+def cal_ai(batch, C, H, W, K1, K2, stride1, stride2):
+    return (batch*(H//stride1)*(W//stride1)*K1/(batch*(H//stride1)*(W//stride1)+K1),
+            batch*(H//stride1//stride2)*(W//stride1//stride2)*K2/(batch*(H//stride1//stride2)*(W//stride1//stride2)+K2))
 
 
 if __name__ == "__main__":
@@ -348,6 +349,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
+    parser.add_argument("--batch", type=int, default=1)
     parser.add_argument(
         "--sm",
         type=str,
@@ -365,19 +367,22 @@ if __name__ == "__main__":
 
     if args.ai:
         for ss in shapes[args.begin : args.begin + args.num]:
-            B, M, N, K, L = ss
-            ai1, ai2 = cal_ai(B, M, N, K, L)
+            C, H, W, K1, K2, stride1, stride2 = ss
+            ai1, ai2 = cal_ai(args.batch, C, H, W, K1, K2, stride1, stride2)
             print(ss, ai1, ai2)
     else:
         costs = []
         for ss in shapes[args.begin : args.begin + args.num]:
-            B, M, N, K, L = ss
+            C, H, W, K1, K2, stride1, stride2 = ss
             cost = main(
-                batch=B,
-                M=M,
-                N=N,
-                K=K,
-                L=L,
+                args.batch,
+                C,
+                H,
+                W,
+                K1,
+                K2,
+                stride1=stride1,
+                stride2=stride2,
                 in_dtype=args.in_dtype,
                 acc_dtype=args.acc_dtype,
                 sm=args.sm,
@@ -385,10 +390,12 @@ if __name__ == "__main__":
             )
             costs.append((ss, cost))
 
-        print("B,M,N,K,L,in_dtype,acc_dtype,sm,cost")
+        print("batch,C,H,W,K1,K2,stride1,stride2,in_dtype,acc_dtype,sm,cost")
         for cc in costs:
             print(
-                f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.in_dtype},{args.acc_dtype},{args.sm},{cc[1]}"
+                f"{args.batch},"
+                + ",".join(map(str, cc[0]))
+                + f",{args.in_dtype},{args.acc_dtype},{args.sm},{cc[1]}"
             )
         for cc in costs:
             print(cc[1])
