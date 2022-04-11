@@ -274,15 +274,21 @@ def cuda_wmma(
 def gemm_impl(shape, isa, dtype, prefix):
     assert len(shape) == 3
     MI, NI, KI = shape
-    assert MI % 6 == 0
+    '''
+    float32
+                MI     NI      KI
+    avx512      6       16      *
+    avx256      6       64/32   *
+    '''
+    assert MI == 6
     if isa == "avx2" and dtype == "float32":
         assert NI == 16
     if isa == "avx512" and dtype == "float32":
-        assert NI == 32
+        assert NI == 32 or NI == 64
     if isa == "avx2" and dtype == "float64":
         assert NI == 8
     if isa == "avx512" and dtype == "float64":
-        assert NI == 16
+        assert NI == 16 or NI == 64
     cc_code = """
         #include <immintrin.h>
         #include <stdio.h>
@@ -408,6 +414,7 @@ def gemm_impl(shape, isa, dtype, prefix):
         MI,
         NI
     )
+
     if isa == "avx2":
         cc_code = cc_code.replace("__regName__", "ymm")
         cc_code = cc_code.replace("__nBytePerReg__", "32")
@@ -426,8 +433,166 @@ def gemm_impl(shape, isa, dtype, prefix):
         cc_code = cc_code.replace("__FMAInst__", "vfmadd231pd")
         cc_code = cc_code.replace("__BDCASTInst__", "vbroadcastsd")
         cc_code = cc_code.replace("__TYPE__", "double")
-    from tvm.contrib import utils, clang
+    if isa == "avx512" and dtype == "float32" and NI == 64:
+        cc_code = '''
+#include <unistd.h>
 
+extern "C" int %s_update(float *C, float *A, float *B, int K_, int N_, int c_stride_)
+{
+    getpid();
+    long long K = K_;
+    long long N = N_;
+    long long c_stride = c_stride_;
+    __asm__(
+        // AT&T syntax: src dst
+        "mov %%[A], %%%%rax;"
+        "mov %%[B], %%%%rbx;"
+        "mov %%[C], %%%%rcx;"
+        "mov %%[K], %%%%rsi;"
+        "mov %%[N], %%%%rdi;"
+
+        "mov %%[c_stride], %%%%rdx;"
+        "xor %%%%r8, %%%%r8;"
+        "vmovups 0(%%%%rcx, %%%%r8, 4), %%%%zmm0;"
+        "vmovups 64(%%%%rcx, %%%%r8, 4), %%%%zmm1;"
+        "vmovups 128(%%%%rcx, %%%%r8, 4), %%%%zmm2;"
+        "vmovups 192(%%%%rcx, %%%%r8, 4), %%%%zmm3;"
+        "add %%%%rdx, %%%%r8;"
+        "vmovups 0(%%%%rcx, %%%%r8, 4), %%%%zmm4;"
+        "vmovups 64(%%%%rcx, %%%%r8, 4), %%%%zmm5;"
+        "vmovups 128(%%%%rcx, %%%%r8, 4), %%%%zmm6;"
+        "vmovups 192(%%%%rcx, %%%%r8, 4), %%%%zmm7;"
+        "add %%%%rdx, %%%%r8;"
+        "vmovups 0(%%%%rcx, %%%%r8, 4), %%%%zmm8;"
+        "vmovups 64(%%%%rcx, %%%%r8, 4), %%%%zmm9;"
+        "vmovups 128(%%%%rcx, %%%%r8, 4), %%%%zmm10;"
+        "vmovups 192(%%%%rcx, %%%%r8, 4), %%%%zmm11;"
+        "add %%%%rdx, %%%%r8;"
+        "vmovups 0(%%%%rcx, %%%%r8, 4), %%%%zmm12;"
+        "vmovups 64(%%%%rcx, %%%%r8, 4), %%%%zmm13;"
+        "vmovups 128(%%%%rcx, %%%%r8, 4), %%%%zmm14;"
+        "vmovups 192(%%%%rcx, %%%%r8, 4), %%%%zmm15;"
+        "add %%%%rdx, %%%%r8;"
+        "vmovups 0(%%%%rcx, %%%%r8, 4), %%%%zmm16;"
+        "vmovups 64(%%%%rcx, %%%%r8, 4), %%%%zmm17;"
+        "vmovups 128(%%%%rcx, %%%%r8, 4), %%%%zmm18;"
+        "vmovups 192(%%%%rcx, %%%%r8, 4), %%%%zmm19;"
+        "add %%%%rdx, %%%%r8;"
+        "vmovups 0(%%%%rcx, %%%%r8, 4), %%%%zmm20;"
+        "vmovups 64(%%%%rcx, %%%%r8, 4), %%%%zmm21;"
+        "vmovups 128(%%%%rcx, %%%%r8, 4), %%%%zmm22;"
+        "vmovups 192(%%%%rcx, %%%%r8, 4), %%%%zmm23;"
+
+        "mov %%[K], %%%%rdx;"
+        "mov $0, %%%%r8;"
+        "lea (%%%%r8, %%%%rdx), %%%%r9;"
+        "lea (%%%%r9, %%%%rdx), %%%%r10;"
+        "lea (%%%%r10, %%%%rdx), %%%%r11;"
+        "lea (%%%%rax, %%%%r11, 4), %%%%r11;"
+
+        "mov $%d, %%%%rdx;"
+        "test %%%%rdx, %%%%rdx;"
+        "jz .store%%=;"
+
+        ".compute%%=:"
+        "vmovups 0(%%%%rbx), %%%%zmm28;"
+        "vmovups 64(%%%%rbx), %%%%zmm29;"
+        "vmovups 128(%%%%rbx), %%%%zmm30;"
+        "vmovups 192(%%%%rbx), %%%%zmm31;"
+        "vbroadcastss 0(%%%%rax, %%%%r8, 4), %%%%zmm25;"
+        "vbroadcastss 0(%%%%rax, %%%%r9, 4), %%%%zmm26;"
+        "vbroadcastss 0(%%%%rax, %%%%r10, 4), %%%%zmm27;"
+        "vfmadd231ps %%%%zmm25, %%%%zmm28, %%%%zmm0;"
+        "vfmadd231ps %%%%zmm25, %%%%zmm29, %%%%zmm1;"
+        "vfmadd231ps %%%%zmm25, %%%%zmm30, %%%%zmm2;"
+        "vfmadd231ps %%%%zmm25, %%%%zmm31, %%%%zmm3;"
+        "vfmadd231ps %%%%zmm26, %%%%zmm28, %%%%zmm4;"
+        "vfmadd231ps %%%%zmm26, %%%%zmm29, %%%%zmm5;"
+        "vfmadd231ps %%%%zmm26, %%%%zmm30, %%%%zmm6;"
+        "vfmadd231ps %%%%zmm26, %%%%zmm31, %%%%zmm7;"
+        "vfmadd231ps %%%%zmm27, %%%%zmm28, %%%%zmm8;"
+        "vfmadd231ps %%%%zmm27, %%%%zmm29, %%%%zmm9;"
+        "vfmadd231ps %%%%zmm27, %%%%zmm30, %%%%zmm10;"
+        "vfmadd231ps %%%%zmm27, %%%%zmm31, %%%%zmm11;"
+
+        "vbroadcastss 0(%%%%r11, %%%%r8, 4), %%%%zmm25;"
+        "vbroadcastss 0(%%%%r11, %%%%r9, 4), %%%%zmm26;"
+        "vbroadcastss 0(%%%%r11, %%%%r10, 4), %%%%zmm27;"
+        "vfmadd231ps %%%%zmm25, %%%%zmm28, %%%%zmm12;"
+        "vfmadd231ps %%%%zmm25, %%%%zmm29, %%%%zmm13;"
+        "vfmadd231ps %%%%zmm25, %%%%zmm30, %%%%zmm14;"
+        "vfmadd231ps %%%%zmm25, %%%%zmm31, %%%%zmm15;"
+        "vfmadd231ps %%%%zmm26, %%%%zmm28, %%%%zmm16;"
+        "vfmadd231ps %%%%zmm26, %%%%zmm29, %%%%zmm17;"
+        "vfmadd231ps %%%%zmm26, %%%%zmm30, %%%%zmm18;"
+        "vfmadd231ps %%%%zmm26, %%%%zmm31, %%%%zmm19;"
+        "vfmadd231ps %%%%zmm27, %%%%zmm28, %%%%zmm20;"
+        "vfmadd231ps %%%%zmm27, %%%%zmm29, %%%%zmm21;"
+        "vfmadd231ps %%%%zmm27, %%%%zmm30, %%%%zmm22;"
+        "vfmadd231ps %%%%zmm27, %%%%zmm31, %%%%zmm23;"
+
+        "lea 4(%%%%rax), %%%%rax;"
+        "lea 4(%%%%r11), %%%%r11;"
+        "lea 0(%%%%rbx, %%%%rdi, 4), %%%%rbx;"
+        "sub $1, %%%%rdx;"
+        "jnz .compute%%=;"
+
+        ".store%%=:"
+        "mov %%[c_stride], %%%%rdx;"
+        "xor %%%%r8, %%%%r8;"
+        "vmovups %%%%zmm0, 0(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm1, 64(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm2, 128(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm3, 192(%%%%rcx, %%%%r8, 4);"
+        "add %%%%rdx, %%%%r8;"
+        "vmovups %%%%zmm4, 0(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm5, 64(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm6, 128(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm7, 192(%%%%rcx, %%%%r8, 4);"
+        "add %%%%rdx, %%%%r8;"
+        "vmovups %%%%zmm8, 0(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm9, 64(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm10, 128(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm11, 192(%%%%rcx, %%%%r8, 4);"
+        "add %%%%rdx, %%%%r8;"
+        "vmovups %%%%zmm12, 0(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm13, 64(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm14, 128(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm15, 192(%%%%rcx, %%%%r8, 4);"
+        "add %%%%rdx, %%%%r8;"
+        "vmovups %%%%zmm16, 0(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm17, 64(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm18, 128(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm19, 192(%%%%rcx, %%%%r8, 4);"
+        "add %%%%rdx, %%%%r8;"
+        "vmovups %%%%zmm20, 0(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm21, 64(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm22, 128(%%%%rcx, %%%%r8, 4);"
+        "vmovups %%%%zmm23, 192(%%%%rcx, %%%%r8, 4);"
+        :
+        : [A] "m"(A),
+          [B] "m"(B),
+          [C] "m"(C),
+          [K] "m"(K),
+          [N] "m"(N),
+          [c_stride] "m"(c_stride)
+        : "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "zmm0", "zmm1", "zmm2", "zmm3", "zmm4", "zmm5", "zmm6", "zmm7", "zmm8", "zmm9", "zmm10", "zmm11", "zmm12", "zmm13", "zmm14", "zmm15", 
+        "zmm16", "zmm17", "zmm18", "zmm19", "zmm20", "zmm21", "zmm22", "zmm23", "zmm24", "zmm25", "zmm26", "zmm27", "zmm28", "zmm29", "zmm30", "zmm31");
+    return 0;
+}
+extern "C" int %s_reset(float *cc, int stride) {
+    #pragma unroll
+    for (int i = 0; i < %d; ++i) 
+        #pragma unroll
+        for (int j = 0; j < %d; ++j) {
+            cc[i*stride+j] = 0.0;
+        }
+    return 0;
+}
+        '''%(prefix, KI, prefix, MI, NI)
+    from tvm.contrib import utils, clang
+    with open("gemm.cc", 'w') as f:
+        f.write(cc_code) 
     temp = utils.tempdir()
     ll_path = temp.relpath("temp.ll")
     # Create LLVM ir from c source code
@@ -512,464 +677,480 @@ def conv_impl(shape, isa, dtype, prefix):
     assert len(shape) == 7
     N, K, H, W, C, R, S = shape
     assert N == 1
-    assert H == 3
-    assert K == 4
+    assert H % 3 == 0
+    assert K % 4 == 0
     assert R == 3
+    assert C == 32 or C == 64 or C == 128
     assert S == 3
     if isa == 'avx512' and dtype == 'float32':
-        assert W == 16
+        assert W % 16 == 0
     if isa == 'avx2' and dtype == 'float32':
-        assert W == 8
+        assert W % 8 == 0
     if isa == 'avx512' and dtype == 'float64':
-        assert W == 8
+        assert W % 8 == 0
     if isa == 'avx2' and dtype == 'float64':
-        assert W == 4
-
+        assert W % 4 == 0
     cc_code = """
-// #include <unistd.h>
-    extern "C" int %sconv_update_avx2(float *In, float *Weight, float *Out, int HW_s_, int W_s_, int C_in_,
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#define KI __KI__
+#define HI __HI__
+#define CI __CI__
+#define WI __WI__
+extern "C" int __prefix__conv_update(__TYPE__ *In, __TYPE__ *Weight, __TYPE__ *Out, int HW_s_, int W_s_,
                                 int HRWS_s_, int WS_s_, int CRS_s_, int RS_s_, int S_s_)
 {
-    // getpid(); // this is a walk around for the problem of incorrect precision; any syscall works
     unsigned long long HW_s = HW_s_;
     unsigned long long W_s = W_s_;
-    unsigned long long C_in = C_in_;
     unsigned long long HRWS_s = HRWS_s_;
     unsigned long long WS_s = WS_s_;
     unsigned long long CRS_s = CRS_s_;
     unsigned long long RS_s = RS_s_;
     unsigned long long S_s = S_s_;
-    __asm__ __volatile__(
-        "mov %%[W], %%%%rax;"
-        "mov %%[HW], %%%%rbx;"
+    getpid();
+    
+    for (int k = 0; k < __K__; k+= KI){
+        for(int h = 0; h < __H__; h += HI){
+             for (int c = 0; c < __C__; c += CI){
+                for (int w = 0; w < __W__; w += WI){
+                    __TYPE__ * Out_ = Out+k * HW_s_ + h * W_s_ + w;
+                    __TYPE__ * In_ = In + c * HRWS_s_ + h * WS_s_ + w;
+                    __TYPE__ * Weight_ = Weight + k *CRS_s_ + c * RS_s_;
+                    __asm__ __volatile__(
+                        "mov %[W], %%rax;"
+                        "mov %[HW], %%rbx;"
 
-        "mov %%[Out], %%%%rdi;" // Out[k * HW]
-        "vmovups (%%%%rdi), %%%%__regName__4;"
-        "mov %%%%rax, %%%%rdx;"
-        "vmovups (%%%%rdi, %%%%rdx, 4), %%%%__regName__5;"
-        "add %%%%rax, %%%%rdx;"
-        "vmovups (%%%%rdi, %%%%rdx, 4), %%%%__regName__6;"
+                        "mov %[Out_], %%rdi;" // Out[k * HW]
+                        "__MOVInst__ (%%rdi), %%__regName__4;"
+                        "mov %%rax, %%rdx;"
+                        "__MOVInst__ (%%rdi, %%rdx, __TypeLen__), %%__regName__5;"
+                        "add %%rax, %%rdx;"
+                        "__MOVInst__ (%%rdi, %%rdx, __TypeLen__), %%__regName__6;"
 
-        "lea (%%%%rdi, %%%% rbx, 4), %%%%rdi;"
-        "vmovups (%%%%rdi), %%%%__regName__7;"
-        "mov %%%%rax, %%%%rdx;"
-        "vmovups (%%%%rdi, %%%%rdx, 4), %%%%__regName__8;"
-        "add %%%%rax, %%%%rdx;"
-        "vmovups (%%%%rdi, %%%%rdx, 4), %%%%__regName__9;"
+                        "lea (%%rdi, %% rbx, __TypeLen__), %%rdi;"
+                        "__MOVInst__ (%%rdi), %%__regName__7;"
+                        "mov %%rax, %%rdx;"
+                        "__MOVInst__ (%%rdi, %%rdx, __TypeLen__), %%__regName__8;"
+                        "add %%rax, %%rdx;"
+                        "__MOVInst__ (%%rdi, %%rdx, __TypeLen__), %%__regName__9;"
 
-        "lea (%%%%rdi, %%%% rbx, 4), %%%%rdi;"
-        "vmovups (%%%%rdi), %%%%__regName__10;"
-        "mov %%%%rax, %%%%rdx;"
-        "vmovups (%%%%rdi, %%%%rdx, 4), %%%%__regName__11;"
-        "add %%%%rax, %%%%rdx;"
-        "vmovups (%%%%rdi, %%%%rdx, 4), %%%%__regName__12;"
+                        "lea (%%rdi, %% rbx, __TypeLen__), %%rdi;"
+                        "__MOVInst__ (%%rdi), %%__regName__10;"
+                        "mov %%rax, %%rdx;"
+                        "__MOVInst__ (%%rdi, %%rdx, __TypeLen__), %%__regName__11;"
+                        "add %%rax, %%rdx;"
+                        "__MOVInst__ (%%rdi, %%rdx, __TypeLen__), %%__regName__12;"
 
-        "lea (%%%%rdi, %%%% rbx, 4), %%%%rdi;"
-        "vmovups (%%%%rdi), %%%%__regName__13;"
-        "mov %%%%rax, %%%%rdx;"
-        "vmovups (%%%%rdi, %%%%rdx, 4), %%%%__regName__14;"
-        "add %%%%rax, %%%%rdx;"
-        "vmovups (%%%%rdi, %%%%rdx, 4), %%%%__regName__15;"
+                        "lea (%%rdi, %% rbx, __TypeLen__), %%rdi;"
+                        "__MOVInst__ (%%rdi), %%__regName__13;"
+                        "mov %%rax, %%rdx;"
+                        "__MOVInst__ (%%rdi, %%rdx, __TypeLen__), %%__regName__14;"
+                        "add %%rax, %%rdx;"
+                        "__MOVInst__ (%%rdi, %%rdx, __TypeLen__), %%__regName__15;"
 
-        // calculation
-        /*
-        for n in [0, 1): "eliminate"
-            for c in [0, C):
-                for r in [0, 3): # unroll
+                        // calculation
+                        /*
+                        for n in [0, 1): "eliminate"
+                            for c in [0, C):
+                                for r in [0, 3): # unroll
 
-                    for s in [0, 3): # unroll
-                        for h in [0, 3):#unroll
-                            __regName___h = In[c*(H+R-1)*(W+S-1)+(h+r)*(W+S-1)+(s)](0:7)
-                        for k in [0, 4):#unroll
-                            __regName___3 = bdcast(Weight[k*CRS+c*RS+r*S+s])
-                            for h in [0, 3): #unroll
-                                fma(__regName___h, __regName___3, __regName___{3k+h+4})
+                                    for s in [0, 3): # unroll
+                                        for h in [0, 3):#unroll
+                                            __regName___h = In[c*(H+R-1)*(W+S-1)+(h+r)*(W+S-1)+(s)](0:7)
+                                        for k in [0, __TypeLen__):#unroll
+                                            __regName___3 = bdcast(Weight[k*CRS+c*RS+r*S+s])
+                                            for h in [0, 3): #unroll
+                                                fma(__regName___h, __regName___3, __regName___{3k+h+__TypeLen__})
 
-        regs:
-            values:
-                In[c*(H+R-1)*(W+S-1)]                           Base_In_c       %%%%rax   1
-                In[c0*(H+R-1)*(W+S-1)+r*(W+S-1)+s]              Base_In         %%%%rbx   0
-                In[c0*(H+R-1)*(W+S-1)+r0*(W+S-1)+s0+h*(W+S-1)]  hWS             %%%%rcx   0
-                Weight[c*RS]                                    Base_Weight_C   %%%%rdx   1
-                Weight[c0*RS+r*S+s]                             Base_Weight     %%%%rdi   0
-                Weight[c0*RS+r0*S+s0+k*CRS]                     kCRS            %%%%rsi   0
-                c                                                               %%%%r13   1
-            strides:
-                HRWS                                                            %%%%r8    1
-                WS                                                              %%%%r9    1
-                CRS                                                             %%%%r10   1
-                RS                                                              %%%%r11   1
-                S                                                               %%%%r12   1
-        */
-        "mov %%[C_in], %%%%r13;"
-        "mov %%[In], %%%%rax;"
-        "mov %%[Weight], %%%%rdx;"
-        "mov %%[HRWS], %%%%r8;"
-        "mov %%[WS], %%%%r9;"
-        "mov %%[CRS], %%%%r10;"
-        "mov %%[RS], %%%%r11;"
-        "mov %%[S], %%%%r12;"
-    ".compute%%=:;"
+                        regs:
+                            values:
+                                In[c*(H+R-1)*(W+S-1)]                           Base_In_c       %%rax   1
+                                In[c0*(H+R-1)*(W+S-1)+r*(W+S-1)+s]              Base_In         %%rbx   0
+                                In[c0*(H+R-1)*(W+S-1)+r0*(W+S-1)+s0+h*(W+S-1)]  hWS             %%rcx   0
+                                Weight[c*RS]                                    Base_Weight_C   %%rdx   1
+                                Weight[c0*RS+r*S+s]                             Base_Weight     %%rdi   0
+                                Weight[c0*RS+r0*S+s0+k*CRS]                     kCRS            %%rsi   0
+                                c                                                               %%r13   1
+                            strides:
+                                HRWS                                                            %%r8    1
+                                WS                                                              %%r9    1
+                                CRS                                                             %%r10   1
+                                RS                                                              %%r11   1
+                                S                                                               %%r12   1
+                        */
+                        "mov $__CI__, %%r13;"
+                        "mov %[In_], %%rax;"
+                        "mov %[Weight_], %%rdx;"
+                        "mov %[HRWS], %%r8;"
+                        "mov %[WS], %%r9;"
+                        "mov %[CRS], %%r10;"
+                        "mov %[RS], %%r11;"
+                        "mov %[S], %%r12;"
+                        ".compute%=:;"
 
-        "mov %%%%rax, %%%%rbx;"
-        "mov %%%%rdx, %%%%rdi;"
+                        "mov %%rax, %%rbx;"
+                        "mov %%rdx, %%rdi;"
 
-        /*cr=0s=0(h)(kh) begin*/
-        "mov %%%%rbx, %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__0;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__1;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__2;"
+                        /*cr=0s=0(h)(kh) begin*/
+                        "mov %%rbx, %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__0;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__1;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__2;"
 
-        "mov %%%%rdi, %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__4;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__5;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__6;"
+                        "mov %%rdi, %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__4;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__5;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__6;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__7;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__8;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__9;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__7;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__8;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__9;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__10;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__11;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__12;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__10;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__11;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__12;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__13;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__14;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__15;"
-        /*cr=0s=0(h)(kh) end*/
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__13;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__14;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__15;"
+                        /*cr=0s=0(h)(kh) end*/
 
-        /*cr=0s=1(h)(kh) begin*/
-        "lea 4(%%%%rbx), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__0;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__1;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__2;"
+                        /*cr=0s=1(h)(kh) begin*/
+                        "lea __TypeLen__(%%rbx), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__0;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__1;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__2;"
 
-        "lea 4(%%%%rdi), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__4;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__5;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__6;"
+                        "lea __TypeLen__(%%rdi), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__4;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__5;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__6;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__7;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__8;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__9;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__7;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__8;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__9;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__10;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__11;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__12;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__10;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__11;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__12;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__13;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__14;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__15;"
-        /*cr=0s=1(h)(kh) end*/
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__13;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__14;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__15;"
+                        /*cr=0s=1(h)(kh) end*/
 
-        /*cr=0s=2(h)(kh) begin*/
-        "lea 8(%%%%rbx), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__0;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__1;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__2;"
+                        /*cr=0s=2(h)(kh) begin*/
+                        "lea __DoubleTypeLen__(%%rbx), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__0;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__1;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__2;"
 
-        "lea 8(%%%%rdi), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__4;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__5;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__6;"
+                        "lea __DoubleTypeLen__(%%rdi), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__4;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__5;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__6;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__7;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__8;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__9;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__7;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__8;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__9;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__10;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__11;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__12;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__10;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__11;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__12;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__13;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__14;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__15;"
-        /*cr=0s=2(h)(kh) end*/
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__13;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__14;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__15;"
+                        /*cr=0s=2(h)(kh) end*/
 
-        /*cr=1s=0(h)(kh) begin*/
-        "lea (%%%%rbx, %%%%r9, 4), %%%%rbx;"
-        "mov %%%%rbx, %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__0;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__1;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__2;"
+                        /*cr=1s=0(h)(kh) begin*/
+                        "lea (%%rbx, %%r9, __TypeLen__), %%rbx;"
+                        "mov %%rbx, %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__0;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__1;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__2;"
 
-        "lea (%%%%rdi, %%%%r12, 4), %%%%rdi;"
-        "mov %%%%rdi, %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__4;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__5;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__6;"
+                        "lea (%%rdi, %%r12, __TypeLen__), %%rdi;"
+                        "mov %%rdi, %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__4;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__5;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__6;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__7;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__8;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__9;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__7;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__8;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__9;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__10;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__11;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__12;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__10;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__11;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__12;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__13;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__14;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__15;"
-        /*cr=1s=0(h)(kh) end*/
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__13;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__14;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__15;"
+                        /*cr=1s=0(h)(kh) end*/
 
-        /*cr=1s=1(h)(kh) begin*/
-        "lea 4(%%%%rbx), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__0;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__1;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__2;"
+                        /*cr=1s=1(h)(kh) begin*/
+                        "lea __TypeLen__(%%rbx), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__0;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__1;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__2;"
 
-        "lea 4(%%%%rdi), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__4;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__5;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__6;"
+                        "lea __TypeLen__(%%rdi), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__4;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__5;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__6;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__7;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__8;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__9;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__7;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__8;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__9;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__10;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__11;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__12;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__10;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__11;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__12;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__13;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__14;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__15;"
-        /*cr=1s=1(h)(kh) end*/
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__13;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__14;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__15;"
+                        /*cr=1s=1(h)(kh) end*/
 
-        /*cr=1s=2(h)(kh) begin*/
-        "lea 8(%%%%rbx), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__0;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__1;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__2;"
+                        /*cr=1s=2(h)(kh) begin*/
+                        "lea __DoubleTypeLen__(%%rbx), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__0;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__1;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__2;"
 
-        "lea 8(%%%%rdi), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__4;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__5;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__6;"
+                        "lea __DoubleTypeLen__(%%rdi), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__4;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__5;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__6;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__7;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__8;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__9;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__7;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__8;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__9;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__10;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__11;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__12;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__10;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__11;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__12;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__13;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__14;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__15;"
-        /*cr=1s=2(h)(kh) end*/
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__13;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__14;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__15;"
+                        /*cr=1s=2(h)(kh) end*/
 
-        /*cr=2s=0(h)(kh) begin*/
-        "lea (%%%%rbx, %%%%r9, 4), %%%%rbx;"
-        "mov %%%%rbx, %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__0;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__1;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__2;"
+                        /*cr=2s=0(h)(kh) begin*/
+                        "lea (%%rbx, %%r9, __TypeLen__), %%rbx;"
+                        "mov %%rbx, %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__0;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__1;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__2;"
 
-        "lea (%%%%rdi, %%%%r12, 4), %%%%rdi;"
-        "mov %%%%rdi, %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__4;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__5;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__6;"
+                        "lea (%%rdi, %%r12, __TypeLen__), %%rdi;"
+                        "mov %%rdi, %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__4;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__5;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__6;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__7;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__8;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__9;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__7;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__8;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__9;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__10;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__11;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__12;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__10;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__11;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__12;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__13;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__14;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__15;"
-        /*cr=0s=0(h)(kh) end*/
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__13;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__14;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__15;"
+                        /*cr=0s=0(h)(kh) end*/
 
-        /*cr=2s=1(h)(kh) begin*/
-        "lea 4(%%%%rbx), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__0;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__1;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__2;"
+                        /*cr=2s=1(h)(kh) begin*/
+                        "lea __TypeLen__(%%rbx), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__0;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__1;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__2;"
 
-        "lea 4(%%%%rdi), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__4;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__5;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__6;"
+                        "lea __TypeLen__(%%rdi), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__4;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__5;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__6;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__7;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__8;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__9;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__7;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__8;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__9;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__10;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__11;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__12;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__10;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__11;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__12;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__13;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__14;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__15;"
-        /*cr=0s=1(h)(kh) end*/
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__13;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__14;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__15;"
+                        /*cr=0s=1(h)(kh) end*/
 
-        /*cr=2s=2(h)(kh) begin*/
-        "lea 8(%%%%rbx), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__0;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__1;"
-        "lea (%%%%rcx, %%%%r9, 4), %%%%rcx;"
-        "vmovups (%%%%rcx), %%%%__regName__2;"
+                        /*cr=2s=2(h)(kh) begin*/
+                        "lea __DoubleTypeLen__(%%rbx), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__0;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__1;"
+                        "lea (%%rcx, %%r9, __TypeLen__), %%rcx;"
+                        "__MOVInst__ (%%rcx), %%__regName__2;"
 
-        "lea 8(%%%%rdi), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__4;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__5;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__6;"
+                        "lea __DoubleTypeLen__(%%rdi), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__4;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__5;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__6;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__7;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__8;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__9;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__7;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__8;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__9;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__10;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__11;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__12;"
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__10;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__11;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__12;"
 
-        "lea (%%%%rsi, %%%%r10, 4), %%%%rsi;"
-        "vbroadcastss (%%%%rsi), %%%%__regName__3;"
-        "vfmadd231ps %%%%__regName__0, %%%%__regName__3, %%%%__regName__13;"
-        "vfmadd231ps %%%%__regName__1, %%%%__regName__3, %%%%__regName__14;"
-        "vfmadd231ps %%%%__regName__2, %%%%__regName__3, %%%%__regName__15;"
-        /*cr=0s=2(h)(kh) end*/
+                        "lea (%%rsi, %%r10, __TypeLen__), %%rsi;"
+                        "__BDCASTInst__ (%%rsi), %%__regName__3;"
+                        "__FMAInst__ %%__regName__0, %%__regName__3, %%__regName__13;"
+                        "__FMAInst__ %%__regName__1, %%__regName__3, %%__regName__14;"
+                        "__FMAInst__ %%__regName__2, %%__regName__3, %%__regName__15;"
+                        /*cr=0s=2(h)(kh) end*/
 
-        "lea (%%%%rax, %%%%r8, 4), %%%%rax;"
-        "lea (%%%%rdx, %%%%r11, 4), %%%%rdx;"
+                        "lea (%%rax, %%r8, __TypeLen__), %%rax;"
+                        "lea (%%rdx, %%r11, __TypeLen__), %%rdx;"
 
-        "sub $1, %%%%r13;"
-        "jnz .compute%%=;"
+                        "sub $1, %%r13;"
+                        "jnz .compute%=;"
 
-        // store Out
-        "mov %%[W], %%%%rax;"
-        "mov %%[HW], %%%%rbx;"
+                        // store Out
+                        "mov %[W], %%rax;"
+                        "mov %[HW], %%rbx;"
 
-        "mov %%[Out], %%%%rdi;" // Out[k * HW]
-        "vmovups %%%%__regName__4, (%%%%rdi);"
-        "mov %%%%rax, %%%%rdx;"
-        "vmovups %%%%__regName__5, (%%%%rdi, %%%%rdx, 4);"
-        "add %%%%rax, %%%%rdx;"
-        "vmovups %%%%__regName__6, (%%%%rdi, %%%%rdx, 4);"
+                        "mov %[Out_], %%rdi;" // Out[k * HW]
+                        "__MOVInst__ %%__regName__4, (%%rdi);"
+                        "mov %%rax, %%rdx;"
+                        "__MOVInst__ %%__regName__5, (%%rdi, %%rdx, __TypeLen__);"
+                        "add %%rax, %%rdx;"
+                        "__MOVInst__ %%__regName__6, (%%rdi, %%rdx, __TypeLen__);"
 
-        "lea (%%%%rdi, %%%% rbx, 4), %%%%rdi;"
-        "vmovups  %%%%__regName__7, (%%%%rdi);"
-        "mov %%%%rax, %%%%rdx;"
-        "vmovups %%%%__regName__8, (%%%%rdi, %%%%rdx, 4);"
-        "add %%%%rax, %%%%rdx;"
-        "vmovups %%%%__regName__9, (%%%%rdi, %%%%rdx, 4);"
+                        "lea (%%rdi, %% rbx, __TypeLen__), %%rdi;"
+                        "__MOVInst__  %%__regName__7, (%%rdi);"
+                        "mov %%rax, %%rdx;"
+                        "__MOVInst__ %%__regName__8, (%%rdi, %%rdx, __TypeLen__);"
+                        "add %%rax, %%rdx;"
+                        "__MOVInst__ %%__regName__9, (%%rdi, %%rdx, __TypeLen__);"
 
-        "lea (%%%%rdi, %%%% rbx, 4), %%%%rdi;"
-        "vmovups %%%%__regName__10, (%%%%rdi);"
-        "mov %%%%rax, %%%%rdx;"
-        "vmovups %%%%__regName__11, (%%%%rdi, %%%%rdx, 4);"
-        "add %%%%rax, %%%%rdx;"
-        "vmovups %%%%__regName__12, (%%%%rdi, %%%%rdx, 4);"
+                        "lea (%%rdi, %% rbx, __TypeLen__), %%rdi;"
+                        "__MOVInst__ %%__regName__10, (%%rdi);"
+                        "mov %%rax, %%rdx;"
+                        "__MOVInst__ %%__regName__11, (%%rdi, %%rdx, __TypeLen__);"
+                        "add %%rax, %%rdx;"
+                        "__MOVInst__ %%__regName__12, (%%rdi, %%rdx, __TypeLen__);"
 
-        "lea (%%%%rdi, %%%% rbx, 4), %%%%rdi;"
-        "vmovups %%%%__regName__13, (%%%%rdi);"
-        "mov %%%%rax, %%%%rdx;"
-        "vmovups %%%%__regName__14, (%%%%rdi, %%%%rdx, 4);"
-        "add %%%%rax, %%%%rdx;"
-        "vmovups  %%%%__regName__15, (%%%%rdi, %%%%rdx, 4);"
+                        "lea (%%rdi, %% rbx, __TypeLen__), %%rdi;"
+                        "__MOVInst__ %%__regName__13, (%%rdi);"
+                        "mov %%rax, %%rdx;"
+                        "__MOVInst__ %%__regName__14, (%%rdi, %%rdx, __TypeLen__);"
+                        "add %%rax, %%rdx;"
+                        "__MOVInst__  %%__regName__15, (%%rdi, %%rdx, __TypeLen__);"
 
-        :
-        : [In] "m"(In),
-          [Weight] "m"(Weight),
-          [Out] "m"(Out),
-          [HW] "m"(HW_s),
-          [W] "m"(W_s),
-          [C_in] "m"(C_in),
-          [HRWS] "m"(HRWS_s),
-          [WS] "m"(WS_s),
-          [CRS] "m"(CRS_s),
-          [RS] "m"(RS_s),
-          [S] "m"(S_s)
-        : "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "__regName__0", "__regName__1", "__regName__2", "__regName__3", "__regName__4", "__regName__5", "__regName__6", "__regName__7", "__regName__8", "__regName__9", "__regName__10", "__regName__11", "__regName__12", "__regName__13", "__regName__14", "__regName__15");
+                        :
+                        : [In_] "m"(In_),
+                        [Weight_] "m"(Weight_),
+                        [Out_] "m"(Out_),
+                        [HW] "m"(HW_s),
+                        [W] "m"(W_s),
+                        [HRWS] "m"(HRWS_s),
+                        [WS] "m"(WS_s),
+                        [CRS] "m"(CRS_s),
+                        [RS] "m"(RS_s),
+                        [S] "m"(S_s)
+                        : "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "__regName__0", "__regName__1", "__regName__2", "__regName__3", "__regName__4", "__regName__5", "__regName__6", "__regName__7", "__regName__8", "__regName__9", "__regName__10", "__regName__11", "__regName__12", "__regName__13", "__regName__14", "__regName__15");
+                }
+            }
+        }
+    }
     return 0;
 }
 
-extern "C" int %sconv_reset(float *Out, int KHW, int HW, int W,
+extern "C" int __prefix__conv_reset(__TYPE__ *Out, int KHW, int HW, int W,
                           int N_, int K_, int H_, int W_)
 {
     for (int n = 0; n < N_; n++)
@@ -981,9 +1162,22 @@ extern "C" int %sconv_reset(float *Out, int KHW, int HW, int W,
                 }
     return 0;
 }
-    """ %(prefix, prefix)
-    from tvm.contrib import utils, clang
+"""
+    cc_code = cc_code.replace("__K__", f"{K}")
+    cc_code = cc_code.replace("__H__", f"{H}")
+    cc_code = cc_code.replace("__W__", f"{W}")
+    cc_code = cc_code.replace("__C__", f"{C}")
+    cc_code = cc_code.replace("__prefix__", prefix)
 
+    CI = C if (C == 32 or C == 64) else 64
+    assert C % CI == 0
+    WI = 8 if isa == "avx2" else 16 if isa == "avx512" else None
+    assert WI and W % WI == 0 
+    cc_code = cc_code.replace("__KI__", f"{4}")
+    cc_code = cc_code.replace("__HI__", f"{3}")
+    cc_code = cc_code.replace("__CI__", f"{CI}")
+    cc_code = cc_code.replace("__WI__", f"{WI}")
+    
     if isa == "avx2":
         cc_code = cc_code.replace("__regName__", "ymm")
     elif isa == "avx512":
@@ -1002,9 +1196,8 @@ extern "C" int %sconv_reset(float *Out, int KHW, int HW, int W,
         cc_code = cc_code.replace("__BDCASTInst__", "vbroadcastsd")
         cc_code = cc_code.replace("__TYPE__", "double")
         cc_code = cc_code.replace("__DoubleTypeLen__", "16")
-
-    with open ("tmp.cc", 'w') as f:
-        f.write(cc_code)
+    
+    from tvm.contrib import utils, clang
     temp = utils.tempdir()
     ll_path = temp.relpath("temp.ll")
     ll_code = clang.create_llvm(cc_code, output=ll_path, options=["-mavx", "-msse"])
@@ -1099,13 +1292,12 @@ def intrin_conv(shape, dtype, prefix):
             ib.emit(
                 tvm.tir.call_extern(
                     "int32",
-                    prefix + "conv_update_avx2",
+                    prefix + "conv_update",
                     In__.access_ptr("r"),
                     Weight__.access_ptr("r"),
                     Out__.access_ptr("w"),
                     vars["hw"],
                     vars["w"],
-                    C_,
                     vars["hrws"],
                     vars["ws"],
                     vars["crs"],
@@ -1154,6 +1346,225 @@ def intrin_conv(shape, dtype, prefix):
         Out_.op, intrin_func, binds={In_: In_b, Weight_: Weight_b, Out_: Out_b}
     )
 
+
+def intrin_exp(shape, dtype, prefix):
+    assert len(shape) == 2
+    MICRO_M, MICRO_N = shape
+    a = te.placeholder((MICRO_M, MICRO_N), name="a", dtype=dtype)
+    c = te.compute((MICRO_M, MICRO_N), lambda i, j: te.exp(a[i, j]), name="c")
+    Ab = tvm.tir.decl_buffer(a.shape, a.dtype, name="A", data_alignment=64, offset_factor=1, strides=[te.var("s1"), 1])
+    Cb = tvm.tir.decl_buffer(c.shape, c.dtype, name="C", data_alignment=64, offset_factor=1, strides=[te.var("s3"), 1])
+
+    def intrin_func(ins, outs):
+        aa = ins[0]
+        cc = outs[0]
+        ib = tvm.tir.ir_builder.create()
+        ib.emit(
+            tvm.tir.call_extern(
+                "int32",
+                prefix + "compute_exp",
+                cc.access_ptr("w"),
+                aa.access_ptr("r"),
+                cc.strides[0], aa.strides[0]
+            )
+        )
+        return ib.get()
+
+    return te.decl_tensor_intrin(c.op, intrin_func, binds={a: Ab, c: Cb})
+
+
+def exp_impl(shape, isa, dtype, prefix):
+    MICRO_M, MICRO_N = shape
+    assert isa == "avx512"
+    cc_code = '''
+        #include <immintrin.h>
+        const float exp_hi = 88.3762626647949f;
+        const float exp_lo = -88.3762626647949f;
+        const float cephes_LOG2EF = 1.44269504088896341;
+        const float _one = 1.0f;
+        const float _0p5 = 0.5f;
+        const float cephes_exp_C1 = 0.693359375;
+        const float cephes_exp_C2 = -2.12194440e-4;
+        const float cephes_exp_p0 = 1.9875691500E-4;
+        const float cephes_exp_p1 = 1.3981999507E-3;
+        const float cephes_exp_p2 = 8.3334519073E-3;
+        const float cephes_exp_p3 = 4.1665795894E-2;
+        const float cephes_exp_p4 = 1.6666665459E-1;
+        const float cephes_exp_p5 = 5.0000001201E-1;
+        const int _0x7f = 0x7f;
+        const __m256 _ps_exp_hi = _mm256_broadcast_ss(&exp_hi);
+        const __m256 _ps_exp_lo = _mm256_broadcast_ss(&exp_lo);
+        const __m256 _ps_cephes_LOG2EF = _mm256_broadcast_ss(&cephes_LOG2EF);
+        const __m256 _ps_0p5 = _mm256_broadcast_ss(&_0p5);
+        const __m256 _ps_one = _mm256_broadcast_ss(&_one);
+        const __m256 _ps_cephes_exp_C1 = _mm256_broadcast_ss(&cephes_exp_C1);
+        const __m256 _ps_cephes_exp_C2 = _mm256_broadcast_ss(&cephes_exp_C2);
+        const __m256 _ps_cephes_exp_p0 = _mm256_broadcast_ss(&cephes_exp_p0);
+        const __m256 _ps_cephes_exp_p1 = _mm256_broadcast_ss(&cephes_exp_p1);
+        const __m256 _ps_cephes_exp_p2 = _mm256_broadcast_ss(&cephes_exp_p2);
+        const __m256 _ps_cephes_exp_p3 = _mm256_broadcast_ss(&cephes_exp_p3);
+        const __m256 _ps_cephes_exp_p4 = _mm256_broadcast_ss(&cephes_exp_p4);
+        const __m256 _ps_cephes_exp_p5 = _mm256_broadcast_ss(&cephes_exp_p5);
+        const __m256 _ps_0x7f = _mm256_broadcast_ss((float*)&_0x7f);
+        const __m256 _ps_consts[28] = {
+            _ps_exp_hi, _ps_exp_hi,
+            _ps_exp_lo, _ps_exp_lo,
+            _ps_cephes_LOG2EF, _ps_cephes_LOG2EF,
+            _ps_0p5, _ps_0p5,
+            _ps_one, _ps_one,
+            _ps_cephes_exp_C1, _ps_cephes_exp_C1,
+            _ps_cephes_exp_C2, _ps_cephes_exp_C2,
+            _ps_cephes_exp_p0, _ps_cephes_exp_p0,
+            _ps_cephes_exp_p1, _ps_cephes_exp_p1,
+            _ps_cephes_exp_p2, _ps_cephes_exp_p2,
+            _ps_cephes_exp_p3, _ps_cephes_exp_p3,
+            _ps_cephes_exp_p4, _ps_cephes_exp_p4,
+            _ps_cephes_exp_p5, _ps_cephes_exp_p5,
+            _ps_0x7f, _ps_0x7f
+        };
+        const void* _ps_exp_hi_p = (void*)_ps_consts;
+        const void* _ps_one_p = (void*)(_ps_consts+8);
+        // consts end
+
+        extern "C" int %scompute_exp(float* cc_, float *aa_, int stride1_, int stride2_) {
+            long long stride1 = stride1_;
+            long long stride2 = stride2_;
+            // #pragma unroll
+            for (int i = 0; i < %d; ++i){
+                for(int j = 0; j < %d; ++j){
+                    float* cc = cc_ + i * stride1_ + j * 16;
+                    float* aa = aa_ + i * stride2_ + j * 16;
+                    __asm__(
+                    ".exp%%=:"
+                        "mov %%[aa], %%%%rax;"
+                        "mov %%[cc], %%%%rcx;"
+                        "mov %%[_ps_exp_hi_p], %%%%rbx;"
+                        "mov %%[_ps_one_p], %%%%rdx;"
+                        "vmovups (%%%%rax), %%%%zmm0;"
+
+                        // _mm_min_ps
+                        "vmovups (%%%%rbx), %%%%zmm1;"
+                        "vminps %%%%zmm0, %%%%zmm1, %%%%zmm0;"
+
+                        // _mm_max_ps
+                        // "mov %%[_ps_exp_lo_p], %%%%rbx;"
+                        "lea 64(%%%%rbx), %%%%rbx;"
+                        "vmovups (%%%%rbx), %%%%zmm1;"
+                        "vmaxps %%%%zmm0, %%%%zmm1, %%%%zmm0;"
+
+                        // _mm_mul_ps
+                        // "mov %%[_ps_cephes_LOG2EF_p], %%%%rbx;"
+                        "lea 64(%%%%rbx), %%%%rbx;"
+                        "vmovups (%%%%rbx), %%%%zmm1;"
+                        "vmulps %%%%zmm0, %%%%zmm1, %%%%zmm2;"
+
+                        // _mm_add_ps
+                        // "mov %%[_ps_0p5_p], %%%%rbx;"
+                        "lea 64(%%%%rbx), %%%%rbx;"
+                        "vmovups (%%%%rbx), %%%%zmm1;"
+                        "vaddps %%%%zmm2, %%%%zmm1, %%%%zmm2;"
+
+                        // _mm_cvttps_epi32
+                        "vcvttps2dq %%%%zmm2, %%%%zmm1;"
+                        
+                        // _mm_cvtepi32_ps
+                        "vcvtdq2ps %%%%zmm1, %%%%zmm1;"
+                        
+                        // sub if greater than
+                        "vcmpps $14, %%%%zmm2, %%%%zmm1, %%%%k1;"
+                        // "mov %%[_ps_one_p], %%%%rbx;"
+                        "lea 64(%%%%rbx), %%%%rbx;"
+                        "vmovups (%%%%rbx), %%%%zmm3;"
+                        "vsubps %%%%zmm3, %%%%zmm1, %%%%zmm2;"
+                        // "vmovups %%%%zmm2, %%%%zmm1{%%%%k1};"
+                        // "vmovups %%%%zmm1, %%%%zmm2;"
+                        "vblendmps %%%%zmm2, %%%%zmm1, %%%%zmm2 %%{%%%%k1%%};"
+
+                        // _mm_mul_ps
+                        // "mov %%[_ps_cephes_exp_C1_p], %%%%rbx;"
+                        "lea 64(%%%%rbx), %%%%rbx;"
+                        "vmovups (%%%%rbx), %%%%zmm1;"
+                        "vmulps %%%%zmm2, %%%%zmm1, %%%%zmm1;"
+
+                        // _mm_sub_ps
+                        "vsubps %%%%zmm0, %%%%zmm1, %%%%zmm0;"
+
+                        // _mm_mul_ps
+                        // "mov %%[_ps_cephes_exp_C2_p], %%%%rbx;"
+                        "lea 64(%%%%rbx), %%%%rbx;"
+                        "vmovups (%%%%rbx), %%%%zmm1;"
+                        "vmulps %%%%zmm2, %%%%zmm1, %%%%zmm1;"
+
+                        // _mm_sub_ps
+                        "vsubps %%%%zmm0, %%%%zmm1, %%%%zmm0;"
+
+                        // mul & add
+                        // "mov %%[_ps_cephes_exp_p0_p], %%%%rbx;"
+                        "lea 64(%%%%rbx), %%%%rbx;"
+                        "vmovups (%%%%rbx), %%%%zmm1;"
+                        "vmulps %%%%zmm1, %%%%zmm0, %%%%zmm1;"
+                        // "mov %%[_ps_cephes_exp_p1_p], %%%%rbx;"
+                        "lea 64(%%%%rbx), %%%%rbx;"
+                        "vmovups (%%%%rbx), %%%%zmm3;"
+                        "vaddps %%%%zmm1, %%%%zmm3, %%%%zmm1;"
+                        "vmulps %%%%zmm1, %%%%zmm0, %%%%zmm1;"
+                        // "mov %%[_ps_cephes_exp_p2_p], %%%%rbx;"
+                        "lea 64(%%%%rbx), %%%%rbx;"
+                        "vmovups (%%%%rbx), %%%%zmm3;"
+                        "vaddps %%%%zmm1, %%%%zmm3, %%%%zmm1;"
+                        "vmulps %%%%zmm1, %%%%zmm0, %%%%zmm1;"
+                        // "mov %%[_ps_cephes_exp_p3_p], %%%%rbx;"
+                        "lea 64(%%%%rbx), %%%%rbx;"
+                        "vmovups (%%%%rbx), %%%%zmm3;"
+                        "vaddps %%%%zmm1, %%%%zmm3, %%%%zmm1;"
+                        "vmulps %%%%zmm1, %%%%zmm0, %%%%zmm1;"
+                        // "mov %%[_ps_cephes_exp_p4_p], %%%%rbx;"
+                        "lea 64(%%%%rbx), %%%%rbx;"
+                        "vmovups (%%%%rbx), %%%%zmm3;"
+                        "vaddps %%%%zmm1, %%%%zmm3, %%%%zmm1;"
+                        "vmulps %%%%zmm1, %%%%zmm0, %%%%zmm1;"
+                        // "mov %%[_ps_cephes_exp_p5_p], %%%%rbx;"
+                        "lea 64(%%%%rbx), %%%%rbx;"
+                        "vmovups (%%%%rbx), %%%%zmm3;"
+                        "vaddps %%%%zmm1, %%%%zmm3, %%%%zmm1;"
+                        "vmulps %%%%zmm1, %%%%zmm0, %%%%zmm1;"
+                        "vmulps %%%%zmm1, %%%%zmm0, %%%%zmm1;"
+                        "vaddps %%%%zmm1, %%%%zmm0, %%%%zmm1;"
+                        // "mov %%[_ps_one_p], %%%%rdx;"
+                        "vmovups (%%%%rdx), %%%%zmm3;"
+                        "vaddps %%%%zmm1, %%%%zmm3, %%%%zmm1;"
+
+                        "vcvttps2dq %%%%zmm2, %%%%zmm2;"
+                        // "mov %%[_ps_0x7f_p], %%%%rbx;"
+                        "lea 64(%%%%rbx), %%%%rbx;"
+                        "vmovups (%%%%rbx), %%%%zmm0;"
+                        "vpaddd %%%%zmm2, %%%%zmm0, %%%%zmm2;"
+                        "vpslld $23, %%%%zmm2, %%%%zmm2;"
+                        "vmulps %%%%zmm2, %%%%zmm1, %%%%zmm1;"
+
+                        "vmovups %%%%zmm1, (%%%%rcx);"
+                        :
+                        :[cc] "m" (cc),
+                        [aa] "m" (aa),
+                        [_ps_exp_hi_p] "m" (_ps_exp_hi_p),
+                        [_ps_one_p] "m" (_ps_one_p)
+                        :"rax", "rbx", "rcx", "rdx", "zmm0", "zmm1", "zmm2", "zmm3", "k1"
+                    );
+                    // printf("%%f ", cc[1]);
+                }
+            }
+            return 0;
+        }
+    ''' % (prefix, MICRO_M, MICRO_N // 16)
+    from tvm.contrib import utils, clang
+
+    temp = utils.tempdir()
+    ll_path = temp.relpath("temp.ll")
+    # Create LLVM ir from c source code
+    ll_code = clang.create_llvm(cc_code, output=ll_path, options=["-mavx", "-mavx512f", "-msse"])
+    return ll_code
+
+
 def cpu_intrin(op, shape, isa, dtype, prefix=""):
     loads = []
     if op == "gemm":
@@ -1166,10 +1577,13 @@ def cpu_intrin(op, shape, isa, dtype, prefix=""):
             shape, dtype, prefix
         )
         code = conv_impl(shape, isa, dtype, prefix)
+    elif op == "exp":
+        compute = intrin_exp(
+            shape, dtype, prefix
+        )
+        code = exp_impl(shape, isa, dtype, prefix)
     store = None
     pintrin = packed_intrinsic(
         loads, compute, store, ["global", "global"], "global", "global"
     )
     return pintrin, code
-
-

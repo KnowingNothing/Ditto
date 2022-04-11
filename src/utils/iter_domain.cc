@@ -114,7 +114,7 @@ class VarReplacer : public tir::ExprMutator {
 public:
   using tir::ExprMutator::VisitExpr;
 
-  PrimExpr mutate(PrimExpr &expr, Map<tir::Var, tir::Var> map) {
+  PrimExpr mutate(PrimExpr &expr, Map<tir::Var, PrimExpr> map) {
     map_ = map;
     PrimExpr expr_ = VisitExpr(expr);
     return expr_;
@@ -132,12 +132,21 @@ protected:
   }
 
 private:
-  Map<tir::Var, tir::Var> map_{nullptr};
+  Map<tir::Var, PrimExpr> map_{nullptr};
 };
 
-PrimExpr ReplaceVars(PrimExpr expr, Map<tir::Var, tir::Var> map) {
+PrimExpr ReplaceVars(PrimExpr expr, Map<tir::Var, PrimExpr> map) {
   VarReplacer visitor;
   return visitor.mutate(expr, map);
+}
+
+PrimExpr ReplaceVars(PrimExpr expr, Map<tir::Var, tir::Var> map) {
+  Map<tir::Var, PrimExpr> map_;
+  for (auto kv: map){
+    map_.Set(kv.first, kv.second);
+  }
+  VarReplacer visitor;
+  return visitor.mutate(expr, map_);
 }
 
 class VarsGetter : public tir::ExprVisitor {

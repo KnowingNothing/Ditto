@@ -38,8 +38,7 @@ ServerConfig = {
 
 
 def test_torch(shape, dtype = "float32"):
-    N, C0, P0, Q0, C1, R1, S1, C2, R2, S2 = shape
-    padding1 = padding2 = stride1 = stride2 = 1
+    N, C0, P0, Q0, C1, R1, S1, C2, R2, S2, padding1, padding2, stride1, stride2 = shape
     P0_pad = P0 + 2 * padding1
     Q0_pad = Q0 + 2 * padding1
     P1 = (P0_pad - R1) // stride1 + 1
@@ -97,7 +96,7 @@ def test_torch(shape, dtype = "float32"):
 
 def setGlobals(shape):
     global MI, NI1, KI1, NI2, KI2, WORKLOAD, mk1, mk2
-    N, C0, H, W, C1, R1, S1, C2, R2, S2 = shape
+    N, C0, H, W, C1, R1, S1, C2, R2, S2, padding1, padding2, stride1, stride2 = shape
     WORKLOAD = N * (C0 * H * W * C1 * R1 * S1 + C1 * H * W * C2 * R2 * S2)
 
 def main(shape, dtype, server):
@@ -119,25 +118,16 @@ def main(shape, dtype, server):
 
 example_text = "python ./conv_relu_conv.py --server sc"
 
+
 shapes = [
-    # (batch, C0, H1, W1, C1, R1, S1, C2, R2, S2)
-    [1, 128, 390, 400, 64, 3, 3, 64, 3, 3],  # resnet
-    [1, 64, 285, 288, 128, 3, 3, 128, 3, 3],# u_net
-    [1, 128, 141, 144, 256, 3, 3, 256, 3, 3],
-    [1, 256, 69, 80, 512, 3, 3, 512, 3, 3],
-    [1, 512, 33, 32, 1024, 3, 3, 1024, 3, 3],
-    [1, 1024, 57, 64, 512, 3, 3, 512, 3, 3],
-    [1, 256, 201, 208, 128, 3, 3, 128, 3, 3],
-    [1, 128, 393, 400, 64, 3, 3, 64, 3, 3],
-    [1, 32, 114, 112, 64, 3, 3, 64, 3, 3],
-    [1, 64, 57, 64, 128, 3, 3, 128, 3, 3],
-    [1, 128, 57, 64, 256, 3, 3, 256, 3, 3],
-    [1, 256, 30, 32, 512, 3, 3, 256, 3, 3],
-    [1, 256, 30, 32, 512, 3, 3, 512, 3, 3],
-    [1, 64, 57, 64, 64, 3, 3, 256, 3, 3],
-    [1, 128, 30, 32, 128, 3, 3, 512, 3, 3],
-    [1, 256, 15, 16, 256, 3, 3, 1024, 3, 3],
-    [1, 512, 9, 16, 512, 3, 3, 2048, 3, 3]
+    [1, 64, 114, 112, 192, 3, 3, 128, 1, 1, 1, 0, 1, 1],
+    [1, 32, 147, 148, 64, 3, 3, 96, 1, 1, 1, 0, 1, 1], # modify
+    [1, 64, 57, 56, 128, 3, 3, 64, 1, 1, 1, 0, 1, 1],
+    [1, 128, 27, 28, 256, 3, 3, 128, 1, 1, 1, 0, 1, 1],
+    [1, 16, 228, 227, 64, 3, 3, 32, 1, 1, 1, 0, 1, 1], # modify
+    [1, 64, 57, 56, 64, 1, 1, 64, 3, 3, 0, 1, 1, 1],
+    [1, 64, 57, 56, 64, 1, 1, 64, 1, 1, 0, 0, 1, 1],
+    [1, 256, 57, 56, 256, 1, 1, 64, 1, 1, 0, 0, 1, 1]
 ]
 
 
@@ -183,6 +173,6 @@ if __name__ == "__main__":
         )
     for cc in costs:
         print(cc[1])
-    with open("conv_res.pkl", "wb") as f:
+    with open("conv_relu_conv_torch.pkl", "wb") as f:
         pkl.dump(costs, f)
 

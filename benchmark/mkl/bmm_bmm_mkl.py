@@ -1,6 +1,7 @@
 import subprocess
 import argparse
 import regex as re
+import pickle as pkl
 REPEAT = 10000
 peakflops = {'sc': 704, 'sccc': 2150.4, 'scccc': 2995.2}
 def main(batch, M, N, K, L, server):
@@ -13,16 +14,30 @@ def main(batch, M, N, K, L, server):
     time = re.findall('time: ([\d\.]*)', s)
     return float(time[0]), float(ratioToPeak[0])
 
+def ceil(x, y):
+    return (x + y - 1) // y
+
+
+def uround(x, y):
+    return int(ceil(x, y) * y)
+
 shapes = [
     # (batch, M, N, K, L)
-    (8, 512, 512 // 8, 512 // 8, 512),  # Bert-Small
-    (12, 512, 768 // 12, 768 // 12, 512),  # Bert-Base
-    (16, 512, 1024 // 16, 1024 // 16, 512),  # Bert-Large
-    (12, 256, 768 // 12, 768 // 12, 256),  # ViT-Base/14
-    (16, 256, 1024 // 16, 1024 // 16, 256),  # ViT-Large/14
-    (16, 256, 1280 // 16, 1280 // 16, 256),  # ViT-Huge/14
+    (8, 512, 512 // 8, 512 // 8, 512),      # Bert-Small
+    (12, 512, 768 // 12, 768 // 12, 512),   # Bert-Base
+    (16, 512, 1024 // 16, 1024 // 16, 512), # Bert-Large
+    (12, 256, 768 // 12, 768 // 12, 256),   # ViT-Base/14
+    (16, 256, 1024 // 16, 1024 // 16, 256), # ViT-Large/14
+    (16, 256, 1280 // 16, 1280 // 16, 256), # ViT-Huge/14
+    (12, uround(196, 16), 768 // 12, 768 // 12, uround(196, 16)),   # ViT-Base/16
+    (16, uround(196, 16), 1024 // 16, 1024 // 16, uround(196, 16)), # ViT-Large/16
+    (16, uround(196, 16), 1280 // 16, 1280 // 16, uround(196, 16)), # ViT-Huge/16
+    (1, 512, uround(49, 16), uround(49, 16), 256),  # Mixer-Small/32-S
+    (1, 768, uround(49, 16), uround(49, 16), 384),  # Mixer-Base/32-S
+    (1, 1024, uround(49, 16), uround(49, 16), 512), # Mixer-Large/32-S
 ]
-example_text = "python ./bmm_bmm_cpu.py --dtype float32 --begin 0 --num 1 --server sc"
+
+example_text = "python ./bmm_bmm_mkl.py --dtype float32 --begin 0 --num 1 --server sc"
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog="base_maker",
@@ -71,3 +86,6 @@ if __name__ == "__main__":
         )
     for cc in costs:
         print(cc[1])
+
+    with open("bmm_relu_bmm.pkl", 'wb') as f:
+        pkl.dump(costs, f)

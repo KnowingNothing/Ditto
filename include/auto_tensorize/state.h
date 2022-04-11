@@ -73,6 +73,11 @@ public:
    */
   AccessFunction WriteAccessFunctions();
   /*!
+   * \brief Get the read access functions.
+   * The order is the same as InputTensors().
+   */
+  Array<Array<PrimExpr>> getAccessIndices(te::Operation op, te::Operation inop);
+  /*!
    * \brief Get the first computeOp pos in input tensors.
    */
   int getFirstProducerPos() {

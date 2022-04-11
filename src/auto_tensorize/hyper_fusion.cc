@@ -175,14 +175,14 @@ namespace ditto
       };
 
       CHECK(layer->ops.size() == 1U);
-      std::cout << "layer->ops[0]: " << layer->ops[0] << std::endl;
+
       helper(layer->ops[0]);
       if (prefix_array.count(layer->ops[0]))
       {
         node->epilogue = prefix_array.at(layer->ops[0]);
       }
 
-      CHECK(match_info.size() == 2U);
+      // CHECK(match_info.size() == 2U);
       CHECK(match_info.count(node->first_op) && match_info.count(node->second_op));
       node->tensorize_iters.Set(node->first_op,
                                 match_info.at(node->first_op)->axis);
@@ -192,13 +192,26 @@ namespace ditto
                                 match_info.at(node->second_op)->axis);
       node->tensorize_intrinsics.Set(node->second_op,
                                      match_info.at(node->second_op)->intrin);
+      for (auto a_match_info: match_info){
+        CHECK(a_match_info.second->axis.defined());
+        node->tensorize_iters.Set(
+          a_match_info.first,
+          a_match_info.second->axis
+        );
+        CHECK(a_match_info.second->intrin.defined());
+        node->tensorize_intrinsics.Set(
+          a_match_info.first,
+          a_match_info.second->intrin
+        );
+        CHECK(a_match_info.second->impl.defined());
+        node->tensorize_impl.Set(
+          a_match_info.first,
+          a_match_info.second->impl
+        );
+      }
 
       node->secondOpOuterTileFactors = fuse_choice->secondOpOuterTilingFactors;
       node->secondOpOuterIndices = fuse_choice->secondOpOuterIndices;
-      CHECK(match_info.at(node->first_op)->impl.defined());
-      CHECK(match_info.at(node->second_op)->impl.defined());
-      node->impl_op1 = match_info.at(node->first_op)->impl;
-      node->impl_op2 = match_info.at(node->second_op)->impl;
       data_ = node;
     }
 
@@ -841,7 +854,7 @@ namespace ditto
       CHECK(ever_bind) << "The scheduler can't bind any axis for GPU.\n";
       // tensorize
       sch[second_tensor].tensorize(tensor_iters[0], pintrin->store_intrinsic);
-      /*
+  /*
    * Find postion to compute at
    */
       tir::IterVar frag_attach_axis;
@@ -1801,6 +1814,7 @@ namespace ditto
               double occupancy, parallelism, memUse;
               std::tie(valid, cost) = getCost(&occupancy, &parallelism, &memUse);
               FusionInfo fusionInfo;
+              ig->getTotalDM(fusionInfo.features);
               fusionInfo.cacheOccupancy = occupancy;
               fusionInfo.cost = cost;
               fusionInfo.n_block = ig->getNumOfBlocks();
@@ -1982,7 +1996,7 @@ namespace ditto
           return ret;
         };
         std::vector<int> simpleTiling, simplePermute;
-        for (int i = 0; i < ig->_firstOpIters.size(); i++)
+        for (size_t i = 0; i < ig->_firstOpIters.size(); i++)
         {
           simpleTiling.push_back(1);
           simplePermute.push_back(i);
@@ -2082,7 +2096,24 @@ namespace ditto
       node->path = path;
       data_ = node;
     }
-
+    Map<String, FloatImm> FusionContextNode::getFeature(int i){
+      CHECK(0 <= i && i < (int)schParams.size())
+          << "run " << i << " out of range "
+          << "[0, " << schParams.size() << ")";
+      Map<String, FloatImm> ret;
+      for (auto item: schParams[i]->fusionInfo.features){
+        String k = String(item.first);
+        FloatImm v = FloatImm(DataType::Float(64), item.second);
+        ret.Set(k, v);
+      }
+      return ret;
+    }
+    int FusionContextNode::getFusionLevel(int i){
+      CHECK(0 <= i && i < (int)schParams.size())
+          << "run " << i << " out of range "
+          << "[0, " << schParams.size() << ")";
+      return schParams[i]->fusionInfo.fusionLevel;
+    }
     double FusionContextNode::getPredCost(int i)
     {
       CHECK(0 <= i && i < (int)schParams.size())
@@ -2161,6 +2192,8 @@ namespace ditto
       std::vector<CPUTensorizeParam> schParams;
       CHECK(sfs->tensorizeAxes.defined());
       IterGraph ig = buildIterGraph(sfs);
+      std:: cout << "iterGraph: " << std::endl;
+      std::cout << ig << std::endl;
       std::unordered_map<std::string, int32_t> m = {{"float32", 4}, {"float64", 8}, {"float16", 2}, {"int16", 2}, {"int32", 4}, {"int64", 8}};
       CHECK(m.count(dtype));
       int bytePerEle = m[dtype];
@@ -2169,6 +2202,7 @@ namespace ditto
       OpHyperState op1, op2;
       std::tie(op1, op2) = sfs->getCubicOpPair();
       auto share_axes = share_axis_analysis(op1->op, op2->op);
+      std::cout << "share_axes: " << share_axes << std::endl;
       size_t cnt = 0;
       for (auto info : fusionInfo)
       {
@@ -2223,6 +2257,12 @@ namespace ditto
 
     TVM_REGISTER_GLOBAL("ditto.auto_tensorize.getPredCostList")
         .set_body_method<FusionContext>(&FusionContextNode::getPredCostList);
+    
+    TVM_REGISTER_GLOBAL("ditto.auto_tensorize.getFeature")
+        .set_body_method<FusionContext>(&FusionContextNode::getFeature);
+
+    TVM_REGISTER_GLOBAL("ditto.auto_tensorize.getFusionLevel")
+        .set_body_method<FusionContext>(&FusionContextNode::getFusionLevel);
 
     TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildFusionContext")
         .set_body_typed([](SerialFusionState sfs, Layer layer,

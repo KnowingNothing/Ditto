@@ -22,6 +22,8 @@ Array<Array<PrimExpr>> GetAccessIndices(te::Operation op,
                                         te::Operation producer);
 Array<tir::Var> GetAccessVars(te::Operation op, te::Operation producer);
 PrimExpr ReplaceVars(PrimExpr expr, Map<tir::Var, tir::Var> map);
+PrimExpr ReplaceVars(PrimExpr expr, Map<tir::Var, PrimExpr> map);
+
 float GetFloatOps(PrimExpr body);
 
 } // namespace utils

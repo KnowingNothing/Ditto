@@ -1,6 +1,7 @@
 #include <auto_tensorize/pattern.h>
 #include <auto_tensorize/state.h>
 #include <utils/iter_domain.h>
+#include <auto_tensorize/analysis.h>
 
 namespace ditto {
 
@@ -78,7 +79,35 @@ Array<tir::IterVar> OpHyperStateNode::SpatialIters() {
 Array<tir::IterVar> OpHyperStateNode::ReduceIters() {
   return op.as<te::ComputeOpNode>()->reduce_axis;
 }
-
+Array<Array<PrimExpr>> OpHyperStateNode::getAccessIndices(te::Operation op, te::Operation inop){
+  Array<Array<PrimExpr>> access_indices = utils::GetAccessIndices(op, inop);
+  op = inop;
+  while (op.as<te::ComputeOpNode>() && op->InputTensors().size() == 1){
+    Map<tir::Var, PrimExpr> map;
+    const te::ComputeOpNode * cop = op.as<te::ComputeOpNode>();
+    CHECK(cop->reduce_axis.size() == 0);
+    CHECK(access_indices.size() == 1);
+    CHECK(cop->axis.size() == access_indices[0].size()) << cop->axis << " " << access_indices;
+    size_t i = 0;
+    for (auto iv: cop->axis){
+      map.Set(iv->var, access_indices[0][i++]);
+    }
+    Array<Array<PrimExpr>> tmp = utils::GetAccessIndices(op, op->InputTensors()[0]->op);
+    if (tmp.size() > 1)
+      break;
+    Array<Array<PrimExpr>> new_acecss_indices;
+    for (auto exprs: tmp){
+      Array<PrimExpr> singleAccessIndices;
+      for (auto expr: exprs){
+        singleAccessIndices.push_back(utils::ReplaceVars(expr, map));
+      }
+      new_acecss_indices.push_back(singleAccessIndices);
+    }
+    access_indices = new_acecss_indices;
+    op = op->InputTensors()[0]->op;
+  }
+  return access_indices;
+}
 Array<AccessFunction> OpHyperStateNode::ReadAccessFunctions() {
   Array<AccessFunction> ret;
   Array<tir::Var> allVars;
@@ -104,8 +133,10 @@ Array<AccessFunction> OpHyperStateNode::ReadAccessFunctions() {
       else
         presentVars.push_back(var);
     }
-    Array<Array<PrimExpr>> access_indices =
+    Array<Array<PrimExpr>> access_indices_old =
         utils::GetAccessIndices(op, inp->op);
+    Array<Array<PrimExpr>> access_indices = 
+        getAccessIndices(op, inp->op);
     AccessFunction func(inp->op, access_indices, absentVars, presentVars);
     ret.push_back(func);
   }

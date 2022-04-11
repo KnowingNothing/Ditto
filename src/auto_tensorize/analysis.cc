@@ -129,6 +129,10 @@ share_axis_analysis(te::Operation op1, te::Operation op2,
         if (kkvv.first == op1) {
           for (auto iv : kkvv.second) {
             Array<tir::IterVar> tmp;
+            // CHECK(iv->dom->extent.as<IntImmNode>());
+            // CHECK(kv.first->dom->extent.as<IntImmNode>());
+            // if (!(iv->dom->extent.as<IntImmNode>()->value == kv.first->dom->extent.as<IntImmNode>()->value))
+            //   continue;
             tmp.push_back(iv);
             tmp.push_back(kv.first);
             bool hasTensorize = false;

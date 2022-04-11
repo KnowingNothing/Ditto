@@ -90,10 +90,6 @@ ServerConfig = {
 
 def ConvReluConv(
     shape,
-    padding1=1,
-    padding2=1,
-    stride1=1,
-    stride2=1,
     dtype="float32"
 ):
     """
@@ -101,8 +97,8 @@ def ConvReluConv(
     Conv1   N C1 P1 Q1 C0 R1 S1
     Conv1   N C2 P2 Q2 C1 R2 S2
     """
-    assert len(shape) == 10
-    N, C0, P0, Q0, C1, R1, S1, C2, R2, S2 = shape
+    assert len(shape) == 14
+    N, C0, P0, Q0, C1, R1, S1, C2, R2, S2, padding1, padding2, stride1, stride2 = shape
     P0_pad = P0 + 2 * padding1
     Q0_pad = Q0 + 2 * padding1
     P1 = (P0_pad - R1) // stride1 + 1
@@ -405,14 +401,15 @@ def test_double_conv(
 
 def setGlobals(shape):
     global MI, NI1, KI1, NI2, KI2, WORKLOAD, mk1, mk2
-    N, C0, H, W, C1, R1, S1, C2, R2, S2 = shape
+    N, C0, H, W, C1, R1, S1, C2, R2, S2,padding1,padding2, stride1,stride2 = shape
+    assert R1 == 3 and R2 == 3
     WORKLOAD = N * (C0 * H * W * C1 * R1 * S1 + C1 * H * W * C2 * R2 * S2)
     if SERVER['isa'] == "avx2":
         mk1 = MicroKernel(N=1, K=4, H=3, W=8, C=16, R=3, S=3)
         mk2 = MicroKernel(N=1, K=4, H=3, W=8, C=4, R=3, S=3)
     elif SERVER['isa'] == "avx512":
-        mk1 = MicroKernel(N=1, K=4, H=3, W=16, C=32, R=3, S=3)
-        mk2 = MicroKernel(N=1, K=4, H=3, W=16, C=4, R=3, S=3)
+        mk1 = MicroKernel(N=1, K=4, H=3, W=32, C=64, R=3, S=3)
+        mk2 = MicroKernel(N=1, K=4, H=3, W=32, C=64, R=3, S=3)
 
 
 def main(shape, dtype, server):
@@ -422,7 +419,7 @@ def main(shape, dtype, server):
     print("shape,dtype,WORKLOAD,SERVER")
     print(shape, dtype, WORKLOAD, SERVER)
     time = test_double_conv(shape, config={
-        'searchType': 'normal', 'verbose': True, 'mode': 'best', 'dtype': dtype, 'topn': 10})
+        'searchType': 'normal', 'verbose': True, 'mode': 'best', 'dtype': dtype, 'topn': 5})
     ret = {}
     for k in time:
         ret[k] = {}
@@ -433,28 +430,19 @@ def main(shape, dtype, server):
     return ret
 
 
-example_text = "python ./conv_relu_conv.py --server sc"
+example_text = "python ./conv_relu_conv.py --server sc --mode best"
 
 shapes = [
-    # (batch, C0, H1, W1, C1, R1, S1, C2, R2, S2)
-    [1, 128, 390, 400, 64, 3, 3, 64, 3, 3],  # resnet
-    [1, 64, 285, 288, 128, 3, 3, 128, 3, 3],# u_net
-    [1, 128, 141, 144, 256, 3, 3, 256, 3, 3],
-    [1, 256, 69, 80, 512, 3, 3, 512, 3, 3],
-    [1, 512, 33, 32, 1024, 3, 3, 1024, 3, 3],
-    [1, 1024, 57, 64, 512, 3, 3, 512, 3, 3],
-    [1, 256, 201, 208, 128, 3, 3, 128, 3, 3],
-    [1, 128, 393, 400, 64, 3, 3, 64, 3, 3],
-    [1, 32, 114, 112, 64, 3, 3, 64, 3, 3],
-    [1, 64, 57, 64, 128, 3, 3, 128, 3, 3],
-    [1, 128, 57, 64, 256, 3, 3, 256, 3, 3],
-    [1, 256, 30, 32, 512, 3, 3, 256, 3, 3],
-    [1, 256, 30, 32, 512, 3, 3, 512, 3, 3],
-    [1, 64, 57, 64, 64, 3, 3, 256, 3, 3],
-    [1, 128, 30, 32, 128, 3, 3, 512, 3, 3],
-    [1, 256, 15, 16, 256, 3, 3, 1024, 3, 3],
-    [1, 512, 9, 16, 512, 3, 3, 2048, 3, 3]
+    [1, 64, 114, 112, 192, 3, 3, 128, 1, 1, 1, 0, 1, 1],
+    [1, 32, 147, 148, 64, 3, 3, 96, 1, 1, 1, 0, 1, 1], # modify
+    [1, 64, 57, 56, 128, 3, 3, 64, 1, 1, 1, 0, 1, 1],
+    [1, 128, 27, 28, 256, 3, 3, 128, 1, 1, 1, 0, 1, 1],
+    [1, 16, 228, 227, 64, 3, 3, 32, 1, 1, 1, 0, 1, 1], # modify
+    [1, 64, 57, 64, 64, 1, 1, 64, 3, 3, 0, 1, 1, 1],
+    [1, 64, 57, 56, 64, 1, 1, 64, 1, 1, 0, 0, 1, 1],
+    [1, 256, 57, 56, 256, 1, 1, 64, 1, 1, 0, 0, 1, 1]
 ]
+
 
 
 if __name__ == "__main__":
@@ -499,5 +487,5 @@ if __name__ == "__main__":
         )
     for cc in costs:
         print(cc[1])
-    with open("conv_res.pkl", "wb") as f:
+    with open("conv_relu_conv_chimera.pkl", "wb") as f:
         pkl.dump(costs, f)

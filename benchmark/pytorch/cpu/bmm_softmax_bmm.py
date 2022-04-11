@@ -68,16 +68,19 @@ def test_torch(batch, M, N, K, L, dtype = "float32"):
             QKV_np.append(np.random.uniform(
                 size=(batch, M, N)).astype(dataType))
             for i in range(batch):
-                QKV_np[trial][i] = Q_np[trial][i].dot(
-                    K_np[trial][i]).dot(V_np[trial][i])
+                QK_np = np.exp(Q_np[trial][i].dot(K_np[trial][i]))
+                sum_np = np.sum(QK_np, axis = -1)
+                sum_np = sum_np.reshape(list(sum_np.shape) + [1])
+                QK_np = QK_np / sum_np
+                QKV_np[trial][i] = QK_np @ V_np[trial][i]
 
         QKV = []
 
         start = time.time()
         for trial in range(per):
             QK = torch.bmm(Qtensor[trial], Ktensor[trial])
-            # QK_relu = torch.nn.ReLU()(QK)
-            QKV.append(torch.bmm(QK, Vtensor[trial]))
+            QK_softmax = torch.nn.Softmax(dim=2)(QK)
+            QKV.append(torch.bmm(QK_softmax, Vtensor[trial]))
 
         end = time.time()
         cost_tmp = (end - start) / per
@@ -94,7 +97,7 @@ def test_torch(batch, M, N, K, L, dtype = "float32"):
     ratioToPeak = (wl / cost / 1e9) / SERVER['peakgflops']
     print(batch,M,N,K,L,cost,ratioToPeak)
     return cost, ratioToPeak
-example_text = "python bmm_bmm.py --begin 0 --num 1"
+example_text = "python bmm_softmax_bmm.py --begin 0 --num 1"
 def ceil(x, y):
     return (x + y - 1) // y
 
@@ -159,6 +162,6 @@ if __name__ == "__main__":
     print("B,M,N,K,L,dtype,cost,SERVER")
     for cc in costs:
         print(f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.dtype},{cc[1]},",SERVER)
-    with open("bmm_bmm_torch.pkl", 'wb') as f:
+    with open("bmm_softmax_bmm_torch.pkl", 'wb') as f:
         pkl.dump(costs, f)
     

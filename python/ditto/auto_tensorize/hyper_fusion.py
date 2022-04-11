@@ -287,5 +287,9 @@ def build_fusion_choice(
     return _ffi_api.buildFusionChoice(sfs, hw_param, dtype, simple_mode)
 
 
-def build_cpu_tensorize_param(sfs, fusion_choice, hw_param, bytePerEle):
+def build_cpu_tensorize_param(sfs, fusion_choice, hw_param, dtype):
+    dtypeToBytes = {'float16':2, 'float32': 4, "float64": 8, "int32": 4, "int64": 8}
+    if dtype not in dtypeToBytes:
+        raise 
+    bytePerEle = dtypeToBytes[dtype]
     return _ffi_api.buildCPUTensorizeParam(sfs, fusion_choice, hw_param, bytePerEle)

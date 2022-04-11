@@ -292,7 +292,10 @@ public:
    * \brief apply all the schedules, solve conflicts in schedules
    */
   void applyAll();
-
+  /*!
+  *  \brief get the vertical & horizontal datamovement 
+  */ 
+  double getTotalDM(std::unordered_map<std::string, double> & features);
   /*! \brief get the searchSpace */
   FusionSpace getSearchSpace();
 

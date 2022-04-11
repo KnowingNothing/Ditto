@@ -92,6 +92,7 @@ struct FusionInfo {
   double memUse;
   double outerCost;
   double maxThreadIter;
+  std::unordered_map<std::string, double> features;
 };
 std::ostream &operator<<(std::ostream &o, const FusionInfo &fusionInfo);
 /*!
@@ -154,14 +155,13 @@ public:
   Map<te::Operation, Array<tir::IterVar>> tensorize_iters;
   /*! \brief The intrinsic to be used in tensorization */
   Map<te::Operation, PackedIntrinsic> tensorize_intrinsics;
+  /*! \brief The implementation code to be used in tensorization */
+  Map<te::Operation, tir::StringImm> tensorize_impl;
   /*! \brief second op outer tile factors */
   Array<IntImm> secondOpOuterTileFactors;
   /*! \brief the outer indices for the second op*/
   Array<IntImm> secondOpOuterIndices;
   /*! \brief the implementation of first op's intrinsic */
-  tir::StringImm impl_op1;
-  /*! \brief the implementation of first op's intrinsic */
-  tir::StringImm impl_op2;
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("layer", &layer);
     v->Visit("first_op", &first_op);
@@ -460,6 +460,8 @@ public:
   tir::IterVar first_prologue_shared_attach_axis;
   /*! \brief The second prologue frag compute_at tensor */
   te::Tensor first_frag_attach_tensor;
+  /*! \brief The second prologue frag compute_at tensor */
+  te::Operation first_frag_attach_op;
   /*! \brief The second prologue frag compute_at axis */
   tir::IterVar first_frag_attach_axis;
 
@@ -736,9 +738,12 @@ public:
 
   te::Schedule run(int i, te::Schedule sch, bool verbose = false);
   double getPredCost(int i);
+  Map<String, FloatImm> getFeature(int i);
+  int getFusionLevel(int i);
   double getComputation(int i);
   Array<FloatImm> getOccupancy(int i);
   Array<FloatImm> getPredCostList(int i);
+  
 
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("size", &size);

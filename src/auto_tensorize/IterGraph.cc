@@ -20,8 +20,7 @@ namespace ditto
       data_ = std::move(n);
     }
     TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
-        .set_dispatch<ShareNode>([](const ObjectRef &node, ReprPrinter *p)
-                                 {
+        .set_dispatch<ShareNode>([](const ObjectRef &node, ReprPrinter *p) {
       auto *op = static_cast<const ShareNode *>(node.get());
       p->PrintIndent();
       p->stream << "Share(";
@@ -40,8 +39,7 @@ namespace ditto
       data_ = std::move(n);
     }
     TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
-        .set_dispatch<SplitNode>([](const ObjectRef &node, ReprPrinter *p)
-                                 {
+        .set_dispatch<SplitNode>([](const ObjectRef &node, ReprPrinter *p) {
       auto *op = static_cast<const SplitNode *>(node.get());
       p->PrintIndent();
       p->stream << "Split(";
@@ -65,8 +63,7 @@ namespace ditto
     }
 
     TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
-        .set_dispatch<IterVarNode>([](const ObjectRef &node, ReprPrinter *p)
-                                   {
+        .set_dispatch<IterVarNode>([](const ObjectRef &node, ReprPrinter *p) {
       auto *op = static_cast<const IterVarNode *>(node.get());
       std::string classes[3] = {"S1", "S2", "R"};
       p->PrintIndent();
@@ -263,8 +260,7 @@ namespace ditto
         factors.push_back(i->value);
       CHECK(factors.size() == _firstOpIters.size())
           << "the length of input factors does not match first Ops private iters";
-      auto findPos = [&](IterVar iv)
-      {
+      auto findPos = [&](IterVar iv) {
         int idx = 0;
         for (auto i : _firstOpIters)
         {
@@ -317,8 +313,7 @@ namespace ditto
         factors.push_back(i->value);
       CHECK(factors.size() == _secondOpIters.size())
           << "the length of input factors does not match second Ops private iters";
-      auto findPos = [&](IterVar iv)
-      {
+      auto findPos = [&](IterVar iv) {
         int idx = 0;
         for (auto i : _secondOpIters)
         {
@@ -380,8 +375,7 @@ namespace ditto
             << "setPermute takes sigma([len(firstOpIters)]) as input. The permute "
                "given is "
             << _permutation;
-      auto findIvInIters = [&](IterVar iv)
-      {
+      auto findIvInIters = [&](IterVar iv) {
         for (auto i : splitRelations)
           if (i->parent == iv)
             return i->outer;
@@ -412,8 +406,7 @@ namespace ditto
         CHECK(permutation_[i] == i)
             << "setPermute takes Sigma([len(secondOpIters)]) as input.";
 
-      auto findIvInIters = [&](IterVar iv)
-      {
+      auto findIvInIters = [&](IterVar iv) {
         for (auto i : splitRelations)
           if (i->parent == iv)
             return i->outer;
@@ -452,8 +445,7 @@ namespace ditto
     FusionSpace IterGraphNode::getSearchSpace()
     {
       Array<SearchSpace> ret;
-      auto getExtents = [&](Array<IterVar> ivs)
-      {
+      auto getExtents = [&](Array<IterVar> ivs) {
         Array<IntImm> ret;
         for (auto iv : ivs)
           ret.push_back(IntImm(DataType::Int(32), iv->ext));
@@ -486,8 +478,7 @@ namespace ditto
 
       // 2. find the shared axis & common axis and replace the axis in shared
       // relation.
-      auto findSplitPos = [&](IterVar iv)
-      {
+      auto findSplitPos = [&](IterVar iv) {
         for (auto i : splitRelations)
           if (i->outer == iv)
             return i;
@@ -533,8 +524,7 @@ namespace ditto
       {
         bounds.Set(iv->originVar, IntImm(DataType::Int(32), iv->ext));
       }
-      auto is_common = [&](IterVar iv)
-      {
+      auto is_common = [&](IterVar iv) {
         for (auto common : commonIters)
         {
           if (iv == common)
@@ -596,22 +586,21 @@ namespace ditto
     /*! \brief get the first Op's memvisit*/
     double IterGraphNode::getFirstOpDataVolume() const
     {
-      CHECK(tensorWeight.size() == 2);
+      CHECK(tensorWeight.size() >= 2);
       double fp = 0;
       for (auto acf : firstOpReadAccessFuncs)
         for (auto fp_ : acf->getFootprint(bounds))
         {
           fp += fp_ * tensorWeight[0];
         }
-      return fp * bytePerEle * _outerCost;
+      return fp * (double)bytePerEle * _outerCost;
     }
 
     /*! \brief get the first Op's workload*/
     double IterGraphNode::getFirstOpWorkload() const
     {
-      double n_block = getNumOfBlocks();
       double fp = firstOpWriteAccessFunc->getWorkload(bounds);
-      return fp * n_block;
+      return fp * _outerCost;
     }
 
     /*! \brief get the first Op's blockSize*/
@@ -624,13 +613,13 @@ namespace ditto
       if (considerWrite)
         for (auto fp_ : firstOpWriteAccessFunc->getFootprint(bounds))
           fp += fp_;
-      return fp * bytePerEle;
+      return fp * (double)bytePerEle;
     }
 
     /*! \brief get the second Op's memvisit*/
     double IterGraphNode::getSecondOpDataVolume() const
     {
-      CHECK(tensorWeight.size() == 2);
+      CHECK(tensorWeight.size() >= 2);
       double fp = 0;
       for (auto acf : secondOpReadAccessFuncs)
         for (auto fp_ : acf->getFootprint(bounds))
@@ -646,14 +635,15 @@ namespace ditto
       {
         fp -= fp_ * tensorWeight[0];
       }
-      return fp * bytePerEle * _outerCost;
+      return fp * (double)bytePerEle * _outerCost;
     }
+
+
     /*! \brief get the second Op's workload*/
     double IterGraphNode::getSecondOpWorkload() const
     {
-      double n_block = getNumOfBlocks();
       double fp = secondOpWriteAccessFunc->getWorkload(bounds);
-      return fp * n_block;
+      return fp * _outerCost;
     }
     /*! \brief get the second Op's blockSize*/
     double IterGraphNode::getSecondOpBufferSize() const
@@ -665,7 +655,7 @@ namespace ditto
       if (!writeThrough)
         for (auto fp_ : secondOpWriteAccessFunc->getFootprint(bounds))
           fp += fp_;
-      return fp * bytePerEle;
+      return fp * (double)bytePerEle;
     }
 
     /*! \brief get the problem size after parallel */
@@ -680,7 +670,7 @@ namespace ditto
       bounds = inferBound();
       scheduleParallel();
       double cacheSize = cacheSizes[fusionLevel];
-      double n_blocks = getNumOfBlocks();
+      double n_blocks = _outerCost;
       double firstOpDataVolume = getFirstOpDataVolume();
       double firstOpBufferSize = getFirstOpBufferSize(true);
       double firstOpWorkload = getFirstOpWorkload();
@@ -720,40 +710,42 @@ namespace ditto
       std::unordered_map<int, IntImm> parallelSchedule;
       std::unordered_map<int, int> idx2ext;
       std::vector<int> parallelIndices;
-      int initCost = 1;
+      double initCost = 1;
       for (auto iv : commonIters)
       {
         if (iv->iv_type == IV_Type::TENSORIZE)
           continue;
-        if (iv->iv_type == IV_Type::REDUCE )
+        if (iv->iv_type == IV_Type::REDUCE){
           initCost *= iv->ext;
+          continue;
+        }
         idx2ext[iv->index] = iv->ext;
         parallelIndices.push_back(iv->index);
       }
-      int bestCost = 1e9;
-      int bestMaxThreadIter;
+      double bestCost = 1e9;
+      double bestMaxThreadIter;
       const int totalThread = (int)parallelism_;
       int exts[parallelIndices.size()];
-      
-      std::function<void(int, int, int)> func = [&](size_t __idx, int cost, int usedThread)
-      {
+
+      std::function<void(size_t, double, int)> func = [&](size_t __idx, double cost, int usedThread) {
+        CHECK(cost > 0) << __idx << " " << cost << " " << usedThread;
         int idx = parallelIndices[__idx];
         if (__idx == parallelIndices.size())
         {
           cost *= ((totalThread + usedThread - 1) / (totalThread));
+          cost += 0.01 * (double)(usedThread - totalThread) * (double)(usedThread - totalThread);
           if (cost < bestCost)
           {
             bestCost = cost;
-            bestMaxThreadIter = (totalThread + usedThread - 1) / (totalThread);
-            for (size_t i = 0; i < parallelIndices.size(); i++)
-            {
+            bestMaxThreadIter = (double)((totalThread + usedThread - 1) / (totalThread));
+            for (size_t i = 0; i < parallelIndices.size(); i++){
               parallelSchedule[parallelIndices[i]] = IntImm(DataType::Int(32), exts[i]);
             }
           }
           return;
         }
         int ext = idx2ext[idx];
-        if (cost * ((usedThread + totalThread - 1) / (totalThread)) >= bestCost)
+        if ((cost * ((usedThread + totalThread - 1) / (totalThread))) > bestCost)
           return;
         for (int i = ext; i >= 1; i--)
         {
@@ -810,7 +802,8 @@ namespace ditto
 
       double parallelism =
           std::min(getParallelism(), parallelism_ * (cacheSize / memUse)) / _maxThreadIter;
-      if (occupancy){
+      if (occupancy)
+      {
         *occupancy = memUse / cacheSize;
       }
       if (parallelism_p)
@@ -821,6 +814,41 @@ namespace ditto
               (firstOpDataVolume + secondOpDataVolume) / (cacheBandwidth[fusionLevel])};
     }
 
+
+    double IterGraphNode::getTotalDM(std::unordered_map<std::string, double> & features){
+      CHECK(tensorWeight.size() >= 5);
+      double verticalDM, horizontalDM;
+      verticalDM = horizontalDM = 0.0;
+      double firstOpH = 0;
+      for (auto acf : firstOpReadAccessFuncs){
+        for (auto fp_ : acf->getFootprint(bounds)){
+          firstOpH += fp_ ;
+        }
+      }
+      firstOpH *= (double) bytePerEle * _outerCost;
+      features["op1H"] = firstOpH;
+
+      double secondOpH = 0;
+      for (auto acf: secondOpReadAccessFuncs){
+        for (auto fp: acf->getFootprint(bounds)){
+          secondOpH += fp;
+        }
+      }
+      for (auto fp: firstOpWriteAccessFunc->getFootprint(bounds)){
+        secondOpH -= fp;
+      }
+      secondOpH *= (double) bytePerEle * _outerCost;
+      features["op2H"] = secondOpH; 
+      horizontalDM = (firstOpH + secondOpH);
+
+      for (auto fp: firstOpWriteAccessFunc->getFootprint(bounds)){
+        verticalDM += fp;
+      }
+      verticalDM *= (double) bytePerEle * _outerCost;
+      features["op2V"] = verticalDM;
+
+      return horizontalDM * tensorWeight[2] + verticalDM * tensorWeight[3] + tensorWeight[4];
+    }
     /*! \brief looplike lightweight visualize */
     void IterGraphNode::visualize()
     {
@@ -881,11 +909,11 @@ namespace ditto
                               Array<Share> sharedPairs)
     {
       // op2.R bind to op1.S
-      auto isMapped = [&sharedPairs](Array<IterVar> ivs1, Array<IterVar> ivs2)
-      {
+      // share(ivs1) subset ivs2
+      auto isMapped = [&sharedPairs](Array<IterVar> ivs1, Array<IterVar> ivs2) {
         bool tmp[ivs2.size()];
-        if (!(ivs1.size() == ivs2.size()))
-          return false;
+        // if (!(ivs1.size() == ivs2.size()))
+        //   return false;
         for (size_t i = 0; i < ivs2.size(); i++)
           tmp[i] = 0;
         for (auto iv1 : ivs1)
@@ -904,7 +932,8 @@ namespace ditto
                   break;
                 }
               }
-              break;
+              if (matched)
+                break;
             }
           }
           if (!matched)
@@ -969,6 +998,10 @@ namespace ditto
       }
       else
       {
+        std::cout << "share: " << sharedPairs << std::endl;
+        std::cout << "secondOpS1: " << secondOpS1 << std::endl;
+        std::cout << "firstOpS1: " << firstOpS1 << std::endl;
+        std::cout << "secondOpS2: " << secondOpS2 << std::endl;
         CHECK(false) << "firstOpS1 cannot match secondOpS";
       }
       return true;
@@ -1031,8 +1064,7 @@ namespace ditto
     }
 
     TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
-        .set_dispatch<IterGraphNode>([](const ObjectRef &node, ReprPrinter *p)
-                                     {
+        .set_dispatch<IterGraphNode>([](const ObjectRef &node, ReprPrinter *p) {
       auto *op = static_cast<const IterGraphNode *>(node.get());
       p->PrintIndent();
       p->stream << "---------------IterGraph------------------\n";

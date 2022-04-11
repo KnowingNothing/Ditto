@@ -7,7 +7,7 @@ def main(shape, server):
     args = ["cpu"] + shape + [peakflops[server]]
     args = [str(_) for _ in args]
     args = ' '.join(args)
-    cmd = "/home/CORP.PKUSC.ORG/gulang2020/workspace/Ditto/benchmark/oneDNN/conv_relu_conv_f32 " + args
+    cmd = "/home/CORP.PKUSC.ORG/gulang2020/workspace/Ditto/benchmark/oneDNN/conv_conv_f32 " + args
     print(cmd)
     s = subprocess.check_output(cmd.split()).decode('utf-8')
     s = s.replace("\n", ' ')
@@ -27,7 +27,7 @@ shapes = [
     [1, 256, 57, 56, 256, 1, 1, 64, 1, 1, 0, 0, 1, 1]
 ]
 
-example_text = "python ./conv_relu_conv.py --dtype float32 --begin 0 --num 1 --server sc"
+example_text = "python ./conv_conv.py --dtype float32 --begin 0 --num 1 --server sc"
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog="base_maker",
@@ -67,5 +67,5 @@ if __name__ == "__main__":
         print(
             f"{cc[0]},{args.server},{cc[1]}"
         )
-    with open ("conv_relu_conv_oneDNN.pkl", 'wb') as f:
+    with open ("conv_conv_oneDNN.pkl", 'wb') as f:
         pkl.dump(costs, f)
