@@ -5,7 +5,12 @@ import time
 
 
 def torch_bmm_softmax_bmm_cuda(A, B, C):
-    with torch.autocast("cuda"):
+    if A.dtype != torch.float32:
+        with torch.autocast("cuda"):
+            D = torch.bmm(A, B)
+            E = torch.softmax(D, dim=-1)
+            F = torch.bmm(E, C)
+    else:
         D = torch.bmm(A, B)
         E = torch.softmax(D, dim=-1)
         F = torch.bmm(E, C)
@@ -91,7 +96,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dtype",
         type=str,
-        choices=["float16", "int8"],
+        choices=["float16", "float32", "int8"],
         default="float16",
     )
     parser.add_argument(
