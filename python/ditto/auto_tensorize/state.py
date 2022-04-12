@@ -66,6 +66,12 @@ class fusion_context(Object):
 
     def getPredCostList(self, i):
         return _ffi_api.getPredCostList(self, i)
+    
+    def getFeature(self, i):
+        return _ffi_api.getFeature(self, i)
+
+    def getFusionLevel(self, i):
+        return _ffi_api.getFusionLevel(self, i)
 
 
 @tvm._ffi.register_object("ditto.auto_tensorize.ScheduleContext")

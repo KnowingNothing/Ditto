@@ -48,7 +48,10 @@ namespace ditto
 
     te::Operation CPUTensorizeContextNode::InterPathRootOp()
     {
-      CHECK(this->HasInterPath());
+      // CHECK(this->HasInterPath());
+      if (!this->HasInterPath()){
+        return te::Operation();
+      }
       return this->state->inter_path[(int)this->state->inter_path.size() - 1];
     }
 
@@ -730,8 +733,11 @@ namespace ditto
         ctx->first_frag_attach_axis = *commonLoops.rbegin();
       else
         ctx->first_frag_attach_axis = outerFused;
-      ctx->path_attach_axis = getAttachAxis(sch, cur_op, ctx->InterPathRootOp(), ctx->first_frag_attach_axis, bodyLoops);
-      ctx->path_attach_tensor = cur_op;
+      te::Operation interPathOp = ctx->InterPathRootOp();
+      if (interPathOp.defined()){
+        ctx->path_attach_axis = getAttachAxis(sch, cur_op, interPathOp, ctx->first_frag_attach_axis, bodyLoops);
+        ctx->path_attach_tensor = cur_op;
+      }
       ctx->first_frag_attach_op = cur_op;
       return;
     }
@@ -770,6 +776,8 @@ namespace ditto
                            CPUTensorizeParam tensorize_param)
     {
       te::Operation root_op = ctx->InterPathRootOp();
+      if (!root_op.defined())
+        return;
 
       CHECK(ctx->path_attach_axis.defined());
 

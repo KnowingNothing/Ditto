@@ -4,9 +4,7 @@ import numpy as np
 import tvm
 from tvm import te, auto_scheduler
 import argparse
-from pebble import concurrent
 from concurrent.futures import TimeoutError
-from pebble import ProcessPool, ProcessExpired
 import pickle as pkl
 
 
@@ -117,13 +115,13 @@ def main(batch, M, N, K, L, dtype, server):
 
     # Run auto-tuning (search)
     # if not test:
-    task.tune(tune_option)
+    # task.tune(tune_option)
     # Apply the best schedule
     sch, args = task.apply_best(log_file)
     A, B, C, out = args
 
     # print("Lowered TIR:")
-    # print(tvm.lower(sch, args, simple_mode=True))
+    print(tvm.lower(sch, args, simple_mode=True))
 
     func = tvm.build(sch, args, target)
     a_np = np.random.uniform(size=(batch, M, K)).astype(dtype)

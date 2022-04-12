@@ -11,53 +11,6 @@ import pickle as pkl
 
 EVALUTE_SCHEDULE_INPUTS = None
 
-
-def evaluate_schedule_worker(dummy):
-    global EVALUTE_SCHEDULE_INPUTS
-    sch, args, ins, outs, sm = EVALUTE_SCHEDULE_INPUTS
-    func = tvm.build(sch, args, f"cuda -arch=sm_{sm}")
-    inputs_np = [
-        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(y.dtype) for y in ins
-    ]
-
-    outputs_np = [
-        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(y.dtype)
-        for y in outs
-    ]
-    ctx = tvm.cuda()
-    inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
-    outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
-
-    evaluator = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=600)
-    cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
-    # print(f"Our code uses {cost} ms")
-    return cost
-
-
-def evaluate_schedule(sch, args, ins, outs, sm):
-    global EVALUTE_SCHEDULE_INPUTS
-    EVALUTE_SCHEDULE_INPUTS = (sch, args, ins, outs, sm)
-    with ProcessPool(1) as pool:
-        future = pool.map(evaluate_schedule_worker, [0], timeout=100)
-        iterator = future.result()
-
-        while True:
-            try:
-                results = next(iterator)
-                # print(".Y", end="", flush=True)
-            except StopIteration:
-                break
-            except TimeoutError as error:
-                print(".T", end="", flush=True)
-                results = 1e10
-            except Exception as error:
-                print(error)
-                print(".E", end="", flush=True)
-                results = 1e10
-
-        return results
-
-
 @auto_scheduler.register_workload  # Note the auto_scheduler decorator
 def conv_conv(
     N,

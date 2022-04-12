@@ -4,61 +4,12 @@ import numpy as np
 import tvm
 from tvm import te, auto_scheduler
 import argparse
-from pebble import concurrent
-from concurrent.futures import TimeoutError
-from pebble import ProcessPool, ProcessExpired
 import pickle as pkl
-
+import tvm.testing
 
 EVALUTE_SCHEDULE_INPUTS = None
 
 peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995}
-
-def evaluate_schedule_worker(dummy):
-    global EVALUTE_SCHEDULE_INPUTS
-    sch, args, ins, outs, sm = EVALUTE_SCHEDULE_INPUTS
-    func = tvm.build(sch, args, f"cuda -arch=sm_{sm}")
-    inputs_np = [
-        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(y.dtype) for y in ins
-    ]
-
-    outputs_np = [
-        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(y.dtype)
-        for y in outs
-    ]
-    ctx = tvm.cuda()
-    inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
-    outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
-
-    evaluator = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=600)
-    cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
-    # print(f"Our code uses {cost} ms")
-    return cost
-
-
-def evaluate_schedule(sch, args, ins, outs, sm):
-    global EVALUTE_SCHEDULE_INPUTS
-    EVALUTE_SCHEDULE_INPUTS = (sch, args, ins, outs, sm)
-    with ProcessPool(1) as pool:
-        future = pool.map(evaluate_schedule_worker, [0], timeout=100)
-        iterator = future.result()
-
-        while True:
-            try:
-                results = next(iterator)
-                # print(".Y", end="", flush=True)
-            except StopIteration:
-                break
-            except TimeoutError as error:
-                print(".T", end="", flush=True)
-                results = 1e10
-            except Exception as error:
-                print(error)
-                print(".E", end="", flush=True)
-                results = 1e10
-
-        return results
-
 
 @auto_scheduler.register_workload  # Note the auto_scheduler decorator
 def bmm_bmm(batch, M, N, K, L, dtype):
@@ -105,8 +56,8 @@ def main(batch, M, N, K, L, dtype, server):
     task = tvm.auto_scheduler.SearchTask(func=bmm_bmm, args=(batch, M, N, K, L, dtype), target=target)
 
     # # Inspect the computational graph
-    # print("Computational DAG:")
-    # print(task.compute_dag)
+    print("Computational DAG:")
+    print(task.compute_dag)
 
     log_file = f"bmm_bmm_{batch}-{M}-{N}-{K}-{L}-{dtype}.json"
     tune_option = auto_scheduler.TuningOptions(
@@ -122,7 +73,7 @@ def main(batch, M, N, K, L, dtype, server):
     A, B, C, out = args
 
     # print("Lowered TIR:")
-    # print(tvm.lower(sch, args, simple_mode=True))
+    print(tvm.lower(sch, args, simple_mode=True))
 
         # cost = evaluate_schedule(sch, args, [A, B, C], [out], sm)
     func = tvm.build(sch, args, target)
@@ -130,12 +81,17 @@ def main(batch, M, N, K, L, dtype, server):
     b_np = np.random.uniform(size=(batch, K, L)).astype(dtype)
     c_np = np.random.uniform(size=(batch, L, N)).astype(dtype)
     out_np = np.random.uniform(size=(batch, M, N)).astype(dtype)
+    out_groundTuruth = (a_np @ b_np) @ c_np
+    
     dev = tvm.device(str(target), 0)
     a_tvm = tvm.nd.array(a_np, device=dev)
     b_tvm = tvm.nd.array(b_np, device=dev)
     c_tvm = tvm.nd.array(c_np, device=dev)
     out_tvm = tvm.nd.array(out_np, device=dev)
-    evaluator = func.time_evaluator(func.entry_name, dev, min_repeat_ms=500)
+    func(a_tvm, b_tvm, c_tvm, out_tvm)
+    tvm.testing.assert_allclose(out_tvm.numpy(), out_groundTuruth, rtol = 1e-3, atol = 1)
+
+    evaluator = func.time_evaluator(func.entry_name, dev, min_repeat_ms=10, repeat = 1000)
     cost = evaluator(a_tvm, b_tvm, c_tvm, out_tvm).mean
     workload = batch * (M * K * L + M * N * L)
     ratioToPeak = workload / 1e9 / cost / peakflops[server]
@@ -214,7 +170,7 @@ if __name__ == "__main__":
     print("B,M,N,K,L,dtype,sm,cost")
     for cc in costs:
         print(
-            f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.dtype},{args.sm},{cc[1]}"
+            f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.dtype},{cc[1]}"
         )
     with open("bmm_bmm_ansor.pkl", 'wb') as f:
         pkl.dump(costs, f)

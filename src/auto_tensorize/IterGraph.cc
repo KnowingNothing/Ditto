@@ -975,6 +975,7 @@ namespace ditto
       }
       else
       {
+        std::cout << "sharePairs: " << sharedPairs << std::endl;
         std::cout << "secondOpR: " << secondOpR << std::endl;
         std::cout << "firstOpS1: " << firstOpS1 << std::endl;
         std::cout << "firstOpS2: " << firstOpS2 << std::endl;

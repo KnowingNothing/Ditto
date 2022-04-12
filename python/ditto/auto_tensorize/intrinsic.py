@@ -436,14 +436,15 @@ def gemm_impl(shape, isa, dtype, prefix):
     if isa == "avx512" and dtype == "float32" and NI == 64:
         cc_code = '''
 #include <unistd.h>
-
+#include <stdio.h>
 extern "C" int %s_update(float *C, float *A, float *B, int K_, int N_, int c_stride_)
 {
     getpid();
     long long K = K_;
     long long N = N_;
     long long c_stride = c_stride_;
-    __asm__(
+
+    __asm__ __volatile__(
         // AT&T syntax: src dst
         "mov %%[A], %%%%rax;"
         "mov %%[B], %%%%rbx;"
@@ -578,6 +579,7 @@ extern "C" int %s_update(float *C, float *A, float *B, int K_, int N_, int c_str
           [c_stride] "m"(c_stride)
         : "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "zmm0", "zmm1", "zmm2", "zmm3", "zmm4", "zmm5", "zmm6", "zmm7", "zmm8", "zmm9", "zmm10", "zmm11", "zmm12", "zmm13", "zmm14", "zmm15", 
         "zmm16", "zmm17", "zmm18", "zmm19", "zmm20", "zmm21", "zmm22", "zmm23", "zmm24", "zmm25", "zmm26", "zmm27", "zmm28", "zmm29", "zmm30", "zmm31");
+    getpid();
     return 0;
 }
 extern "C" int %s_reset(float *cc, int stride) {
@@ -672,6 +674,82 @@ def intrin_gemm(
         return _body(), _reduce_reset(), _reduce_update()
 
     return te.decl_tensor_intrin(c.op, intrin_func, binds={a: Ab, b: Bb, c: Cb})
+
+def intrin_gemm_noreshape(
+    shape, dtype, prefix
+):
+    assert (len(shape) == 3)
+    MICRO_M, MICRO_N, MICRO_K = shape 
+    A = te.placeholder((1, 1, MICRO_M, 1, MICRO_K), name="A", dtype=dtype)
+    B = te.placeholder((1, 1, MICRO_K, 1, MICRO_N), name="B", dtype=dtype)
+    ko = te.reduce_axis((0, 1), "ko")
+    ki = te.reduce_axis((0, MICRO_K), name="ki")
+    C = te.compute(
+        (1, 1, MICRO_M, 1, MICRO_N), lambda b, mo, mi, no, ni: te.sum(A[b, mo, mi, ko, ki] * B[b, ko, ki, no, ni], axis=[ko, ki]), name="C"
+    )
+    aStride = te.var("astride")
+    bStride = te.var("bstride")
+    cStride = te.var("cstride")
+    Ab = tvm.tir.decl_buffer(
+        A.shape,
+        A.dtype,
+        name=prefix + "A",
+        data_alignment=64,
+        offset_factor=1,
+        strides=[te.var(), te.var(), aStride, te.var(), te.var()],
+    )
+    Bb = tvm.tir.decl_buffer(
+        B.shape,
+        B.dtype,
+        name=prefix + "B",
+        data_alignment=64,
+        offset_factor=1,
+        strides=[te.var(), te.var(), bStride, te.var(), te.var()],
+    )
+    Cb = tvm.tir.decl_buffer(
+        C.shape,
+        C.dtype,
+        name=prefix + "C",
+        data_alignment=64,
+        offset_factor=1,
+        strides=[te.var(), te.var(), cStride, te.var(), te.var()],
+    )
+
+    def intrin_func(ins, outs):
+        aa, bb = ins
+        cc = outs[0]
+
+        def _body():
+            ib = tvm.tir.ir_builder.create()
+            ib.emit(
+                tvm.tir.call_extern(
+                    "int32",
+                    prefix + "_update",
+                    cc.access_ptr("w"),
+                    aa.access_ptr("r"),
+                    bb.access_ptr("r"),
+                    aStride,
+                    bStride,
+                    cStride
+                )
+            )
+            return ib.get()
+
+        def _reduce_reset():
+            ib = tvm.tir.ir_builder.create()
+            ib.emit(
+                tvm.tir.call_extern(
+                    "int32", prefix + "_reset", cc.access_ptr("w"), cStride
+                )
+            )
+            return ib.get()
+
+        def _reduce_update():
+            return _body()
+
+        return _body(), _reduce_reset(), _reduce_update()
+
+    return te.decl_tensor_intrin(C.op, intrin_func, binds={A: Ab, B: Bb, C: Cb})
 
 def conv_impl(shape, isa, dtype, prefix):
     assert len(shape) == 7
@@ -1570,6 +1648,11 @@ def cpu_intrin(op, shape, isa, dtype, prefix=""):
     if op == "gemm":
         compute = intrin_gemm(
             shape, dtype=dtype, prefix=prefix
+        )
+        code = gemm_impl(shape, isa, dtype, prefix)
+    elif op == "gemm_noreshape":
+        compute = intrin_gemm_noreshape(
+            shape, dtype = dtype, prefix = prefix 
         )
         code = gemm_impl(shape, isa, dtype, prefix)
     elif op == "conv":
