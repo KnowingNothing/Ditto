@@ -240,6 +240,7 @@ if __name__ == "__main__":
     batch_size = 1
     print("Use PyTorch Tensor Core:", TENSOR_CORE)
     print("Ratio,Time,AI,FusedAI,Perf,OrgDRAM,FuseDRAM")
+    record = []
     for config in configs:
         seq_len = config["seq_len"]
         hidden = config["hidden"]
@@ -275,3 +276,7 @@ if __name__ == "__main__":
         fuse_ai = gflop / fuse_dram
         perf = gflop / chain_cost * 1e3
         print(f"{ratio},{chain_cost},{ai},{fuse_ai},{perf},{dram},{fuse_dram}")
+        # record.append((seq_len * seq_len)/(seq_len + seq_len))
+        record.append((seq_len * hidden // heads)/(seq_len + hidden//heads))
+    print(min(record))
+    print(max(record))
