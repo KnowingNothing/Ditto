@@ -20,7 +20,8 @@ NI1 = 16
 KI1 = 64
 NI2 = 16
 KI2 = 16
-REPEAT = 2000
+REPEAT = 500
+PARALLEL = 32
 PEAKGFLOPS = int()
 WORKLOAD = int()
 SERVER = None
@@ -44,7 +45,7 @@ ServerConfig = {
     },
     'scccc': {
         'parallelism': 72,
-        'cacheSizes': [32 * 16, 32 * 1024 * 0.8, 1024 * 1024 * 0.8, 25344 * 1024 * 0.8],
+        'cacheSizes': [32 * 16, 32 * 1024, 1024 * 1024 * 0.8, 25344 * 1024 * 0.8],
         'corePerLevel': [1.0, 1.0, 1.0, 18.0],
         'bandwidth': [293.72, 100.72, 50.54, 13.14],
         'isa': 'avx512',
@@ -81,12 +82,6 @@ def BatchGemmGemm(
     )
 
     choice1 = [D_frag.op.axis[2], D_frag.op.axis[4], rki]
-
-    # C_ext = tvm.te.compute(
-    #     [batch, L // KI2, N // NI2, KI2, NI2],
-    #     lambda b, lo, no, li, ni: C[b, lo * KI2 + li, no * NI2 + ni],
-    #     name="C_ext",
-    # )
 
     rlo = tvm.te.reduce_axis([0, L // KI2], "rlo")
     rli = tvm.te.reduce_axis([0, KI2], "rli")
@@ -167,8 +162,6 @@ def test_double_gemm(
 
     ins, outs, (choice1, choice2) = BatchGemmGemm(batch, M, N, K, L, dtype=dtype)
 
-    t0 = time.time()
-
     layer = ac.layer([outs[0].op], inputs=ins)
 
     sfs = at.build_serial_fusion_state(layer)
@@ -218,8 +211,6 @@ def test_double_gemm(
         mode=mode,
     )
 
-    t1 = time.time()
-    print("static analysis time", t1-t0)
     sch0 = tvm.te.create_schedule(outs[0].op)
     func = tvm.build(sch0, layer.schedule_tensors, name="bmm")
     ctx = tvm.cpu()
@@ -235,13 +226,12 @@ def test_double_gemm(
     outputs = [tvm.nd.array(x, ctx) for x in outputs_np]
     func(*inputs, *outputs)
 
-    top = float()
+    top = -1.0
     top10 = float('inf')
     if mode == "test":
         R = 1
     elif mode == "best":
-        R = min(5, fusionContext.size)
-    fusionLevel = fusionContext.getFusionLevel(0)
+        R = min(10, fusionContext.size)
     for iter in range(R):
         print("run", iter)
         sch = tvm.te.create_schedule(outs[0].op)
@@ -255,25 +245,34 @@ def test_double_gemm(
 
         func(*inputs_tvm, *outputs_tvm)
 
-        # try:
-        #     for (a, b) in zip(outputs, outputs_tvm):
-        #         tvm.testing.assert_allclose(a.numpy(), b.numpy(), atol=1, rtol=1e-6)
-        # except:
-        #     print(f"WARNING: schedule {iter} of {batch} {M} {N} {K} {L} is incorrect")
-
+        try:
+            for (a, b) in zip(outputs, outputs_tvm):
+                tvm.testing.assert_allclose(a.numpy(), b.numpy(), atol=1, rtol=1e-6)
+        except:
+            print(f"WARNING: schedule {iter} of {batch} {M} {N} {K} {L} is incorrect")
+            continue
+            
         evaluator = func.time_evaluator(
-            func.entry_name, ctx, min_repeat_ms=0, repeat=REPEAT, number = 1, f_preproc="cache_flush_cpu_non_first_arg"
+            func.entry_name, ctx, repeat = 2000, number = 1, f_preproc="cache_flush_cpu_non_first_arg"
         )
-
 
         cost = evaluator(*inputs_tvm, *outputs_tvm).mean
 
-        if iter == 0:
+        fusionLevel = fusionContext.getFusionLevel(iter)
+        
+        func.export_library(f"./lib/lib_bmm_bmm_{config['id']}_{iter}_{int(cost*1e6)}_{fusionLevel}.so")
+        
+        # with open(f"./data/data_bmm_bmm_{config['id']}_{iter}_{int(cost*1e6)}.npy", 'wb') as f:
+        #     print(len(inputs_np), len(outputs_np))
+        #     for data in inputs_np + outputs_np:
+        #         np.save(f, data)
+
+        if top < 0:
             top = cost
         if cost < top10:
             top10 = cost
         print(f'iter{iter}: ', cost)
-    return {'top1': top, 'top10': top10}, fusionLevel, t1 - t0
+    return {'top1': top, 'top10': top10}
 
 
 def setGlobals(B, M, N, K, L, dtype):
@@ -297,25 +296,19 @@ def setGlobals(B, M, N, K, L, dtype):
     return (B, M, N, K, L)
 
 
-def main(batch, M, N, K, L, dtype, server, mode):
+def main(batch, M, N, K, L, dtype, server, mode, id):
     global SERVER
     SERVER = ServerConfig[server]
     B, M, N, K, L = setGlobals(batch, M, N, K, L,dtype= dtype)
     print ("B,M,N,K,L,dtype,WORKLOAD,SERVER")
     print(B,M,N,K,L,dtype,WORKLOAD,SERVER)
-    t0 = time.time()
-    Time, fusionLevel, schedule_time = test_double_gemm(B, M, N, K, L, config={
-                           'searchType': 'normal', 'verbose':False, 'mode': mode, 'dtype': dtype})
-    t1 = time.time()
-    print("schedule time: ", t1 - t0)
+    time = test_double_gemm(B, M, N, K, L, config={
+                           'searchType': 'normal', 'verbose':False, 'mode': mode, 'dtype': dtype, 'id': id})
     ret = {}
-    for k in Time:
+    for k in time:
         ret[k] = {} 
-        ret[k]['time(s)'] = Time[k]
-        ret[k]['%peak'] = (WORKLOAD / Time[k] / 1e9) / SERVER['peakgflops']
-    ret['total_time'] = t1 - t0
-    ret['fusionLevel'] = fusionLevel
-
+        ret[k]['time(s)'] = time[k]
+        ret[k]['%peak'] = (WORKLOAD / time[k] / 1e9) / SERVER['peakgflops']
     print(batch, M, N, K, L, dtype,":",ret)
     return ret
 
@@ -379,7 +372,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     costs = []
-    for ss in shapes[args.begin: args.begin + args.num]:
+    for i in range(args.begin, args.begin + args.num, 1):
+        if i >= len(shapes):
+            break
+        ss = shapes[i]
         B, M, N, K, L = ss
         cost = main(
             batch=B,
@@ -389,7 +385,8 @@ if __name__ == "__main__":
             L=L,
             dtype=args.dtype,
             server = args.server,
-            mode = args.mode
+            mode = args.mode,
+            id = i
         )
         costs.append((ss, cost))
 

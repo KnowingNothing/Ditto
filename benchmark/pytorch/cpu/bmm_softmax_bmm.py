@@ -3,8 +3,9 @@ import torch
 import numpy as np
 import argparse
 import pickle as pkl 
+import streamlit as st
 
-REPEAT = 1000
+
 SERVER = None
 
 ServerConfig = {
@@ -37,66 +38,41 @@ ServerConfig = {
     },
 }
 
+Qtensor = None
+Ktensor = None
+Vtensor = None
+
+num = 1000
+
+def dataGen(batch, M, N, K, L, dtype):
+    global Qtensor, Ktensor, Vtensor
+    Qtensor = torch.from_numpy(np.random.uniform(-1, 1, (batch, M, K)).astype(dtype))
+    Ktensor = torch.from_numpy(np.random.uniform(-1, 1, (batch, K, N)).astype(dtype))
+    Vtensor = torch.from_numpy(np.random.uniform(-1, 1, (batch, N, L)).astype(dtype))
+
+@st.experimental_singleton
+def test_func():
+    QK = torch.bmm(Qtensor, Ktensor)
+    QK_softmax = torch.nn.Softmax(dim=2)(QK)
+    QKV = torch.bmm(QK_softmax, Vtensor)
 
 def test_torch(batch, M, N, K, L, dtype = "float32"):
-    if dtype == "float32":
-        dataType = np.float32
-    elif dtype == "int8":
-        dataType = np.int8
-    num = REPEAT
-    per = 100
-    num = ((num-1) // per + 1) * per
+    # warm up
+    QK = torch.bmm(Qtensor, Ktensor)
+    QK_softmax = torch.nn.Softmax(dim=2)(QK)
+    QKV = torch.bmm(QK_softmax, Vtensor)
     cost = 0
-    for outest in range(num // per + 1):
-        Q_np = []
-        K_np = []
-        V_np = []
-        Qtensor = []
-        Ktensor = []
-        Vtensor = []
-        QKV_np = []
-        for trial in range(per):
-            Q_np.append(np.random.uniform(
-                size=(batch, M, K)).astype(dataType))
-            K_np.append(np.random.uniform(
-                size=(batch, K, L)).astype(dataType))
-            V_np.append(np.random.uniform(
-                size=(batch, L, N)).astype(dataType))
-            Qtensor.append(torch.from_numpy(Q_np[trial]))
-            Ktensor.append(torch.from_numpy(K_np[trial]))
-            Vtensor.append(torch.from_numpy(V_np[trial]))
-            QKV_np.append(np.random.uniform(
-                size=(batch, M, N)).astype(dataType))
-            for i in range(batch):
-                QK_np = np.exp(Q_np[trial][i].dot(K_np[trial][i]))
-                sum_np = np.sum(QK_np, axis = -1)
-                sum_np = sum_np.reshape(list(sum_np.shape) + [1])
-                QK_np = QK_np / sum_np
-                QKV_np[trial][i] = QK_np @ V_np[trial][i]
-
-        QKV = []
-
+    for i in range(num):
+        st.experimental_singleton.clear()
         start = time.time()
-        for trial in range(per):
-            QK = torch.bmm(Qtensor[trial], Ktensor[trial])
-            QK_softmax = torch.nn.Softmax(dim=2)(QK)
-            QKV.append(torch.bmm(QK_softmax, Vtensor[trial]))
-
+        test_func()
         end = time.time()
-        cost_tmp = (end - start) / per
-        if outest > 0:
-            cost += cost_tmp
-#        print("%d: %g" % (outest, cost_tmp))
-
-        for trial in range(per):
-            np.testing.assert_allclose(
-                QKV_np[trial], QKV[trial].numpy(), rtol=1e-3)
-
-    cost /= num // per
+        cost += end - start
+    cost = cost / num
     wl = batch * ( M * K * L + M * L * N)
     ratioToPeak = (wl / cost / 1e9) / SERVER['peakgflops']
-    print(batch,M,N,K,L,cost,ratioToPeak)
     return cost, ratioToPeak
+
 example_text = "python bmm_softmax_bmm.py --begin 0 --num 1"
 def ceil(x, y):
     return (x + y - 1) // y
@@ -151,12 +127,13 @@ if __name__ == "__main__":
     )
     
     args = parser.parse_args()
-
+    torch.set_num_interop_threads(1)
     setServer(args.server)
     print ("the Server:", SERVER)
     costs = []
     for ss in shapes[args.begin : args.begin + args.num]:
         B, M, N, K, L = ss
+        dataGen(B, M, N, K, L, args.dtype)
         cost = test_torch(B, M, N, K, L, args.dtype)
         costs.append((ss, cost))
     print("B,M,N,K,L,dtype,cost,SERVER")

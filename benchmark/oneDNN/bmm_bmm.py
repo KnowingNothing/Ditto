@@ -2,16 +2,18 @@ import subprocess
 import argparse
 import regex as re
 import pickle as pkl
-REPEAT = 2000
-peakflops = {'sc': 704, 'sccc': 2150.4, 'scccc': 2995.2}
-def main(batch, M, N, K, L, server):
-    args = [batch, M, N, K, L, REPEAT, peakflops[server]]
+peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995}
+def main(shape, server):
+    args = ["cpu"] + shape + [peakflops[server]]
     args = [str(_) for _ in args]
     args = ' '.join(args)
-    cmd = "/home/CORP.PKUSC.ORG/gulang2020/workspace/Ditto/benchmark/mkl/MKL2MM_profile " + args
+    cmd = "/home/CORP.PKUSC.ORG/gulang2020/workspace/Ditto/benchmark/oneDNN/bmm_bmm_f32 " + args
+    print(cmd)
     s = subprocess.check_output(cmd.split()).decode('utf-8')
+    s = s.replace("\n", ' ')
+    print(s)
     ratioToPeak = re.findall('ratioToPeak: ([\d\.]*)', s)
-    time = re.findall('time: ([\d\.]*)', s)
+    time = re.findall('time\(s\): ([\d\.]*)', s)
     return float(time[0]), float(ratioToPeak[0])
 
 def ceil(x, y):
@@ -37,7 +39,7 @@ shapes = [
     (1, 1024, uround(49, 16), uround(49, 16), 512), # Mixer-Large/32-S
 ]
 
-example_text = "python ./bmm_bmm_mkl.py --dtype float32 --begin 0 --num 1 --server sc"
+example_text = "python ./bmm_bmm.py --dtype float32 --begin 0 --num 1 --server sc"
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog="base_maker",
@@ -49,7 +51,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dtype",
         type=str,
-        choices=["float32", 'float64'],
+        choices=["float32"],
         default="float32",
     )
     parser.add_argument(
@@ -59,33 +61,24 @@ if __name__ == "__main__":
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
     parser.add_argument(
-        "--server", type=str, choices=['sc', 'sccc', 'scccc'], default='sccc'
+        "--server", type=str, choices=['sc', 'sccc', 'scccc'], default='scccc'
     )
 
     args = parser.parse_args()
 
-    subprocess.Popen(["make"]).wait()
-
     costs = []
     for ss in shapes[args.begin: args.begin + args.num]:
-        B, M, N, K, L = ss
+        ss = list(ss)
         cost = main(
-            batch=B,
-            M=M,
-            N=N,
-            K=K,
-            L=L,
+            ss,
             server = args.server
         )
         costs.append((ss, cost))
 
-    print("B,M,N,K,L,server,cost")
+    print("shape,server,cost")
     for cc in costs:
         print(
-            f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.server},{cc[1]}"
+            f"{cc[0]},{args.server},{cc[1]}"
         )
-    for cc in costs:
-        print(cc[1])
-
-    with open("bmm_bmm_mkl.pkl", 'wb') as f:
+    with open ("bmm_bmm_onednn.pkl", 'wb') as f:
         pkl.dump(costs, f)

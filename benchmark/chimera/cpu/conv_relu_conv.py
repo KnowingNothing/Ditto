@@ -9,7 +9,6 @@ import time
 import random
 import pickle as pkl
 import subprocess
-import torch
 import regex as re
 import math
 import numpy as np
@@ -53,7 +52,7 @@ class MicroKernel:
 
 mk1 = None
 mk2 = None
-REPEAT = 500
+REPEAT = 2000
 PARALLEL = 32
 WORKLOAD = int()
 SERVER = None
@@ -381,7 +380,7 @@ def test_double_conv(
         # print("test passed!")
 
         evaluator = func.time_evaluator(
-            func.entry_name, ctx, min_repeat_ms=10, repeat=REPEAT
+            func.entry_name, ctx, repeat = 1, number = 10000
         )
 
         print("begin evaluate ...")

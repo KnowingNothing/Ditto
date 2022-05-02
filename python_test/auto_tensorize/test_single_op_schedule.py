@@ -168,7 +168,7 @@ def test_singleOpSchedule(B=1, M=516, L=512, K=64, config={}, prefix="", ):
         platform="CPU"
     )
 
-    packed = at.cpu_avx2(M=MI, N=NI, K=KI, dtype="float32", prefix="gemm1")
+    packed = at.cpu_intrin("gemm", (MI, NI, KI), dtype="float32", prefix="gemm1")
     code = kernels_impl('avx2')
     context = at.single_op_schedule(
         outs[0].op, tensorizeAxes, CPU, searchType=searchType, mode=mode)

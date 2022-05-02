@@ -17,6 +17,7 @@
 #include <omp.h>
 #include <vector>
 #include <thread>
+#include <emmintrin.h>
 using namespace std;
 int batch = 1;
 int M = 512;
@@ -24,7 +25,8 @@ int N = 64;
 int K = 64;
 int L = 512;
 double peakGflops;
-#define flushsz (1 << 20) 
+
+#define flushsz (1 << 26)
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
 #define cacheSize (32 * 1024 / 4)
 #define ROUNDUP(a, b) (((a) + (b)-1) / (b) * (b))
@@ -79,7 +81,7 @@ int main(int argc, char **argv)
     N = atoi(argv[3]);
     K = atoi(argv[4]);
     L = atoi(argv[5]);
-    if (argc == 7)
+    if (argc >= 7)
         repeat = atoi(argv[6]);
     if (argc == 8)
         peakGflops = atof(argv[7]);
@@ -122,15 +124,31 @@ int main(int argc, char **argv)
     printf("B, M, N, K, L, peakflops: %d %d %d %d %d %f\n", batch, M, N, K, L, peakGflops);
     float alpha = 1.0f;
     float beta = 0.0f;
-    // warm up
-    std::chrono::high_resolution_clock::time_point t1, t1_, t2_;
+    std::chrono::high_resolution_clock::time_point start, end, t1_, t2_;
 
     double mkl_time = 0;
     double mkl_time_1 = 0;
     double cpu_time = 0;
     double wall_time = 0;
+    start = std::chrono::high_resolution_clock::now();
+    auto flush = [](const float * array, const int size){
+        for (int i = 0; i < size; i+= 64 / sizeof(float)){
+            _mm_clflush(&array[i]);
+        }
+    };
     for (size_t _ = 0; _ < repeat; _++)
     {
+        // flush(A_data, batch * M * K); 
+        // flush(B_data, batch * L * K); 
+        // flush(D_data, batch * L * N); 
+        // for (int i = 0; i < batch; i++){
+        //     // flush(C[i], M * L);
+        //     flush(E[i], N * M);
+        // }
+        #pragma omp parallel for num_threads(36)
+        for (int i = 0; i < flushsz; i++){
+            dirty[i] = i + 1;
+        }
         t1_ = std::chrono::high_resolution_clock::now();
         cblas_sgemm_batch(
             CblasRowMajor,
@@ -168,39 +186,37 @@ int main(int argc, char **argv)
             __B);
         t2_ = std::chrono::high_resolution_clock::now();
         mkl_time_1 += (double)(std::chrono::duration_cast<std::chrono::duration<double>>(t2_ - t1_)).count();
-        for (int j = 0; j < flushsz; j ++)  
-            dirty[j] = 1 / (j+1);
     }
-    mkl_time /= repeat;
     mkl_time_1 /= repeat;
-    cpu_time /= repeat;
-    wall_time /= repeat;
     // std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
     // std::chrono::duration<float> time_span = std::chrono::duration_cast<std::chrono::duration<float>>(t2 - t1);
-    float wl = batch * (M * K * L + M * N * L);
-    float ratioToPeak = wl / mkl_time_1 / 1e9 / peakGflops;
-    float *groundTruthC = (float *)malloc(batch * M * L * sizeof(float));
-    float *groundTruthE = (float *)malloc(batch * M * N * sizeof(float));
+    double wl = batch * (1.0 * M * K * L + M * N * L);
+    double ratioToPeak = wl / mkl_time_1 / 1e9 / peakGflops;
+    // float *groundTruthC = (float *)malloc(batch * M * L * sizeof(float));
+    // float *groundTruthE = (float *)malloc(batch * M * N * sizeof(float));
 
-    groundTruth(A, B, groundTruthC, M, K, L);
-    groundTruth(__C, D, groundTruthE, M, L, N);
+    // groundTruth(A, B, groundTruthC, M, K, L);
+    // groundTruth(__C, D, groundTruthE, M, L, N);
 
-    double maxRtol = 0, maxAtol = 0;
-    for (int i = 0; i < batch; i++)
-    {
-        double errorCnt = 0;
-        for (int j = 0; j < M * N; j++)
-        {
-            double tmp = fabs((E[i][j] - groundTruthE[i * M * N + j]) / E[i][j]);
-            double atmp = fabs(E[i][j] - groundTruthE[i * M * N + j]);
-            maxRtol = std::max(maxRtol, tmp);
-            maxAtol = std::max(maxAtol, atmp);
-        }
-    }
-    std::cout << "rtol: " << maxRtol << ", atol: " << maxAtol << std::endl;
+    // double maxRtol = 0, maxAtol = 0;
+    // for (int i = 0; i < batch; i++)
+    // {
+    //     double errorCnt = 0;
+    //     for (int j = 0; j < M * N; j++)
+    //     {
+    //         double tmp = fabs((E[i][j] - groundTruthE[i * M * N + j]) / E[i][j]);
+    //         double atmp = fabs(E[i][j] - groundTruthE[i * M * N + j]);
+    //         maxRtol = std::max(maxRtol, tmp);
+    //         maxAtol = std::max(maxAtol, atmp);
+    //     }
+    // }
+    // std::cout << "rtol: " << maxRtol << ", atol: " << maxAtol << std::endl;
     std::cout << "time: " << mkl_time_1 << std::endl;
     std::cout << "ratioToPeak: " << ratioToPeak << std::endl
               << std::flush;
+    end = std::chrono::high_resolution_clock::now();
+    double t = (double)(std::chrono::duration_cast<std::chrono::duration<double>>(end - start)).count();
+    printf("time elapsed: %f\n", t);
     int n_thread = omp_get_max_threads();
     printf("n_thread: %d\n", n_thread);
     return 0;

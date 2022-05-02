@@ -8,7 +8,7 @@ import pickle as pkl
 import tvm.testing
 
 EVALUTE_SCHEDULE_INPUTS = None
-
+REPEAT = 2000
 peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995}
 
 @auto_scheduler.register_workload  # Note the auto_scheduler decorator
@@ -60,8 +60,15 @@ def main(batch, M, N, K, L, dtype, server):
     print(task.compute_dag)
 
     log_file = f"bmm_bmm_{batch}-{M}-{N}-{K}-{L}-{dtype}.json"
+
+    n_line = 0
+    if os.path.isfile(log_file):
+        with open(log_file, 'rb') as f:
+            n_line = len(f.readlines())
+    n_line = min(n_line, 999)
+
     tune_option = auto_scheduler.TuningOptions(
-        num_measure_trials=1000,
+        num_measure_trials=1000 - n_line,
         measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
         verbose=0,
     )
@@ -91,7 +98,9 @@ def main(batch, M, N, K, L, dtype, server):
     func(a_tvm, b_tvm, c_tvm, out_tvm)
     tvm.testing.assert_allclose(out_tvm.numpy(), out_groundTuruth, rtol = 1e-3, atol = 1)
 
-    evaluator = func.time_evaluator(func.entry_name, dev, min_repeat_ms=10, repeat = 1000)
+    evaluator = func.time_evaluator(
+            func.entry_name, dev, min_repeat_ms=0, repeat=REPEAT, number = 1, f_preproc="cache_flush_cpu_non_first_arg"
+    )
     cost = evaluator(a_tvm, b_tvm, c_tvm, out_tvm).mean
     workload = batch * (M * K * L + M * N * L)
     ratioToPeak = workload / 1e9 / cost / peakflops[server]

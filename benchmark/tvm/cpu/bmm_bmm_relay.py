@@ -7,6 +7,7 @@ from tvm import topi
 from tvm import te
 import os
 import pickle as pkl
+REPEAT = 2000
 peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995}
 def relay_bmm_bmm(
     batch, M, N, K, L, dtype="float32", target="cpu"
@@ -14,14 +15,10 @@ def relay_bmm_bmm(
     A = relay.var("A", shape=[batch, M, K], dtype=dtype)
     B = relay.var("B", shape=[batch, K, L], dtype=dtype)
     C = relay.var("C", shape=[batch, L, N], dtype=dtype)
-    B = relay.transpose(B, axes=(0, 2, 1))
-    D = relay.nn.batch_matmul(A, B, dtype)
-    E = relay.cast(D, dtype=dtype)
-    C = relay.transpose(C, axes=(0, 2, 1))
-    F = relay.nn.batch_matmul(E, C, dtype)
-    G = relay.cast(F, dtype=dtype)
-    args = relay.analysis.free_vars(G)
-    func = relay.Function(args, G)
+    D = relay.nn.batch_matmul(A, B, dtype, transpose_b = False)
+    E = relay.nn.batch_matmul(D, C, dtype, transpose_b = False)
+    args = relay.analysis.free_vars(E)
+    func = relay.Function(args, E)
 
     mod = tvm.IRModule.from_expr(func)
     mod = relay.transform.InferType()(mod)
@@ -36,44 +33,7 @@ def relay_bmm_bmm(
         module = runtime.GraphModule(lib["default"](dev))
     return [[batch, M, K], [batch, K, L], [batch, L, N]], [[batch, M, N]], module
 
-def test_time(batch, M, N, K, L, dtype = "float32"):
-    target = "llvm -mcpu=skylake-avx512"
-    # os.environ["TVM_NUM_THREADS"] = str(20)
-    with tvm.target.Target(target) as tgt:
-        dev = tvm.device(tgt.kind.name, 0)
 
-        Qtensor = tvm.te.placeholder([batch, M, K], name="Q", dtype=dtype)
-        Ktensor = tvm.te.placeholder([batch, K, L], name="K", dtype=dtype)
-
-        QK = topi.x86.batch_matmul(Qtensor, Ktensor, None, None, False, False)
-        s = topi.x86.schedule_batch_matmul([QK])
-
-        f = tvm.build(s, [Qtensor, Ktensor, QK], target=tgt)
-
-        a = tvm.nd.array(np.random.uniform(size=[batch, M, K]).astype(Qtensor.dtype), dev)
-        b = tvm.nd.array(np.random.uniform(size=[batch, K, L]).astype(Ktensor.dtype), dev)
-        c = tvm.nd.array(np.zeros([batch, M, L], dtype=QK.dtype), dev)
-        f(a, b, c)
-
-        time_f = f.time_evaluator(f.entry_name, dev, number=10000)
-        cost = time_f(a, b, c).mean
-
-        QK = tvm.te.placeholder([batch, M, L], name="QK", dtype=dtype)
-        Vtensor = tvm.te.placeholder([batch, L, N], name="K", dtype=dtype)
-
-        QKV = topi.x86.batch_matmul(QK, Vtensor, None, None, False, False)
-        s = topi.x86.schedule_batch_matmul([QKV])
-
-        f = tvm.build(s, [QK, Vtensor, QKV], target=tgt)
-
-        a = tvm.nd.array(np.random.uniform(size=[batch, M, L]).astype(Qtensor.dtype), dev)
-        b = tvm.nd.array(np.random.uniform(size=[batch, L, N]).astype(Ktensor.dtype), dev)
-        c = tvm.nd.array(np.zeros([batch, M, N], dtype=QK.dtype), dev)
-        f(a, b, c)
-
-        time_f = f.time_evaluator(f.entry_name, dev, number=10000)
-        cost = cost + time_f(a, b, c).mean
-    return cost
 
 def main(B, M, N, K, L, dtype, server):
     target = "llvm -mcpu=skylake-avx512"
@@ -88,9 +48,8 @@ def main(B, M, N, K, L, dtype, server):
     outputs_np = [
         np.random.uniform(-1, 1, [int(x) for x in y]).astype(dtype) for y in outs
     ]
-    ctx = tvm.cpu()
     dev = tvm.device(str(target), 0)
-    ret = module.benchmark(dev, min_repeat_ms=600)
+    ret = module.benchmark(dev, number = REPEAT, repeat = 1)
     cost = ret.mean
     workload = B * (M * K * L + M * N * L)
     ratioToPeak = workload / 1e9 / cost / peakflops[server]

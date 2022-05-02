@@ -2,8 +2,10 @@ import time
 import torch 
 import numpy as np
 import argparse
+from streamlit import legacy_caching as caching
+import pickle as pkl
 
-REPEAT = 1000
+REPEAT = 2000
 SERVER = None
 
 ServerConfig = {
@@ -37,7 +39,11 @@ ServerConfig = {
 }
 
 
-def test_torch(shape, dtype = "float32"):
+Weight1_tensor = None 
+Weight2_tensor = None 
+Img_tensor = None 
+
+def dataGen(shape, dtype):
     N, C0, P0, Q0, C1, R1, S1, C2, R2, S2, padding1, padding2, stride1, stride2 = shape
     P0_pad = P0 + 2 * padding1
     Q0_pad = Q0 + 2 * padding1
@@ -47,55 +53,42 @@ def test_torch(shape, dtype = "float32"):
     Q1_pad = Q1 + 2 * padding2
     P2 = (P1_pad - R2) // stride2 + 1
     Q2 = (Q1_pad - S2) // stride2 + 1
-    if dtype == "float32":
-        dataType = np.float32
-    elif dtype == "int8":
-        dataType = np.int8
-    num = REPEAT
-    per = 100
-    num = ((num-1) // per + 1) * per
+    global Img_tensor, Weight1_tensor, Weight2_tensor
+    Img_tensor = torch.tensor(np.random.uniform(size = (N, C0, P0, Q0)).astype(dtype))
+    Weight1_tensor = torch.tensor(np.random.uniform(size = (C1, C0, R1, S1)).astype(dtype))
+    Weight2_tensor = torch.tensor(np.random.uniform(size = (C2, C1, R2, S2)).astype(dtype))
+
+
+
+def test_torch(shape, dtype = "float32"):
+    # warm up
+    N, C0, P0, Q0, C1, R1, S1, C2, R2, S2, padding1, padding2, stride1, stride2 = shape
+    P0_pad = P0 + 2 * padding1
+    Q0_pad = Q0 + 2 * padding1
+    P1 = (P0_pad - R1) // stride1 + 1
+    Q1 = (Q0_pad - S1) // stride1 + 1
+    P1_pad = P1 + 2 * padding2
+    Q1_pad = Q1 + 2 * padding2
+    P2 = (P1_pad - R2) // stride2 + 1
+    Q2 = (Q1_pad - S2) // stride2 + 1
+    O1 = torch.nn.functional.conv2d(Img_tensor, Weight1_tensor, padding=padding1,stride=stride1)
+    torch.nn.functional.relu(O1, inplace=True)
+    O2 = torch.nn.functional.conv2d(O1, Weight2_tensor, padding = padding2, stride = stride2)
     cost = 0
-    for outest in range(num // per + 1):
-        Img_np = []
-        Weight1_np = []
-        Weight2_np = []
-
-        Img_tensor = []
-        Weight1_tensor = []
-        Weight2_tensor = []
-        O2_tensor = []
-
-        for trial in range(per):
-            Img_np.append(np.random.uniform(size = (N, C0, P0, Q0)).astype(dtype))
-            Weight1_np.append(np.random.uniform(size = (C1, C0, R1, S1)).astype(dtype))
-            Weight2_np.append(np.random.uniform(size = (C2, C1, R1, S1)).astype(dtype))
-
-            Img_tensor.append(torch.from_numpy(Img_np[trial]))
-            Weight1_tensor.append(torch.from_numpy(Weight1_np[trial]))
-            Weight2_tensor.append(torch.from_numpy(Weight2_np[trial]))
-
-
-
-        t = 0
-        for trial in range(per):
-            start = time.time()
-            O1 = torch.nn.functional.conv2d(Img_tensor[trial], Weight1_tensor[trial], padding=padding1,stride=stride1)
-            torch.nn.functional.relu(O1, inplace=True)
-            O2 = torch.nn.functional.conv2d(O1, Weight2_tensor[trial], padding = padding2, stride = stride2)
-            end = time.time()
-            t += end - start
-            O2_tensor.append(O2)
-        t /= per 
-        if outest > 0:
-            cost += t
-#        print("%d: %g" % (outest, cost_tmp))
-
-    cost /= num // per
+    for _ in range(REPEAT):
+        caching.clear_cache()
+        start = time.time()
+        O1 = torch.nn.functional.conv2d(Img_tensor, Weight1_tensor, padding=padding1,stride=stride1)
+        torch.nn.functional.relu(O1, inplace=True)
+        O2 = torch.nn.functional.conv2d(O1, Weight2_tensor, padding = padding2, stride = stride2)
+        end = time.time()
+        cost += end - start
+    cost = cost / REPEAT
     print(shape,cost)
-    return {'torch_time': cost}
+    return cost
 
 def setGlobals(shape):
-    global MI, NI1, KI1, NI2, KI2, WORKLOAD, mk1, mk2
+    global MI, NI1, KI1, NI2, KI2, WORKLOAD
     N, C0, H, W, C1, R1, S1, C2, R2, S2, padding1, padding2, stride1, stride2 = shape
     WORKLOAD = N * (C0 * H * W * C1 * R1 * S1 + C1 * H * W * C2 * R2 * S2)
 
@@ -106,14 +99,9 @@ def main(shape, dtype, server):
     print("shape,dtype,WORKLOAD,SERVER")
     print(shape, dtype, WORKLOAD, SERVER)
     time = test_torch(shape, dtype)
-    ret = {}
-    for k in time:
-        ret[k] = {}
-        ret[k]['time(s)'] = time[k]
-        ret[k]['%peak'] = (WORKLOAD / time[k] / 1e9) / SERVER['peakgflops']
-        ret[k]['gflops'] = (WORKLOAD / time[k] / 1e9)
-    print(shape, dtype, ":", ret)
-    return ret
+    toPeak = WORKLOAD / time / 1e9 / SERVER['peakgflops']
+    print(shape, dtype, ":", time, toPeak)
+    return time, toPeak
 
 
 example_text = "python ./conv_relu_conv.py --server sc"
@@ -159,6 +147,7 @@ if __name__ == "__main__":
 
     costs = []
     for ss in shapes[args.begin: args.begin + args.num]:
+        dataGen(ss, args.dtype)
         cost = main(
             ss,
             dtype=args.dtype,

@@ -62,7 +62,7 @@ def main(B, M, N, K, L, dtype, server, only_once):
         module.run()
         cost = -1
     else:
-        ret = module.benchmark(dev, min_repeat_ms=600)
+        ret = module.benchmark(dev, number=1000, repeat = 1)
         cost = ret.mean
     workload = B * (M * K * L + M * N * L)
     ratioToPeak = workload / cost / peakflops[server] / 1e9

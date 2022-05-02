@@ -2,13 +2,13 @@ import subprocess
 import argparse
 import regex as re
 import pickle as pkl
-REPEAT = 2000
+REPEAT = 10000
 peakflops = {'sc': 704, 'sccc': 2150.4, 'scccc': 2995.2}
 def main(batch, M, N, K, L, server):
     args = [batch, M, N, K, L, REPEAT, peakflops[server]]
     args = [str(_) for _ in args]
     args = ' '.join(args)
-    cmd = "/home/CORP.PKUSC.ORG/gulang2020/workspace/Ditto/benchmark/mkl/MKL2MM_profile " + args
+    cmd = "/home/CORP.PKUSC.ORG/gulang2020/workspace/Ditto/benchmark/mkl/MKL2MM " + args
     s = subprocess.check_output(cmd.split()).decode('utf-8')
     ratioToPeak = re.findall('ratioToPeak: ([\d\.]*)', s)
     time = re.findall('time: ([\d\.]*)', s)

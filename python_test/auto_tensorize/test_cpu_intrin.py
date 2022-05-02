@@ -1058,10 +1058,47 @@ def test_gemm(batch = 6, M = 516, N = 512, K = 64):
     print(tmp)
     tvm.testing.assert_allclose(groundTruth, tensor_tvm[2].numpy().reshape(batch, M, N), atol = 1, rtol=1e-3)
     print("Okay!")
+def test_exp(batch = 6, M = 516, N = 512):
+    MI = 6
+    NI = 64
+    dtype = "float32"
+    A = tvm.te.placeholder([batch, M // MI, MI, N // NI, NI], name="A", dtype=dtype)
+    exp = tvm.te.compute(
+        [batch, M // MI, MI, N // NI, NI],
+        lambda b, mo, mi, no, ni: 
+            te.exp(A[b, mo, mi, no, ni]),
+        name="exp",
+    )
 
+    sch = tvm.te.create_schedule(exp.op)
+
+    b,mo,mi,no,ni = sch[exp].op.axis 
+    
+    packed, code = at.cpu_intrin("exp_noreshape", (MI, NI), "avx512", "float32", "exp")
+    
+    sch[exp].reorder(b, mo, no, mi, ni)
+
+    sch[exp].tensorize(mi, packed.compute_intrinsic)
+    sch[exp].pragma(b, "import_llvm", code)
+    
+    dev = tvm.device("llvm -mpcu=skylake-avx512")
+    func = tvm.build(sch, [A, exp], name = "func")
+    tensor_np = [np.ones([int(i) for i in j.shape]).astype(dtype) for j in [A, exp]]
+    tensor_tvm = [tvm.nd.array(_, dev) for _ in tensor_np]
+    func(*tensor_tvm)
+    my_res = tensor_tvm[1].numpy().reshape(batch, M, N)
+    groundTruth = np.exp(tensor_np[0]).reshape(batch, M, N)
+    diff = my_res - groundTruth
+    tmp = np.nonzero(diff)
+    with open ("diff.npy", 'wb') as f:
+        np.save(f, tmp)
+    print(tmp)
+    tvm.testing.assert_allclose(groundTruth, tensor_tvm[1].numpy().reshape(batch, M, N), atol = 1, rtol=1e-3)
+    print("Okay!")
+    
 
 if __name__ == "__main__":
-    test_gemm()
+    test_exp()
     # l = sys.argv[1:]
     # assert len(l) == 8
     # l, dtype = l[:-1], l[-1] 

@@ -702,8 +702,8 @@ namespace ditto
       //   if (!found)
       //     bodyLoops.push_back(kv.second);
       // }
-      std::cout << "body loops: " << bodyLoops << std::endl;
-      std::cout << "common loops: " << commonLoops << std::endl;
+      // std::cout << "body loops: " << bodyLoops << std::endl;
+      // std::cout << "common loops: " << commonLoops << std::endl;
 
       // 3. reorder
       Array<tir::IterVar> loopOrder;
@@ -839,7 +839,7 @@ namespace ditto
         loopOrder.push_back(iv);
 
       sch[cur_op].reorder(loopOrder);
-      std::cout << "first Op LoopOrder: " << loopOrder << std::endl;
+      // std::cout << "first Op LoopOrder: " << loopOrder << std::endl;
 
       // 4. tensorize
       PackedIntrinsic pintrin = ctx->state->tensorize_intrinsics.at(cur_op);

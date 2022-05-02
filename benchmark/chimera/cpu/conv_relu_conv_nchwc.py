@@ -9,7 +9,6 @@ import time
 import random
 import pickle as pkl
 import subprocess
-import torch
 import regex as re
 import math
 import numpy as np
@@ -33,7 +32,7 @@ ServerConfig = {
         'peakgflops': 2150.50
     },
     'scccc': {
-        'parallelism': 36,
+        'parallelism': 72,
         'cacheSizes': [32 * 16, 32 * 1024, 1024 * 1024 * 0.8, 25344 * 1024 * 0.8],
         'corePerLevel': [1.0, 1.0, 1.0, 18.0],
         'bandwidth': [293.72, 100.72, 50.54, 13.14],
@@ -342,27 +341,32 @@ def test_double_conv(
 
         print ("schedule success!")
         # if (mode == "test"):
-        lowerCode = tvm.lower(sch, layer.schedule_tensors, simple_mode = True)
-        with open ("tmp.txt", 'w') as f:
-            f.write(str(lowerCode))
-        
-        func = tvm.build(sch, layer.schedule_tensors, name="conv_relu_conv")
+        try: 
+            func = tvm.build(sch, layer.schedule_tensors, name="conv_relu_conv")
+        except:
+            print(f"WARNING: lower failed for {shape}, iter {iter}")
+            continue
 
         inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
         outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
 
         func(*inputs_tvm, *outputs_tvm)
-        func.export_library(f"lib{shape + [iter]}.so")
-        with open(f"data{shape + [iter]}.npy", 'wb') as f:
-            np.save(f, inputs_np + outputs_np)
-        # for (a, b) in zip(outputs, outputs_tvm):
-        #     tvm.testing.assert_allclose(
-        #         a.numpy(), b.numpy(), atol=1, rtol=1e-6)
+        # func.export_library(f"lib{shape + [iter]}.so")
+        # with open(f"data{shape + [iter]}.npy", 'wb') as f:
+        #     np.save(f, inputs_np + outputs_np)
+        
+        try:
+            for (a, b) in zip(outputs, outputs_tvm):
+                tvm.testing.assert_allclose(
+                    a.numpy(), b.numpy(), atol=1, rtol=1e-3)
+        except: 
+            print(f"WARNING: precision failed for {shape}, iter {iter}")
+            continue
         
         print("test passed!")
 
         evaluator = func.time_evaluator(
-            func.entry_name, ctx, min_repeat_ms=10, repeat=REPEAT
+            func.entry_name, ctx, min_repeat_ms=0, repeat=REPEAT, number = 1, f_preproc="cache_flush_cpu_non_first_arg"
         )
 
         print("begin evaluate ...")
@@ -404,7 +408,7 @@ def testSchedule(shape, server, fusionConfig):
     tensors_tvm = [tvm.nd.array(x, ctx) for x in tensors_np]
     func(*tensors_tvm)
     evaluator = func.time_evaluator(
-        func.entry_name, ctx, min_repeat_ms=10, repeat=50
+            func.entry_name, ctx, min_repeat_ms=0, repeat=10000, number = 1, f_preproc="cache_flush_cpu_non_first_arg"
     )
     cost = evaluator(*tensors_tvm).mean
     toPeak = workload / cost / server['peakgflops']
@@ -441,7 +445,7 @@ def main(shape, dtype, server, mode):
     print("shape,dtype,WORKLOAD,SERVER")
     print(shape, dtype, WORKLOAD, SERVER)
     time = test_double_conv(shape, config={
-        'searchType': 'normal', 'verbose': True, 'mode': mode, 'dtype': dtype, 'topn': 1})
+        'searchType': 'normal', 'verbose': True, 'mode': mode, 'dtype': dtype, 'topn': 10})
     ret = {}
     for k in time:
         ret[k] = {}
@@ -491,11 +495,12 @@ if __name__ == "__main__":
             mode = args.mode
         )
         costs.append((ss, cost))
+        with open("conv_relu_conv_nchwc_chimera.pkl", "wb") as f:
+            pkl.dump(costs, f)
 
     print("shape,dtype,args,sm,cost")
     for cc in costs:
         print(
             f"{cc[0]},{args.dtype},{args.server},{cc[1]}"
         )
-    with open("conv_relu_conv_nchwc_chimera.pkl", "wb") as f:
-        pkl.dump(costs, f)
+    

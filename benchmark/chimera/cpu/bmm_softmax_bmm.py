@@ -20,7 +20,7 @@ NI1 = 16
 KI1 = 64
 NI2 = 16
 KI2 = 16
-REPEAT = 500
+REPEAT = 2000
 PARALLEL = 32
 PEAKGFLOPS = int()
 WORKLOAD = int()
@@ -43,11 +43,11 @@ ServerConfig = {
         'isa': 'avx512',
         'peakgflops': 2150.50
     },
-    'scccc':{
-        'parallelism': 36,
-        'cacheSizes': [32 * 16, 32 * 1024, 1024 * 1024, 25344 * 1024],
-        'corePerLevel': [1.0,1.0,1.0,18.0],
-        'bandwidth': [293.72, 81.72, 38.54, 13.14],
+    'scccc': {
+        'parallelism': 72,
+        'cacheSizes': [32 * 16, 32 * 1024, 1024 * 1024 * 0.8, 25344 * 1024 * 0.8],
+        'corePerLevel': [1.0, 1.0, 1.0, 18.0],
+        'bandwidth': [293.72, 100.72, 50.54, 13.14],
         'isa': 'avx512',
         'peakgflops': 2995.20
     },
@@ -77,8 +77,8 @@ def BatchGemmSoftmaxGemm(
     V_tensor = tvm.te.placeholder([batch, L, N], name="V", dtype=dtype)
 
     Q_pad_tensor = tvm.te.compute(
-        [batch, M_pad // MI, K_pad // KI1, MI, KI1],
-        lambda b, mo1, ko1, mi1, ki1:tvm.tir.if_then_else(
+        [batch, M_pad // MI, MI, K_pad // KI1, KI1],
+        lambda b, mo1, mi1, ko1, ki1:tvm.tir.if_then_else(
             tvm.tir.all((mo1 * MI + mi1) < M, (ko1 * KI1 + ki1) < K),
             Q_tensor[b, mo1 * MI + mi1, ko1 * KI1 + ki1],
             tvm.tir.const(0, dtype)
@@ -87,8 +87,8 @@ def BatchGemmSoftmaxGemm(
     )
 
     K_pad_tensor = tvm.te.compute(
-        [batch, K_pad // KI1, L_pad // NI1, KI1, NI1],
-        lambda b, ko1, lo1, ki1, li1: tvm.tir.if_then_else(
+        [batch, K_pad // KI1, KI1, L_pad // NI1, NI1],
+        lambda b, ko1, ki1, lo1, li1: tvm.tir.if_then_else(
             tvm.tir.all((ko1 * KI1 + ki1) < K, (lo1 * NI1 + li1) < L),
             K_tensor[b, ko1 * KI1 + ki1, lo1 * NI1 + li1],
             tvm.tir.const(0, dtype)
@@ -96,8 +96,8 @@ def BatchGemmSoftmaxGemm(
     )
 
     V_pad_tensor = tvm.te.compute(
-        [batch, L_pad // KI2, N_pad // NI2, KI2, NI2],
-        lambda b, lo2, no2, li2, ni2:tvm.tir.if_then_else(
+        [batch, L_pad // KI2, KI2, N_pad // NI2, NI2],
+        lambda b, lo2, li2, no2, ni2:tvm.tir.if_then_else(
             tvm.tir.all(lo2 * KI2 + li2 < L, no2 * NI2 + ni2 < N),
             V_tensor[b, lo2 * KI2 + li2, no2 * NI2 + ni2],
             tvm.tir.if_then_else(
@@ -112,43 +112,39 @@ def BatchGemmSoftmaxGemm(
     rki1 = tvm.te.reduce_axis([0, KI1], 'rki1')
 
     QK = tvm.te.compute(
-        [batch, M_pad // MI, L_pad // NI1, MI, NI1],
-        lambda b, mo1, lo1, mi1, li1:
+        [batch, M_pad // MI, MI, L_pad // NI1, NI1],
+        lambda b, mo1, mi1, lo1, li1:
         tvm.te.sum(
-            Q_pad_tensor[b, mo1, rko1, mi1, rki1] * K_pad_tensor[b, rko1, lo1, rki1, li1],
+            Q_pad_tensor[b, mo1, mi1, rko1, rki1] * K_pad_tensor[b, rko1, rki1, lo1, li1],
             axis = [rko1, rki1]
         ),
         name = "QK"
     )
 
+    choice1 = [QK.op.axis[2], QK.op.axis[4], rki1]
+
     QK_exp = tvm.te.compute(
-        [batch, M_pad // MI, L_pad // NI1, MI, NI1],
-        lambda b, mo1, lo1, mi1, li1:
-        tvm.te.exp(QK[b, mo1, lo1, mi1, li1]),
+        [batch, M_pad // MI, MI, L_pad // NI1, NI1],
+        lambda b, mo1, mi1, lo1, li1:
+        tvm.te.exp(QK[b, mo1, mi1, lo1, li1]),
         name = "QK_exp"
     )
-    # QK_relu = tvm.te.compute(
-    #      [batch, M_pad // MI, L_pad // NI1, MI, NI1],
-    #     lambda b, mo1, lo1, mi1, li1:
-    #     tvm.tir.if_then_else(
-    #         QK[b, mo1, lo1, mi1, li1] > 0,
-    #         QK[b, mo1, lo1, mi1, li1],
-    #         tvm.tir.const(0, dtype)
-    #     )
-    # )
+
+    choice3 = [QK_exp.op.axis[2], QK_exp.op.axis[4]]
 
     rlo2 = tvm.te.reduce_axis([0, L_pad // KI2], 'rlo2')
     rli2 = tvm.te.reduce_axis([0,  KI2], 'rli2')
     QKV_pad = tvm.te.compute(
-        [batch, M_pad // MI, N_pad // NI2, MI, NI2],
-        lambda b, mo2, no2, mi2, ni2:
+        [batch, M_pad // MI, MI, N_pad // NI2, NI2],
+        lambda b, mo2, mi2, no2, ni2:
         tvm.te.sum(
-            QK_exp[b, mo2, rlo2, mi2, rli2] * 
-            # QK_relu[b, mo2, rlo2, mi2, rli2] * 
-            V_pad_tensor[b, rlo2, no2, rli2, ni2],
+            QK_exp[b, mo2, mi2, rlo2, rli2] * 
+            V_pad_tensor[b, rlo2, rli2, no2, ni2],
             axis = [rlo2, rli2]
         )
     )
+
+    choice2 = [QKV_pad.op.axis[2], QKV_pad.op.axis[4], rli2]
 
     QKV = tvm.te.compute(
         [batch, M, N],
@@ -156,21 +152,21 @@ def BatchGemmSoftmaxGemm(
         QKV_pad[
             b,
             m // MI,
-            n // NI2,
             m % MI,
+            n // NI2,
             n % NI2 
         ] / QKV_pad[
             b, 
             m // MI,
-            N // NI2,
             m % MI, 
+            N // NI2,
             N % NI2
         ]
     )
 
     return (
         [Q_tensor, K_tensor, V_tensor],
-        [QKV], QK_exp.op
+        [QKV], QK_exp.op, (choice1, choice2, choice3)
     )
 
 def test_double_gemm(
@@ -223,7 +219,7 @@ def test_double_gemm(
         platform="CPU",
     )
 
-    ins, outs, expop = BatchGemmSoftmaxGemm(batch, M, N, K, L, dtype=dtype)
+    ins, outs, expop, (choice1, choice2, choice3) = BatchGemmSoftmaxGemm(batch, M, N, K, L, dtype=dtype)
 
     layer = ac.layer([outs[0].op], inputs=ins)
 
@@ -231,21 +227,22 @@ def test_double_gemm(
 
     op1, op2 = sfs.first_op, sfs.second_op
 
-    def get_match_info(op, optype, shape, prefix):
+    def get_match_info(op, optype, shape, prefix, choice = None):
         # cpu_intrin(op, shape, instructionSet, dtype, prefix="")
         packed, code = at.cpu_intrin(
             op=optype, shape=shape, isa=isa, dtype=dtype, prefix=prefix)
-        choices = at.intrinsic_match(op.output(0), packed, [
-                                     'InnerMost', 'SameRange'])
-        choice = choices[0]
+        if choice == None:
+            choices = at.intrinsic_match(op.output(0), packed, [
+                                        'SameRange'])
+            choice = choices[0]
         match_info = at.match_info(choice, packed, code)
         return match_info
 
-    first_match_info = get_match_info(op1, "gemm", (MI, NI1, KI1), "gemm1")
+    first_match_info = get_match_info(op1, "gemm_noreshape", (MI, NI1, KI1), "gemm1", choice = choice1)
 
-    second_match_info = get_match_info(op2, "gemm", (MI, NI2, KI2), "gemm2")
+    second_match_info = get_match_info(op2, "gemm_noreshape", (MI, NI2, KI2), "gemm2", choice = choice2)
 
-    exp_match_info = get_match_info(expop, "exp", (MI, NI1), "exp1")
+    exp_match_info = get_match_info(expop, "exp_noreshape", (MI, NI1), "exp1", choice3)
 
     print("exp_match_info", exp_match_info)
     
@@ -294,12 +291,11 @@ def test_double_gemm(
     func(*inputs, *outputs)
 
     top = float()
-    top5 = float('inf')
+    top10 = float('inf')
     if mode == "test":
         R = 1
     elif mode == "best":
-        R = 5
-        assert fusionContext.size > 5
+        R = min(10, fusionContext.size)
     for iter in range(R):
         print("run", iter)
         sch = tvm.te.create_schedule(outs[0].op)
@@ -321,7 +317,7 @@ def test_double_gemm(
             print(f"WARNING: schedule {iter} of {batch} {M} {N} {K} {L} is incorrect")
 
         evaluator = func.time_evaluator(
-            func.entry_name, ctx, min_repeat_ms=10, repeat=REPEAT
+            func.entry_name, ctx, min_repeat_ms=0, repeat=REPEAT, number = 1, f_preproc="cache_flush_cpu_non_first_arg"
         )
 
 
@@ -329,15 +325,16 @@ def test_double_gemm(
 
         if iter == 0:
             top = cost
-        if cost < top5:
-            top5 = cost
+        if cost < top10:
+            top10 = cost
         print(f'iter{iter}: ', cost)
-    return {'top1': top, 'top5': top5}
+    return {'top1': top, 'top10': top10}
 
 
 def setGlobals(B, M, N, K, L, dtype):
     global MI, NI1, KI1, NI2, KI2, WORKLOAD, PEAKGFLOPS
     WORKLOAD = B * M * L * (K + N)
+    N_pad = N + 1
     if SERVER['isa'] == "avx2":
         MI = 6
         NI1 = 16
@@ -345,21 +342,23 @@ def setGlobals(B, M, N, K, L, dtype):
         KI2 = 16
         NI2 = 16
     elif SERVER['isa'] == "avx512":
+        def overhead(a, b):
+            return (((a + b - 1) // b) * b / a) - 0.001 * b
         MI = 6
-        NI1 = 64 if N % 64 == 0 else 32 
+        NI1 = 64 if L % 64 == 0 else 32 
         KI1 = 64 if K % 64 == 0 else 32 if K % 32 == 0 else 16 if K % 16 == 0 else K
         KI2 = NI1
-        NI2 = 64 if L % 64 == 0 else 32
-    M = uround(M, MI)
-    N = uround(N, NI2)
-    L = uround(L, NI1)
-    return (B, M, N, K, L)
+        NI2 = 64 if overhead(N_pad, 64) <= overhead(N_pad, 32) else 32
+    # M = uround(M, MI)
+    # N = uround(N, NI2)
+    # L = uround(L, NI1)
+    return
 
 
 def main(batch, M, N, K, L, dtype, server, mode):
     global SERVER
     SERVER = ServerConfig[server]
-    B, M, N, K, L = setGlobals(batch, M, N, K, L,dtype= dtype)
+    setGlobals(batch, M, N, K, L,dtype= dtype)
     print ("B,M,N,K,L,dtype,WORKLOAD,SERVER")
     print(B,M,N,K,L,dtype,WORKLOAD,SERVER)
     time = test_double_gemm(B, M, N, K, L, config={

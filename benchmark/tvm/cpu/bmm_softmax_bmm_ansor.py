@@ -1,5 +1,4 @@
 import os
-
 import numpy as np
 import tvm
 from tvm import te, auto_scheduler
@@ -7,7 +6,7 @@ import argparse
 from concurrent.futures import TimeoutError
 import pickle as pkl
 
-
+REPEAT = 2000
 EVALUTE_SCHEDULE_INPUTS = None
 
 peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995}
@@ -28,7 +27,7 @@ def evaluate_schedule_worker(dummy):
     inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
     outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
 
-    evaluator = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=600)
+    evaluator = func.time_evaluator(func.entry_name, ctx, repeat = 1, number = 10000)
     cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
     # print(f"Our code uses {cost} ms")
     return cost
@@ -107,15 +106,22 @@ def main(batch, M, N, K, L, dtype, server):
     print(task.compute_dag)
 
     log_file = f"bmm_softmax_bmm_{batch}-{M}-{N}-{K}-{L}-{dtype}.json"
+
+    n_line = 0
+    if os.path.isfile(log_file):
+        with open(log_file, 'rb') as f:
+            n_line = len(f.readlines())
+    n_line = min(n_line, 999)
+
     tune_option = auto_scheduler.TuningOptions(
-        num_measure_trials=1000,
+        num_measure_trials=1000 - n_line,
         measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
         verbose=2,
     )
 
     # Run auto-tuning (search)
     # if not test:
-    # task.tune(tune_option)
+    task.tune(tune_option)
     # Apply the best schedule
     sch, args = task.apply_best(log_file)
     A, B, C, out = args
@@ -133,7 +139,9 @@ def main(batch, M, N, K, L, dtype, server):
     b_tvm = tvm.nd.array(b_np, device=dev)
     c_tvm = tvm.nd.array(c_np, device=dev)
     out_tvm = tvm.nd.array(out_np, device=dev)
-    evaluator = func.time_evaluator(func.entry_name, dev, min_repeat_ms=500)
+    evaluator = func.time_evaluator(
+        func.entry_name, dev, min_repeat_ms=0, repeat=REPEAT, number = 1, f_preproc="cache_flush_cpu_non_first_arg"
+    )
     cost = evaluator(a_tvm, b_tvm, c_tvm, out_tvm).mean
     
     workload = batch * (M * L * (K + N))

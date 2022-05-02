@@ -1450,11 +1450,38 @@ def intrin_exp(shape, dtype, prefix):
 
     return te.decl_tensor_intrin(c.op, intrin_func, binds={a: Ab, c: Cb})
 
+def intrin_exp_noreshape(shape, dtype, prefix):
+    assert len(shape) == 2
+    MICRO_M, MICRO_N = shape
+    A = te.placeholder((1, 1, MICRO_M, 1, MICRO_N), name="A", dtype=dtype)
+    C = te.compute((1, 1, MICRO_M, 1, MICRO_N), lambda b, mo, mi, no, ni: te.exp(A[b, mo, mi, no, ni]), name="C")
+    aStride, cStride = te.var("aStride"), te.var("cStride")
+    Ab = tvm.tir.decl_buffer(A.shape, A.dtype, name="A", data_alignment=64, offset_factor=1, strides=[te.var(), te.var(), aStride, te.var(), te.var()])
+    Cb = tvm.tir.decl_buffer(C.shape, C.dtype, name="C", data_alignment=64, offset_factor=1, strides=[te.var(), te.var(), cStride, te.var(), te.var()])
+
+    def intrin_func(ins, outs):
+        aa = ins[0]
+        cc = outs[0]
+        ib = tvm.tir.ir_builder.create()
+        ib.emit(
+            tvm.tir.call_extern(
+                "int32",
+                prefix + "compute_exp",
+                cc.access_ptr("w"),
+                aa.access_ptr("r"),
+                cc.strides[2], aa.strides[2]
+            )
+        )
+        return ib.get()
+
+    return te.decl_tensor_intrin(C.op, intrin_func, binds={A: Ab, C: Cb})
+
 
 def exp_impl(shape, isa, dtype, prefix):
     MICRO_M, MICRO_N = shape
     assert isa == "avx512"
     cc_code = '''
+        #include <unistd.h>
         #include <immintrin.h>
         const float exp_hi = 88.3762626647949f;
         const float exp_lo = -88.3762626647949f;
@@ -1504,7 +1531,8 @@ def exp_impl(shape, isa, dtype, prefix):
         const void* _ps_one_p = (void*)(_ps_consts+8);
         // consts end
 
-        extern "C" int %scompute_exp(float* cc_, float *aa_, int stride1_, int stride2_) {
+        extern "C" int %scompute_exp(float* cc_, float *aa_, int stride1_, int stride2_) {\
+            getpid();
             long long stride1 = stride1_;
             long long stride2 = stride2_;
             // #pragma unroll
@@ -1631,6 +1659,7 @@ def exp_impl(shape, isa, dtype, prefix):
                     // printf("%%f ", cc[1]);
                 }
             }
+            getpid();
             return 0;
         }
     ''' % (prefix, MICRO_M, MICRO_N // 16)
@@ -1663,6 +1692,11 @@ def cpu_intrin(op, shape, isa, dtype, prefix=""):
     elif op == "exp":
         compute = intrin_exp(
             shape, dtype, prefix
+        )
+        code = exp_impl(shape, isa, dtype, prefix)
+    elif op == "exp_noreshape":
+        compute = intrin_exp_noreshape(
+            shape, dtype, prefix 
         )
         code = exp_impl(shape, isa, dtype, prefix)
     store = None

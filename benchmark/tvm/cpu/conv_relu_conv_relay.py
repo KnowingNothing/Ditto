@@ -47,12 +47,12 @@ def main(shape, dtype):
         np.random.uniform(-1, 1, [int(x) for x in y]).astype(dtype) for y in outs
     ]
     dev = tvm.device(str(target), 0)
-    ret = module.benchmark(dev, min_repeat_ms=600)
+    ret = module.benchmark(dev, number = 1000, repeat = 1)
     cost = ret.mean
     N,C0,H,W,C1,R1,S1,C2,R2,S2,pad1,pad2,stride1,stride2 = shape
-    workload = N * (C0 * H * W * R1 * S1 + C1 * C2 * R2 * S2 * H * W)
+    workload = N * (C0 * C1 * H * W * R1 * S1 + C1 * C2 * R2 * S2 * H * W)
     topeak = workload / 1e9 / cost / 2995.2
-    ret = {'time': cost, 'toPeak': topeak}
+    ret = (cost, topeak)
     print('shape, res')
     print(shape, ret)
     return ret

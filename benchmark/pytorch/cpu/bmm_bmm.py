@@ -3,8 +3,8 @@ import torch
 import numpy as np
 import argparse
 import pickle as pkl 
+import streamlit as st
 
-REPEAT = 1000
 SERVER = None
 
 ServerConfig = {
@@ -38,62 +38,47 @@ ServerConfig = {
 }
 
 
+Qtensor = []
+Ktensor = []
+Vtensor = []
+
+num = 2000
+per = 1
+def dataGen(batch, M, N, K, L, dtype):
+    global Qtensor, Ktensor, Vtensor
+    for _ in range(per):
+        Qtensor.append(torch.from_numpy(np.random.uniform(-1, 1, (batch, M, K)).astype(dtype)))
+        Ktensor.append(torch.from_numpy(np.random.uniform(-1, 1, (batch, K, N)).astype(dtype)))
+        Vtensor.append(torch.from_numpy(np.random.uniform(-1, 1, (batch, N, L)).astype(dtype)))
+
+@st.experimental_singleton
+def test_func():
+    for i in range(per):
+        QK = torch.bmm(Qtensor[i], Ktensor[i])
+        QKV = torch.bmm(QK, Vtensor[i])
+
+
+
 def test_torch(batch, M, N, K, L, dtype = "float32"):
-    if dtype == "float32":
-        dataType = np.float32
-    elif dtype == "int8":
-        dataType = np.int8
-    num = REPEAT
-    per = 100
-    num = ((num-1) // per + 1) * per
+    # warm up
+    test_func()
+    
     cost = 0
-    for outest in range(num // per + 1):
-        Q_np = []
-        K_np = []
-        V_np = []
-        Qtensor = []
-        Ktensor = []
-        Vtensor = []
-        QKV_np = []
-        for trial in range(per):
-            Q_np.append(np.random.uniform(
-                size=(batch, M, K)).astype(dataType))
-            K_np.append(np.random.uniform(
-                size=(batch, K, L)).astype(dataType))
-            V_np.append(np.random.uniform(
-                size=(batch, L, N)).astype(dataType))
-            Qtensor.append(torch.from_numpy(Q_np[trial]))
-            Ktensor.append(torch.from_numpy(K_np[trial]))
-            Vtensor.append(torch.from_numpy(V_np[trial]))
-            QKV_np.append(np.random.uniform(
-                size=(batch, M, N)).astype(dataType))
-            for i in range(batch):
-                QKV_np[trial][i] = Q_np[trial][i].dot(
-                    K_np[trial][i]).dot(V_np[trial][i])
-
-        QKV = []
-
+    for i in range(num):
+        st.experimental_singleton.clear()
         start = time.time()
-        for trial in range(per):
-            QK = torch.bmm(Qtensor[trial], Ktensor[trial])
-            # QK_relu = torch.nn.ReLU()(QK)
-            QKV.append(torch.bmm(QK, Vtensor[trial]))
-
+        test_func()
+        # for j in range(per):
+        #     QK = torch.bmm(Qtensor[j], Ktensor[j])
+        #     QKV = torch.bmm(QK, Vtensor[j])
         end = time.time()
-        cost_tmp = (end - start) / per
-        if outest > 0:
-            cost += cost_tmp
-#        print("%d: %g" % (outest, cost_tmp))
-
-        for trial in range(per):
-            np.testing.assert_allclose(
-                QKV_np[trial], QKV[trial].numpy(), rtol=1e-3)
-
-    cost /= num // per
+        cost += (end - start)
+    tmp = torch.get_num_interop_threads()
+    cost = cost / (num * per)
     wl = batch * ( M * K * L + M * L * N)
     ratioToPeak = (wl / cost / 1e9) / SERVER['peakgflops']
-    print(batch,M,N,K,L,cost,ratioToPeak)
     return cost, ratioToPeak
+
 example_text = "python bmm_bmm.py --begin 0 --num 1"
 def ceil(x, y):
     return (x + y - 1) // y
@@ -151,12 +136,15 @@ if __name__ == "__main__":
 
     setServer(args.server)
     print ("the Server:", SERVER)
+    # torch.set_num_interop_threads(1)
     costs = []
     for ss in shapes[args.begin : args.begin + args.num]:
         B, M, N, K, L = ss
+        dataGen(*ss, args.dtype)
         cost = test_torch(B, M, N, K, L, args.dtype)
         costs.append((ss, cost))
     print("B,M,N,K,L,dtype,cost,SERVER")
+    print("torch parallel info", torch.__config__.parallel_info())
     for cc in costs:
         print(f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.dtype},{cc[1]},",SERVER)
     with open("bmm_bmm_torch.pkl", 'wb') as f:

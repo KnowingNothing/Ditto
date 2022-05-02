@@ -1,5 +1,4 @@
 import os
-
 import numpy as np
 import tvm
 from tvm import te, auto_scheduler
@@ -9,6 +8,7 @@ from concurrent.futures import TimeoutError
 from pebble import ProcessPool, ProcessExpired
 import pickle as pkl
 
+REPEAT = 2000
 EVALUTE_SCHEDULE_INPUTS = None
 
 @auto_scheduler.register_workload  # Note the auto_scheduler decorator
@@ -87,8 +87,15 @@ def main(shape, dtype):
     print(task.compute_dag)
 
     log_file = f"conv_conv_{shape}-{dtype}.json"
+
+    n_line = 0
+    if os.path.isfile(log_file):
+        with open(log_file, 'rb') as f:
+            n_line = len(f.readlines())
+    n_line = min(n_line, 999)
+
     tune_option = auto_scheduler.TuningOptions(
-        num_measure_trials=1000,
+        num_measure_trials=1000 - n_line,
         measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
         verbose=2,
     )
@@ -102,7 +109,6 @@ def main(shape, dtype):
 
     print("Lowered TIR:")
     print(tvm.lower(sch, args, simple_mode=True))
-    # cost = evaluate_schedule(sch, args, [A, B, C], [out], sm)
     [Img, Weight1, Weight2, conv2] = conv_conv(*shape, dtype)
     func = tvm.build(sch, args, target)
     a_np = np.random.uniform(size=[int(i) for i in Img.shape]).astype(dtype)
@@ -114,12 +120,14 @@ def main(shape, dtype):
     b_tvm = tvm.nd.array(b_np, device=dev)
     c_tvm = tvm.nd.array(c_np, device=dev)
     out_tvm = tvm.nd.array(out_np, device=dev)
-    evaluator = func.time_evaluator(func.entry_name, dev, min_repeat_ms=500)
+    evaluator = func.time_evaluator(
+        func.entry_name, dev, min_repeat_ms=0, repeat=REPEAT, number = 1, f_preproc="cache_flush_cpu_non_first_arg"
+    )
     cost = evaluator(a_tvm, b_tvm, c_tvm, out_tvm).mean
     N,C0,H,W,C1,R1,S1,C2,R2,S2,pad1,pad2,stride1,stride2 = shape
-    workload = N * (C0 * H * W * R1 * S1 + C1 * C2 * R2 * S2 * H * W)
+    workload = N * (C0 * C1 * H * W * R1 * S1 + C1 * C2 * R2 * S2 * H * W)
     topeak = workload / 1e9 / cost / 2995.2
-    ret = {'time': cost, 'toPeak': topeak}
+    ret = (cost, toPeak)
     print('shape, res')
     print(shape, ret)
     return ret
