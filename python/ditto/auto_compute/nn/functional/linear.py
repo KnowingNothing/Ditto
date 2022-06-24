@@ -39,3 +39,25 @@ def linear(inputs, weight, bias=None, out_dtype="float32"):
 
         output = tvm.te.compute(output.shape, _add)
     return output
+
+
+def linear_mma(inputs, weight, bias=None, in_dtype="float16", acc_dtype="float32"):
+    """Linear function with MMA
+
+    Args:
+    -----------------------------
+    inputs: tvm.te.tensor.Tensor
+        shape [batch, ..., in_feature]
+    weight: tvm.te.tensor.Tensor
+        shape [out_feature, in_feature]
+    bias  : tvm.te.tensor.Tensor
+        shape [out_feature]
+    -----------------------------
+
+    Returns:
+    -----------------------------
+    tvm.te.tensor.Tensor
+        shape [batch, ..., out_feature]
+    -----------------------------
+    """
+    pass

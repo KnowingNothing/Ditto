@@ -1,6 +1,7 @@
+from pkg_resources import require
 import tvm
 from .module import Module, Parameter
-from ..functional import batch_norm2d_nchw_v1, batch_norm2d_nchw_v2
+from ..functional import batch_norm2d_nchw_v1, batch_norm2d_nchw_v2, layer_norm_infer
 from ...graph import LayerTensor, layer
 
 
@@ -72,3 +73,27 @@ class BatchNorm2d(Module):
             raise NotImplementedError(f"No batch norm for version: {self.version}.\n")
 
         return bn_layer(inputs)
+
+
+class LayerNormInfer(Module):
+    "Construct a layernorm module for inference."
+
+    def __init__(self, feature_shape, dtype="float32"):
+        super(LayerNormInfer, self).__init__()
+        self.alpha = Parameter(feature_shape, dtype=dtype, name="ln_alpha")
+        self.beta = Parameter(feature_shape, dtype=dtype, name="ln_beta")
+        self.num_feature_dims = len(feature_shape)
+
+    def forward(self, inputs):
+        inputs = self.preprocess(inputs)
+        outputs = layer_norm_infer(
+            inputs.tensor, self.alpha.tensor, self.beta.tensor, self.num_feature_dims
+        )
+        ln_layer = layer(
+            outputs.op,
+            inputs=[inputs.tensor],
+            weights=[self.alpha.tensor, self.beta.tensor],
+            requires_grad=self.training,
+            name="layer_norm_infer_layer",
+        )
+        return ln_layer(inputs)

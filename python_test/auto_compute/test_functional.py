@@ -6,7 +6,7 @@ from tvm.target import Target
 from tvm import auto_scheduler as ansor
 from ditto import auto_compute as ac
 from ditto import auto_schedule
-from ditto.auto_compute.nn.model import resnet50, lenet5, BERT
+from ditto.auto_compute.nn.functional import transpose, reshape
 
 
 from collections import OrderedDict
@@ -35,58 +35,30 @@ def register_test(func):
 
 @register_test
 def test1():
-    A = ac.layer_tensor([1, 1, 32, 32], name="A", dtype="float32")
-    target = "cuda"
-    target_host = "llvm"
-    trials = 100
-    task_name = "test"
-    log_file = "lenet_example_log.txt"
-    builder = "local"
-    runner = "local"
-
-    schedule_option = auto_schedule.ScheduleOption(
-        target,
-        target_host=target_host,
-        trials=trials,
-        task_name=task_name,
-        log_file=log_file,
-        builder=builder,
-        runner=runner,
-    )
-    schedules = auto_schedule.auto_schedule_model([A], lenet5, schedule_option)
+    A = tvm.te.placeholder([4, 5, 7, 8])
+    B = transpose(A, [0, 2, 1, 3])
+    print(B.op)
 
 
 @register_test
 def test2():
-    B = ac.layer_tensor([1, 1, 32, 32], name="B", dtype="float32")
-    target = "cuda"
-    target_host = "llvm"
-    trials = 100
-    task_name = "test"
-    log_file = "lenet_example_log.txt"
-    builder = "local"
-    runner = "local"
+    A = tvm.te.placeholder([4, 5, 7, 8], dtype="float16")
+    B = reshape(A, [20, 56])
+    print(B.op)
+    sch = tvm.te.create_schedule(B.op)
+    func = tvm.build(sch, [A, B], "llvm")
 
-    schedule_option = auto_schedule.ScheduleOption(
-        target,
-        target_host=target_host,
-        trials=trials,
-        task_name=task_name,
-        log_file=log_file,
-        builder=builder,
-        runner=runner,
-    )
-    schedules = auto_schedule.retrieve_schedule_model([B], lenet5, schedule_option)
+    A_np = np.random.uniform(-10, 10, [4, 5, 7, 8]).astype("float16")
+    B_np = np.random.uniform(-10, 10, [20, 56]).astype("float16")
 
+    ctx = tvm.cpu(0)
+    A_tvm = tvm.nd.array(A_np, ctx)
+    B_tvm = tvm.nd.array(B_np, ctx)
+    func(A_tvm, B_tvm)
 
-@register_test
-def test3():
-    X = ac.layer_tensor([16, 1024, 768], name="X", dtype="float32")
-    model = BERT(dtype="float32")
-    outputs = model(X)
-    print(outputs)
-    graph = ac.graph([X], [outputs])
-    print(graph)
+    from tvm import testing
+
+    testing.assert_allclose(B_tvm.numpy(), np.reshape(A_np, [20, 56]))
 
 
 if __name__ == "__main__":

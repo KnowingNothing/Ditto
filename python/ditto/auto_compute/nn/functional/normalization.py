@@ -112,3 +112,40 @@ def batch_norm2d_nchw_v2(inputs, mean, variance, alpha, beta, epsilon=1e-5):
     )
 
     return bn
+
+
+def layer_norm_infer(inputs, alpha, beta, num_feature_dims):
+    """2D Batch Normalization for NCHW inputs
+
+    Args:
+    -----------------------------
+    inputs  : tvm.te.Tensor
+        shape [dim0, dim1, ..., dimN, fdim0, fdim1, ..., fdim_{num_feature_dims}]
+    alpha   : tvm.te.Tensor
+        shape [fdim0, fdim1, ..., fdim_{num_feature_dims}]
+    beta    : tvm.te.Tensor
+        shape [fdim0, fdim1, ..., fdim_{num_feature_dims}]
+    num_feature_dims : int
+        the number of feature dims
+    -----------------------------
+
+    Returns:
+    -----------------------------
+    tvm.te.Tensor
+        shape [dim0, dim1, ..., dimN, fdim0, fdim1, ..., fdim_{num_feature_dims}]
+    -----------------------------
+    """
+    dims = len(inputs.shape)
+    dim_a = len(alpha.shape)
+    dim_b = len(beta.shape)
+
+    assert dim_a == dim_b == num_feature_dims
+    non_feature_dims = dims - dim_a
+    assert dims > num_feature_dims, f"{dims} vs. {num_feature_dims}"
+
+    def _inner(*idx):
+        pre = idx[:non_feature_dims]
+        post = idx[non_feature_dims:]
+        return inputs(*idx) * alpha(*post) + beta(*post)
+
+    return tvm.te.compute(inputs.shape, _inner, name="layer_norm_infer")

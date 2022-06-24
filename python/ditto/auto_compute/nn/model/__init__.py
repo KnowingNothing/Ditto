@@ -1,3 +1,4 @@
+from .bert import *
 from .BertEncoder import *
 from .capsule_lenet import *
 from .lenet import *
@@ -7,9 +8,11 @@ from .resnet import *
 from .SCRNN import *
 from .shufflenet import *
 from .subLSTM import *
+from .transformer import *
 
 
 all_models = {
+    "std-bert": BERT,
     "bert": BertBaseEncoder,
     "capsule": CapsNet,
     "lenet": LeNet5,
@@ -23,6 +26,7 @@ all_models = {
     "sc": SCRNN,
     "shuffle": ShuffleNet,
     "sub": subLSTM,
+    "transformer": TransformerBlock
 }
 
 model_inputs_shape = {
