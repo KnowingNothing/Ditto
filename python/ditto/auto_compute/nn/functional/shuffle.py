@@ -49,7 +49,7 @@ def reshape(x, new_shape):
             index = index * new_shape[i] + idx[i]
         return index
 
-    return tvm.te.compute(new_shape, lambda *idx: x(*_split(_fuse(*idx))))
+    return tvm.te.compute(new_shape, lambda *idx: x(*_split(_fuse(*idx))), name="reshape")
 
 
 def transpose(x, new_indices_order):

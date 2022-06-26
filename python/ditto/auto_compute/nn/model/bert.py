@@ -16,7 +16,18 @@ class BERT(Module):
     BERT model : Bidirectional Encoder Representations from Transformers.
     """
 
-    def __init__(self, hidden=768, n_layers=12, attn_heads=12, dtype="float32"):
+    def __init__(
+        self,
+        hidden=768,
+        n_layers=12,
+        attn_heads=12,
+        dtype="float32",
+        mma_in_dtype="float16",
+        mma_acc_dtype="float32",
+        mma_MI=16,
+        mma_NI=16,
+        mma_KI=16
+    ):
         """
         :param vocab_size: vocab_size of total words
         :param hidden: BERT model hidden size
@@ -38,7 +49,17 @@ class BERT(Module):
         # multi-layers transformer blocks, deep network
         self.transformer_blocks = Sequential(
             *[
-                TransformerBlock(hidden, attn_heads, hidden * 4, dtype=dtype)
+                TransformerBlock(
+                    hidden,
+                    attn_heads,
+                    hidden * 4,
+                    dtype=dtype,
+                    mma_in_dtype=mma_in_dtype,
+                    mma_acc_dtype=mma_acc_dtype,
+                    mma_MI=mma_MI,
+                    mma_NI=mma_NI,
+                    mma_KI=mma_KI
+                )
                 for _ in range(n_layers)
             ]
         )
