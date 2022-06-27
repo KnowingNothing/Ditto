@@ -125,11 +125,11 @@ def inference(
     outputs = fget_outputs()
     print("Results:", flush=True)
     print(outputs[0].asnumpy())
-    cost = ftimeit(10).value
+    cost = ftimeit(600).value
     print("Time cost", cost, "ms")
 
 """
-python bert_inference_chimera_cuda.py --mode tune --dtype float16 --chimera --trials 10000 --batch 1 --seq_len 512 --hidden 768 --n_heads 12 --n_layers 12 |& tee trace.log
+python bert_inference_chimera_cuda.py --mode tune --dtype float32 --chimera --trials 10000 --batch 1 --seq_len 512 --hidden 768 --n_heads 12 --n_layers 12 |& tee trace.log
 """
 
 

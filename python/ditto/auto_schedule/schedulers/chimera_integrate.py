@@ -163,7 +163,7 @@ def auto_schedule_bmm_chain_cuda_with_params(
         out_dtype=mma_acc_dtype,
         scope="global",
     )
-
+    
     second_match_info_choices = at.intrinsic_match(
         sop.output(0), second_packed, ["InnerMost", "SameRange"]
     )
