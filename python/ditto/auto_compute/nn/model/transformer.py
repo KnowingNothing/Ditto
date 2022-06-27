@@ -20,15 +20,17 @@ https://github.com/codertimo/BERT-pytorch
 class PositionwiseFeedForward(Module):
     "Implements FFN equation."
 
-    def __init__(self, d_model, d_ff, dtype="float32", out_dtype="float16"):
+    def __init__(self, d_model, d_ff, dtype="float32", out_dtype="float32"):
         super(PositionwiseFeedForward, self).__init__()
-        self.w_1 = Linear(d_model, d_ff, bias=False, dtype=dtype, out_dtype=out_dtype)
-        self.w_2 = Linear(d_ff, d_model, bias=False, dtype=dtype, out_dtype=out_dtype)
+        self.w_1 = Linear(d_model, d_ff, bias=False,
+                          dtype=dtype, out_dtype=out_dtype)
+        self.w_2 = Linear(d_ff, d_model, bias=False,
+                          dtype=dtype, out_dtype=out_dtype)
         self.activation = GELU()
 
     def forward(self, x):
         x = self.preprocess(x)
-        return self.activation(self.w_2(self.activation(self.w_1(x))))
+        return self.w_2(self.activation(self.w_1(x)))
 
 
 class TransformerBlock(Module):
@@ -45,6 +47,9 @@ class TransformerBlock(Module):
         dtype="float32",
         mma_in_dtype="float16",
         mma_acc_dtype="float32",
+        mma_MI=16,
+        mma_NI=16,
+        mma_KI=16
     ):
         """
         :param hidden: hidden size of transformer
@@ -58,6 +63,9 @@ class TransformerBlock(Module):
             hidden_size=hidden,
             in_dtype=mma_in_dtype,
             acc_dtype=mma_acc_dtype,
+            mma_MI=mma_MI,
+            mma_NI=mma_NI,
+            mma_KI=mma_KI
         )
         self.feed_forward = PositionwiseFeedForward(
             d_model=hidden, d_ff=feed_forward_hidden, dtype=dtype, out_dtype=dtype

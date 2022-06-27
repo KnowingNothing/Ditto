@@ -4,12 +4,20 @@ from ..functional import BatchGemmSoftmaxGemmMMA, reshape, transpose
 from ...graph import LayerTensor, layer, layer_tensor
 
 
+MUTI_HEAD_ATTENTION_LAYER = "multi_head_attention_mma_layer"
+SELF_ATTENTION_MODULE_REG = set([MUTI_HEAD_ATTENTION_LAYER])
+
+
+def is_self_attention_layer(layer):
+    return layer.name in SELF_ATTENTION_MODULE_REG
+
+
 class MultiHeadAttentionMMA(Module):
     """
     MultiHead Attention with MMA fusion
     """
 
-    def __init__(self, num_heads, hidden_size, in_dtype="float32", acc_dtype="float32"):
+    def __init__(self, num_heads, hidden_size, in_dtype="float32", acc_dtype="float32", mma_MI=16, mma_NI=16, mma_KI=16):
         super(MultiHeadAttentionMMA, self).__init__()
         self.num_heads = num_heads
         self.hidden_size = hidden_size
@@ -17,9 +25,9 @@ class MultiHeadAttentionMMA(Module):
         self.model_k = hidden_size // num_heads
         self.in_dtype = in_dtype
         self.acc_dtype = acc_dtype
-        self.MI = 16
-        self.NI = 16
-        self.KI = 16
+        self.MI = mma_MI
+        self.NI = mma_NI
+        self.KI = mma_KI
 
     def forward(self, query, key, value):
         """
@@ -54,7 +62,8 @@ class MultiHeadAttentionMMA(Module):
             in_dtype=self.in_dtype,
             acc_dtype=self.acc_dtype,
         )
-        outputs_mh = reshape(outputs_mh, [batch, self.num_heads, M, self.model_k])
+        outputs_mh = reshape(
+            outputs_mh, [batch, self.num_heads, M, self.model_k])
         outputs_mh = transpose(outputs_mh, [0, 2, 1, 3])
         outputs = reshape(outputs_mh, [batch, M, K])
         attention_layer = layer(
@@ -62,6 +71,6 @@ class MultiHeadAttentionMMA(Module):
             inputs=[query.tensor, key.tensor, value.tensor],
             weights=[],
             requires_grad=self.training,
-            name="multi_head_attention_mma_layer",
+            name=MUTI_HEAD_ATTENTION_LAYER,
         )
         return attention_layer(query, key, value)

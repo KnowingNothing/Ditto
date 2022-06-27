@@ -135,18 +135,25 @@ class CUDATensorizeParam(Object):
     """CUDATensorizeParam object"""
 
     def __str__(self):
-        ret = "CUDATensorizeParam("
-        ret += f"    warp_size={self.warp_size}\n"
-        ret += f"    ty_size={self.ty_size}\n"
-        ret += f"    tz_size={self.tz_size}\n"
-        ret += f"    input_vector_len={self.input_vector_len}\n"
-        ret += f"    serial_y={self.serial_y}\n"
-        ret += f"    serial_z={self.serial_z}\n"
-        ret += ")\n"
-        return ret
+        return str(self.to_json())
 
     def __repr__(self) -> str:
-        return str(self)
+        return str(self.to_json())
+    
+    def to_json(self):
+        return {
+            "warp_size": self.warp_size,
+            "ty_size": self.ty_size,
+            "tz_size": self.tz_size,
+            "input_vector_len": self.input_vector_len,
+            "serial_y": self.serial_y,
+            "serial_z": self.serial_z,
+            "block_rx": self.block_rx,
+            "warp_rx": self.warp_rx,
+            "block_ry": self.block_ry,
+            "warp_ry": self.warp_ry,
+            "unroll_steps": self.unroll_steps
+        }
 
 
 def cuda_tensorize_param(

@@ -1,9 +1,11 @@
+from collections import OrderedDict
 import tvm
 from ditto import auto_compute as ac
 from .schedulers import (
     auto_schedule_dispatch,
     auto_schedule_model_dispatch,
     auto_schedule_tasks_dispatch,
+    get_tasks_scheduler_builder,
     ScheduleOption,
 )
 
@@ -64,7 +66,7 @@ def auto_schedule_tasks(tasks, schedule_option):
 
     Args:
     ---
-    tasks: list
+    tasks: OrderedDict[key, List[ditto.auto_compute.Layer]]
     schedule_option: ditto.auto_schedule.schedule.ScheduleOption
         The options for schedule
 
@@ -75,3 +77,28 @@ def auto_schedule_tasks(tasks, schedule_option):
     scheduler, builder = auto_schedule_tasks_dispatch(schedule_option)
     scheduler(tasks, schedule_option)
     return builder(tasks, schedule_option)
+
+
+def auto_schedule_bound_tasks(bound_tasks, schedule_option):
+    """
+    Automatic schedule function for tasks that are already bound to schedule_options
+
+    Args:
+    ---
+    tasks: OrderedDict[scheduler, OrderedDict[key, List[ditto.auto_compute.Layer]]]
+    schedule_option: ditto.auto_schedule.schedule.ScheduleOption
+        The options for schedule
+
+    Returns:
+    ---
+    Dict{workload_key(str):tvm.te.Schedue}
+    """
+    ret = {}
+    for scheduler_name, tasks in bound_tasks.items():
+        scheduler, builder = get_tasks_scheduler_builder(scheduler_name)
+        scheduler(tasks, schedule_option)
+        tmp = builder(tasks, schedule_option)
+        for k, v in tmp.items():
+            assert k not in ret, "The same workload assigned to different schedulers!"
+            ret[k] = v
+    return ret

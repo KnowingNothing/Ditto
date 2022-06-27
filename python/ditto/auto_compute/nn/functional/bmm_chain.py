@@ -74,7 +74,7 @@ def BatchGemmSoftmaxGemmMMA(
         [batch, L // KI, ext_N // NI, KI, NI],
         lambda b, lo, no, li, ni: tvm.tir.if_then_else(
             no * NI + ni < N,
-            C[b, lo * NI + li, no * NI + ni],
+            C[b, lo * NI + li, no * NI + ni].astype(in_dtype),
             tvm.tir.const(1, in_dtype),
         ),
         name="C_ext",

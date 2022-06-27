@@ -1,3 +1,5 @@
+from ditto import hardware as hw
+
 from .ansor_integrate import auto_schedule as auto_schedule_ansor
 from .ansor_integrate import auto_schedule_model as auto_schedule_model_ansor
 from .ansor_integrate import (
@@ -8,6 +10,8 @@ from .ansor_integrate import auto_schedule_tasks as auto_schedule_tasks_ansor
 from .ansor_integrate import (
     auto_schedule_build_tasks as auto_schedule_build_tasks_ansor,
 )
+from .chimera_integrate import auto_schedule_tasks as auto_schedule_tasks_chimera
+from .chimera_integrate import auto_schedule_build_tasks as auto_schedule_build_tasks_chimera
 
 
 class ScheduleOption(object):
@@ -47,6 +51,13 @@ class ScheduleOption(object):
         runner="local",
         scheduler=None,
         verbose=2,
+        device_name=None,
+        dtype="float32",
+        mma_in_dtype="float16",
+        mma_acc_dtype="float32",
+        mma_MI=16,
+        mma_NI=16,
+        mma_KI=16,
     ):
         self.target = target
         self.target_host = target_host
@@ -57,6 +68,16 @@ class ScheduleOption(object):
         self.runner = runner
         self.scheduler = scheduler
         self.verbose = verbose
+        if device_name is not None:
+            self.device = hw.query_hw_param(device_name)
+        else:
+            self.device = None
+        self.dtype = dtype
+        self.mma_in_dtype = mma_in_dtype
+        self.mma_acc_dtype = mma_acc_dtype
+        self.mma_MI = mma_MI
+        self.mma_NI = mma_NI
+        self.mma_KI = mma_KI
 
 
 def auto_schedule_dispatch(schedule_option):
@@ -85,6 +106,18 @@ def auto_schedule_tasks_dispatch(schedule_option):
     else:
         raise ValueError(f"Scheduler not known: {schedule_option.scheduler}.\n")
 
+def get_tasks_scheduler_builder(scheduler_name):
+    """
+    scheduler_name: str
+    """
+    if scheduler_name is None:
+        return (auto_schedule_tasks_ansor, auto_schedule_build_tasks_ansor)
+    elif scheduler_name == "ansor":
+        return (auto_schedule_tasks_ansor, auto_schedule_build_tasks_ansor)
+    elif scheduler_name == "chimera":
+        return (auto_schedule_tasks_chimera, auto_schedule_build_tasks_chimera)
+    else:
+        raise ValueError(f"Scheduler not known: {scheduler_name}.\n")
 
 def retrieve_schedule(compute, schedule_option):
     if schedule_option.scheduler is None:
@@ -111,3 +144,19 @@ def retrieve_schedule_tasks(tasks, schedule_option):
         return auto_schedule_build_tasks_ansor(tasks, schedule_option)
     else:
         raise ValueError(f"Scheduler not known: {schedule_option.scheduler}.\n")
+
+def retrieve_schedule_bound_tasks(bound_tasks, schedule_option):
+    schedules = {}
+    for scheduler_name, tasks in bound_tasks.items():
+        if scheduler_name is None:
+            tmp = auto_schedule_build_tasks_ansor(tasks, schedule_option)
+            schedules.update(tmp)
+        elif scheduler_name == "ansor":
+            tmp = auto_schedule_build_tasks_ansor(tasks, schedule_option)
+            schedules.update(tmp)
+        elif scheduler_name == "chimera":
+            tmp = auto_schedule_build_tasks_chimera(tasks, schedule_option)
+            schedules.update(tmp)
+        else:
+            raise ValueError(f"Scheduler not known: {schedule_option.scheduler}.\n")
+    return schedules
