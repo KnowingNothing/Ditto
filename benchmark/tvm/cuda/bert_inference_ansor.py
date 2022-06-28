@@ -26,13 +26,13 @@ seqlen = 512
 dim = 768
 n_head = 12
 mlp_dim = 3072
-depth = 4
-no_attn = False
+depth = 12
+bmm_chain = True
 
 in_dtype = "float32"
 out_dtype = "float32"
 
-logfile = "tune.log"
+logfile = f"ansor_bert_seqlen{seqlen}_dim_{dim}_nhead{n_head}_mlpdim{mlp_dim}_depth{depth}_indtype{in_dtype}_outdtype{out_dtype}.log"
 test = True
 
 
@@ -48,15 +48,18 @@ def multihead_attention(input, prefix):
     packed = relay.reshape(packed, [seqlen, n_head, head_dim * 3])
     packed = relay.transpose(packed, [1,0,2])
     packed = relay.reshape(packed, [n_head, seqlen, head_dim * 3])
-
+    
     # batch n_head seqlen, dim / n_head
     Q, K, V = relay.split(packed, indices_or_sections = 3, axis = -1)
-    # # batch * n_head seqlen, seqlen
-    QK = relay.nn.batch_matmul(Q, K, transpose_b= True)
-    # # batch * n_head seqlen, seqlen
-    QK_softmax = relay.nn.softmax(QK, axis = -1)
-    # # batch * n_head seqlen, dim / n_head
-    QKV = relay.nn.batch_matmul(QK_softmax, V, transpose_b = False)
+    if bmm_chain:
+        # # batch * n_head seqlen, seqlen
+        QK = relay.nn.batch_matmul(Q, K, transpose_b= True)
+        # # batch * n_head seqlen, seqlen
+        QK_softmax = relay.nn.softmax(QK, axis = -1)
+        # # batch * n_head seqlen, dim / n_head
+        QKV = relay.nn.batch_matmul(QK_softmax, V, transpose_b = False)
+    else:
+        QKV = Q + K + V
     QKV = relay.reshape(QKV, [n_head, seqlen, head_dim])
     QKV = relay.transpose(QKV, [1,0,2])
     QKV = relay.reshape(QKV, [seqlen, dim])
@@ -113,8 +116,7 @@ def create_workload(net, seed=0):
 def transformer():
     x = relay.var('input', shape=[seqlen, dim], dtype=in_dtype)
     for i in range(depth):
-        if not no_attn:
-            x = multihead_attention(x, f"attn{i}")
+        x = multihead_attention(x, f"attn{i}")
         x = feedforward(x, f'ff{i}')
     args = relay.analysis.free_vars(x)
     func = relay.Function(args, x)
@@ -141,7 +143,7 @@ def ansor_tune():
         measure_ctx = auto_scheduler.LocalRPCMeasureContext(repeat = 1, min_repeat_ms = 300, timeout = 10)
         tuner = auto_scheduler.TaskScheduler(tasks, task_weights)
         tune_option = auto_scheduler.TuningOptions(
-            num_measure_trials = 10,
+            num_measure_trials = 5000,
             runner = measure_ctx.runner,
             measure_callbacks = [auto_scheduler.RecordToFile(logfile)],
         )
@@ -151,7 +153,7 @@ def ansor_tune():
 
 def test_ansor():
     print("Compile...")
-    target = "cuda -libs=cublas,cudnn"
+    target = "cuda"
     mod, params, output = ansor_tune()
     with auto_scheduler.ApplyHistoryBest(logfile):
         with tvm.transform.PassContext(opt_level = 3, config = {"relay.backend.use_auto_scheduler": True}):

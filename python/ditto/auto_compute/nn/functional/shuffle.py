@@ -81,3 +81,40 @@ def transpose(x, new_indices_order):
     return tvm.te.compute(
         new_shape, lambda *idx: x(*_inner(*idx)), name="transpose", tag=PATTERN_SHUFFLE
     )
+
+
+def split(x, nparts, axis=-1):
+    """
+    split
+    ---
+    args
+    ---
+    x: tvm.te.Tensor
+    nparts: int
+    axis: int
+
+    Returns
+    ---
+    tvm.te.Tensor
+    """
+    dim = len(x.shape)
+    shape = [i for i in x.shape]
+    while axis < 0:
+        axis = dim + axis
+    axis = axis % dim
+    extent = shape[axis]//nparts
+    shape[axis] = extent
+    outputs = []
+    assert nparts > 0
+    
+    def _inner(i, idx):
+        ret = [j for j in idx]
+        ret[axis] = ret[axis] + i * extent
+        return ret
+    
+    for i in range(nparts):
+        res = tvm.te.compute(
+            shape, lambda *idx: x(*_inner(i, idx)), name="split", tag=PATTERN_SHUFFLE
+        )
+        outputs.append(res)
+    return outputs

@@ -308,7 +308,7 @@ def select_tensor_core_tensorize_param(
     mma_NI=16,
     mma_KI=16,
     init_pop=10,
-    descent_steps=1000,
+    descent_steps=100,
 ):
     keys = [
         "ty_size",

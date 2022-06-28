@@ -6,7 +6,7 @@ from tvm.target import Target
 from tvm import auto_scheduler as ansor
 from ditto import auto_compute as ac
 from ditto import auto_schedule
-from ditto.auto_compute.nn.functional import transpose, reshape
+from ditto.auto_compute.nn.functional import transpose, reshape, split
 
 
 from collections import OrderedDict
@@ -59,6 +59,28 @@ def test2():
     from tvm import testing
 
     testing.assert_allclose(B_tvm.numpy(), np.reshape(A_np, [20, 56]))
+
+
+@register_test
+def test3():
+    A = tvm.te.placeholder([7 * 3], dtype="float16")
+    B1, B2, B3 = split(A, 3, axis=-1)
+
+    for i, B in enumerate([B1, B2, B3]):
+        sch = tvm.te.create_schedule(B.op)
+        func = tvm.build(sch, [A, B], "llvm")
+
+        A_np = np.random.uniform(-10, 10, [7 * 3]).astype("float16")
+        B_np = np.random.uniform(-10, 10, [7]).astype("float16")
+
+        ctx = tvm.cpu(0)
+        A_tvm = tvm.nd.array(A_np, ctx)
+        B_tvm = tvm.nd.array(B_np, ctx)
+        func(A_tvm, B_tvm)
+
+        from tvm import testing
+
+        testing.assert_allclose(B_tvm.numpy(), A_np[i*7:(i+1)*7])
 
 
 if __name__ == "__main__":

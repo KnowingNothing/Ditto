@@ -14,5 +14,5 @@ from .pattern import *
 from .pooling import avgpool2d_nchw, global_avgpool2d_nchw
 from .reorganize import shuffle_channels, batch_flatten, cat_channel
 from .scale import channel_scale_nchw
-from .shuffle import transpose, reshape
+from .shuffle import transpose, reshape, split
 from .softmax import softmax
