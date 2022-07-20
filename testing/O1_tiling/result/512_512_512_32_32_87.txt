@@ -1,0 +1,13 @@
+# started on Wed Jul 13 21:17:09 2022
+
+
+ Performance counter stats for './gemm 512 512 512 32 32 87':
+
+           132,704      l1d.replacement                                             
+
+       0.249342445 seconds time elapsed
+
+       0.246451000 seconds user
+       0.002993000 seconds sys
+
+
