@@ -619,7 +619,7 @@ namespace ditto
     /*! \brief get the second Op's memvisit*/
     double IterGraphNode::getSecondOpDataVolume() const
     {
-      CHECK(tensorWeight.size() >= 2);
+      CHECK(tensorWeight.size() >= 3);
       double fp = 0;
       for (auto acf : secondOpReadAccessFuncs)
         for (auto fp_ : acf->getFootprint(bounds))
@@ -633,7 +633,7 @@ namespace ditto
       // the read of first op's output does not cause data move
       for (auto fp_ : firstOpWriteAccessFunc->getFootprint(bounds))
       {
-        fp -= fp_ * tensorWeight[0];
+        fp -= fp_ * tensorWeight[2];
       }
       return fp * (double)bytePerEle * _outerCost;
     }

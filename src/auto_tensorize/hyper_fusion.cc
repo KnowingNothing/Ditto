@@ -5,10 +5,12 @@
 #include <auto_tensorize/iter_graph.h>
 #include <auto_tensorize/state.h>
 #include <tvm/te/schedule_pass.h>
+#include <globals.h>
 
 #define MAX_CANDIDATES_NUMBER 10000
 #define SURVEY_CANDIDATES_NUMBER 100
 #define SELECT_TOP 10
+
 namespace ditto
 {
 
@@ -1444,7 +1446,7 @@ namespace ditto
       CHECK(tensorize_spatial_index[0] < (int)first_cop->axis.size());
       sch[first_op].tensorize(first_cop->axis[tensorize_spatial_index[0]],
                               pintrin->compute_intrinsic);
-      /*
+    /*
    * Store the context for following schedules
    */
       tir::IterVar prologue_frag_attach_axis;
@@ -1699,7 +1701,7 @@ namespace ditto
       return {bestCost, bestFusionItem};
     }
 
-    void setTemplatesAndSearchLightWeight(
+    void setTemplatesAndSearchPrunedDFS(
         IterGraph ig, hardware::HardwareParam hw_param, int bytePerEle,
         std::string searchType = "normal", std::string mode = "survey",
         std::vector<FusionInfo> *data = NULL, cost_t *cost_p = NULL,
@@ -1742,6 +1744,15 @@ namespace ditto
         else
           secondOpR.push_back(idx++);
       }
+      
+      if (verbose){
+        fprintf(stdout, "search space: ");
+        for (auto iv: ig->_secondOpIters){
+          std::cout << iv << " ";
+        }
+        std::cout << std::endl;
+      }
+
       std::unordered_map<std::string, std::vector<int>> str2Ivs = {
           {"S1", secondOpS1}, {"S2", secondOpS2}, {"R", secondOpR}};
       cost_t bestCost = INFINITY;
@@ -1757,7 +1768,6 @@ namespace ditto
       ig->setConfig(hw_param, bytePerEle);
       for (auto fusionLevel : ig->fusionLevels)
       {
-        // for (size_t fusionLevel = 1; fusionLevel < 2; fusionLevel ++){
         std::cout << "fusionLevel: " << fusionLevel << std::endl;
         int itemBeforeSearch = itemCnt;
         ig->setFusionLevel(fusionLevel);
@@ -1833,6 +1843,16 @@ namespace ditto
                 fusionInfo.secondOpOuterTilingFactors.push_back(
                     secondOpTilingFactors[idx]);
               fusionInfo.memUse = memUse;
+              if (verbose){
+                std::cout << "[search]: ";
+                for (size_t i = 0; i < secondOpUnsetIndices.size(); i++)
+                {
+                  tir::Var var = ig->_secondOpIters[secondOpUnsetIndices[i]]->name;
+                  int factor = secondOpTilingFactors[i];
+                  std::cout << "(" << var << ": " << factor << "), ";
+                }
+                std::cout << " : " << valid << " " << cost << std::endl;
+              }
               if (valid)
               {
                 if (cost < bestLevelCost)
@@ -1850,7 +1870,6 @@ namespace ditto
               }
               return;
             }
-            int pos = secondOpUnsetIndices[idx];
             for (size_t i = idx; i < secondOpUnsetIndices.size(); i++)
               secondOpTilingFactors[secondOpUnsetIndices[i]] = 1;
             std::tie(valid, cost) = getCost();
@@ -1867,6 +1886,7 @@ namespace ditto
               if (cost > bestLevelCost)
                 return;
             }
+            int pos = secondOpUnsetIndices[idx];
             int bound = secondOpBounds[pos];
             for (int i = 1; i <= bound; i++)
             {
@@ -1900,6 +1920,8 @@ namespace ditto
                 });
 
       std::cout << "candidates.size(): " << candidates.size() << std::endl;
+      if (verbose) 
+        std::cout << "best candidate: \n" << candidates.front() << std::endl;
 
       if (data)
       {
@@ -1952,13 +1974,6 @@ namespace ditto
             FusionInfo fusionInfo = candidates.at(i);
             candidates_.push_back(fusionInfo);
           }
-          // int fusionLevel = FIXXED_LEVEL;
-          // for (auto candidate: candidates){
-          //   if (candidate.fusionLevel == fusionLevel){
-          //     candidates_.push_back(candidate);
-          //     break;
-          //   }
-          // }
           *data = candidates_;
         }
       }
@@ -2008,8 +2023,7 @@ namespace ditto
       }
       else if (simple_mode == -1)
       {
-
-        setTemplatesAndSearchLightWeight(ig, hw_param, m[dtype], "normal", "best",
+        setTemplatesAndSearchPrunedDFS(ig, hw_param, m[dtype], "normal", "best",
                                          NULL, &bestCost, &bestFusionItem);
       }
       else if (simple_mode == 0)
@@ -2162,6 +2176,25 @@ namespace ditto
     }
     std::ostream &operator<<(std::ostream &o, const FusionInfo &fusionInfo)
     {
+      /*
+      struct FusionInfo {
+        bool valid;
+        std::vector<int> secondOpOuterIndices;
+        std::vector<int> secondOpOuterTilingFactors;
+        int fusionLevel;
+        int n_block;
+        int parallelism;
+        double cost;
+        double computation;
+        Map<tir::Var, IntImm> bounds;
+        Map<tir::Var, IntImm> boundsAfterParallel;
+        std::unordered_map<int, IntImm> parallelFactor;
+        double cacheOccupancy;
+        double memUse;
+        double outerCost;
+        double maxThreadIter;
+        std::unordered_map<std::string, double> features;
+      };*/
       o << "bounds: " << fusionInfo.bounds << std::endl;
       o << "bounds after parallel" << fusionInfo.boundsAfterParallel << std::endl;
       std::cout << "parallelFactor: ";
@@ -2192,12 +2225,14 @@ namespace ditto
       std::vector<CPUTensorizeParam> schParams;
       CHECK(sfs->tensorizeAxes.defined());
       IterGraph ig = buildIterGraph(sfs);
-      std:: cout << "iterGraph: " << std::endl;
-      std::cout << ig << std::endl;
+      if (verbose){
+        std:: cout << "iterGraph: " << std::endl;
+        std::cout << ig << std::endl;
+      }
       std::unordered_map<std::string, int32_t> m = {{"float32", 4}, {"float64", 8}, {"float16", 2}, {"int16", 2}, {"int32", 4}, {"int64", 8}};
       CHECK(m.count(dtype));
       int bytePerEle = m[dtype];
-      setTemplatesAndSearchLightWeight(ig, hw_param, bytePerEle, searchType, mode,
+      setTemplatesAndSearchPrunedDFS(ig, hw_param, bytePerEle, searchType, mode,
                                        &fusionInfo);
       OpHyperState op1, op2;
       std::tie(op1, op2) = sfs->getCubicOpPair();
@@ -2209,8 +2244,8 @@ namespace ditto
         if (!info.valid)
           break;
         cnt += 1;
-        std::cout << "begin build Tensorize param: " << cnt << "/"
-                  << fusionInfo.size() << std::endl;
+        if(verbose) std::cout << "begin build Tensorize param: " << cnt << "/"
+                    << fusionInfo.size() << std::endl;
         CPUTensorizeParam schParam =
             buildCPUTensorizeParam(sfs, hw_param, bytePerEle, info);
         std::vector<double> costs;

@@ -49,7 +49,8 @@ namespace ditto
     te::Operation CPUTensorizeContextNode::InterPathRootOp()
     {
       // CHECK(this->HasInterPath());
-      if (!this->HasInterPath()){
+      if (!this->HasInterPath())
+      {
         return te::Operation();
       }
       return this->state->inter_path[(int)this->state->inter_path.size() - 1];
@@ -134,8 +135,8 @@ namespace ditto
     }
 
     /*!
- * \brief Get the tensorize iters
- */
+     * \brief Get the tensorize iters
+     */
     Array<tir::IterVar>
     CPUTensorizeContextNode::GetTensorizeIters(const te::Operation &op)
     {
@@ -145,8 +146,8 @@ namespace ditto
     }
 
     /*!
- * \brief Get the tensorize iters
- */
+     * \brief Get the tensorize iters
+     */
     Array<te::IterVar>
     CPUTensorizeContextNode::GetAllIters(const te::Operation &op)
     {
@@ -160,8 +161,8 @@ namespace ditto
       return ret;
     }
     /*!
- * \brief Get the outer iter of the second op
- */
+     * \brief Get the outer iter of the second op
+     */
     std::pair<std::vector<int>, Array<IntImm>>
     CPUTensorizeContextNode::GetSecondOpOuterIndexAndSplitFactor()
     {
@@ -173,8 +174,8 @@ namespace ditto
       return {indices, state->secondOpOuterTileFactors};
     }
     /*!
- * \brief if the axis of op is spatial
- */
+     * \brief if the axis of op is spatial
+     */
     std::pair<Array<tir::IterVar>, Array<tir::IterVar>>
     CPUTensorizeContextNode::splitSpatialWithReduce(const te::Operation op,
                                                     Array<tir::IterVar> ivs)
@@ -324,12 +325,13 @@ namespace ditto
         return;
       te::Operation child = op->InputTensors()[0]->op;
       Array<PrimExpr> op_access_indices;
-      Array<Array<PrimExpr>> access_indices =  utils::GetAccessIndices(op, child);
+      Array<Array<PrimExpr>> access_indices = utils::GetAccessIndices(op, child);
 
       const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
       if (cop->reduce_axis.size())
         return;
-      for (auto iv : cop->axis){
+      for (auto iv : cop->axis)
+      {
         op_access_indices.push_back(iv->var);
       }
       access_indices.push_back(op_access_indices);
@@ -344,7 +346,8 @@ namespace ditto
         var2iv.Set(iv->var, iv);
       }
 
-      std::function<std::vector<size_t>(Array<PrimExpr>, Map<tir::Var, IntImm>)> inferhelper = [&](Array<PrimExpr> exprs, Map<tir::Var, IntImm> map) {
+      std::function<std::vector<size_t>(Array<PrimExpr>, Map<tir::Var, IntImm>)> inferhelper = [&](Array<PrimExpr> exprs, Map<tir::Var, IntImm> map)
+      {
         std::vector<size_t> ret;
         Map<tir::Var, Range> ranges;
         for (auto kv : map)
@@ -367,13 +370,15 @@ namespace ditto
         }
         return ret;
       };
-      
-      std::vector<std::vector<size_t> > strides;
-      for (auto access_index: access_indices){
+
+      std::vector<std::vector<size_t>> strides;
+      for (auto access_index : access_indices)
+      {
         strides.push_back(inferhelper(access_index, map));
       }
-    
-      auto helper = [](std::vector<size_t> v, std::string name) {
+
+      auto helper = [](std::vector<size_t> v, std::string name)
+      {
         std::cout << name << ": ";
         for (auto v__ : v)
           std::cout << v__ << " ";
@@ -381,21 +386,22 @@ namespace ditto
       };
 
       std::function<size_t(std::vector<size_t>, Array<PrimExpr>, Map<tir::Var, IntImm>, Map<tir::Var, IntImm>)> poshelper =
-          [&inferhelper, &helper](std::vector<size_t> stride, Array<PrimExpr> access_indices, Map<tir::Var, IntImm> map1, Map<tir::Var, IntImm> map2) {
-            int ret = 0;
-            auto indices1 = inferhelper(access_indices, map1);
-            auto indices2 = inferhelper(access_indices, map2);
-            CHECK(stride.size() == indices1.size());
-            size_t acc = 1;
-            for (size_t i = stride.size(); i != 0; i--)
-            {
-              int idx = i - 1;
-              ret += (indices1[idx] - indices2[idx]) * acc;
-              acc *= stride[idx];
-            }
+          [&inferhelper, &helper](std::vector<size_t> stride, Array<PrimExpr> access_indices, Map<tir::Var, IntImm> map1, Map<tir::Var, IntImm> map2)
+      {
+        int ret = 0;
+        auto indices1 = inferhelper(access_indices, map1);
+        auto indices2 = inferhelper(access_indices, map2);
+        CHECK(stride.size() == indices1.size());
+        size_t acc = 1;
+        for (size_t i = stride.size(); i != 0; i--)
+        {
+          int idx = i - 1;
+          ret += (indices1[idx] - indices2[idx]) * acc;
+          acc *= stride[idx];
+        }
 
-            return ret < 0 ? -ret : ret;
-          };
+        return ret < 0 ? -ret : ret;
+      };
 
       Map<tir::Var, IntImm> allzero;
       for (auto var : vars)
@@ -416,23 +422,26 @@ namespace ditto
             onehot.Set(tmpvar, IntImm(DataType::Int(32), 1));
         }
         size_t diff = 1e9;
-        for (size_t i = 0; i < access_indices.size(); i++){
+        for (size_t i = 0; i < access_indices.size(); i++)
+        {
           size_t posDiff = poshelper(strides[i], access_indices[i], onehot, allzero);
           diff = std::min(diff, posDiff);
         }
-        if (diff >= minParallelStride){
+        if (diff >= minParallelStride)
+        {
           paralleliters.push_back(var2iv[var]);
         }
         else
           otheriters.push_back(var2iv[var]);
       }
       Array<tir::IterVar> looporder;
-      for (auto arr : {paralleliters, otheriters}){
-        for (auto iv : arr){
+      for (auto arr : {paralleliters, otheriters})
+      {
+        for (auto iv : arr)
+        {
           looporder.push_back(iv);
         }
       }
-
 
       s.reorder(looporder);
 
@@ -553,6 +562,7 @@ namespace ditto
                                           String path)
     {
       auto factor = data[i];
+
       const te::ComputeOpNode *cop = op.as<te::ComputeOpNode>();
       std::unordered_map<int, tvm::tir::IterVar> idx2iv;
       int idx = 0;
@@ -578,6 +588,10 @@ namespace ditto
       Map<tir::IterVar, Bool> isSpatial;
       Array<tir::IterVar> loopOrder = splitAndReorder(
           sch[op], idx2iv, firstOpTileFactor, factor.factor.loopOrder, &isSpatial);
+      for (auto item : firstOpTileFactor)
+      {
+        std::cout << idx2iv[item.first] << ": " << item.second << std::endl;
+      }
       for (auto iv : tensorizeAxes)
         loopOrder.push_back(iv);
       sch[op].reorder(loopOrder);
@@ -598,6 +612,7 @@ namespace ditto
           break;
         }
       }
+      return sch;
       std::cout << "reduce size: " << reduceAxes.size()
                 << ", spatial size: " << fuseAxes.size() << std::endl;
       tir::IterVar outerfuse, outerfuseouter, outerfuseinner;
@@ -691,19 +706,6 @@ namespace ditto
           sch[cur_op], idx2iv_outer, tensorize_param->commonTilingFactor,
           tensorize_param->commonLoopOrder);
       Array<tir::IterVar> tensorizeLoops = ctx->GetTensorizeIters(cur_op);
-      // for (auto kv: idx2iv){
-      //   bool found = false;
-      //   for (auto iv: tensorizeLoops){
-      //     if (kv.second.same_as(iv)){
-      //       found = true;
-      //     }
-
-      //   }
-      //   if (!found)
-      //     bodyLoops.push_back(kv.second);
-      // }
-      // std::cout << "body loops: " << bodyLoops << std::endl;
-      // std::cout << "common loops: " << commonLoops << std::endl;
 
       // 3. reorder
       Array<tir::IterVar> loopOrder;
@@ -734,7 +736,8 @@ namespace ditto
       else
         ctx->first_frag_attach_axis = outerFused;
       te::Operation interPathOp = ctx->InterPathRootOp();
-      if (interPathOp.defined()){
+      if (interPathOp.defined())
+      {
         ctx->path_attach_axis = getAttachAxis(sch, cur_op, interPathOp, ctx->first_frag_attach_axis, bodyLoops);
         ctx->path_attach_tensor = cur_op;
       }
@@ -742,8 +745,10 @@ namespace ditto
       return;
     }
 
-    bool tensorizeOp(te::Schedule sch, te::Operation op, CPUTensorizeContext ctx){
-      if (!ctx->state->tensorize_intrinsics.count(op) || !op.as<te::ComputeOpNode>()){
+    bool tensorizeOp(te::Schedule sch, te::Operation op, CPUTensorizeContext ctx)
+    {
+      if (!ctx->state->tensorize_intrinsics.count(op) || !op.as<te::ComputeOpNode>())
+      {
         return false;
       }
       auto cop = op.as<te::ComputeOpNode>();
@@ -752,18 +757,22 @@ namespace ditto
       auto impl = ctx->state->tensorize_impl.at(op);
       CHECK(intrin.defined() && iters.defined() && impl.defined());
       Array<tir::IterVar> all_iters;
-      for (auto iv: cop->axis) {
+      for (auto iv : cop->axis)
+      {
         bool isTensorize = false;
-        for (auto tiv: iters){
-          if (iv.same_as(tiv)){
+        for (auto tiv : iters)
+        {
+          if (iv.same_as(tiv))
+          {
             isTensorize = true;
             break;
           }
         }
-        if(!isTensorize)
+        if (!isTensorize)
           all_iters.push_back(iv);
       }
-      for (auto iv: iters){
+      for (auto iv : iters)
+      {
         all_iters.push_back(iv);
       }
       sch[op].reorder(all_iters);
@@ -787,10 +796,12 @@ namespace ditto
       std::cout << "path_attach_axis: " << ctx->path_attach_axis << std::endl;
       for (auto op : ctx->InterPathNonRootOps())
       {
-        if (tensorizeOp(sch, op, ctx)){
+        if (tensorizeOp(sch, op, ctx))
+        {
           sch[op].compute_at(sch[ctx->first_frag_attach_op], ctx->first_frag_attach_axis);
         }
-        else{
+        else
+        {
           CHECK(ctx->CanInline(op));
           sch[op].compute_inline();
         }
@@ -857,18 +868,18 @@ namespace ditto
       te::Schedule sch = te::create_schedule(layer->ops);
       CPUTensorizeContext ctx = CPUTensorizeContext(layer, state);
       /*
-   * Schedule epilogue
-   * Currently, we treat epilogue as a separate kernel
-   */
+       * Schedule epilogue
+       * Currently, we treat epilogue as a separate kernel
+       */
       ScheduleEpilogue(sch, ctx, tensorize_param);
       /*
-   * Schedule second op tensor
-   * The second tensor determines the overall parallelism
-   */
+       * Schedule second op tensor
+       * The second tensor determines the overall parallelism
+       */
       ScheduleSecondOpCPU(sch, ctx, tensorize_param);
       /*
-   * Schedule second op's prologue
-   */
+       * Schedule second op's prologue
+       */
       for (auto op_list : ctx->state->second_op_prologue)
       {
         bool isFirstOp = true;
@@ -888,20 +899,20 @@ namespace ditto
       }
 
       /*
-   * Schedule inter path
-   */
+       * Schedule inter path
+       */
       ScheduleInterPath(sch, ctx, tensorize_param);
       /*
-   * Schedule first op
-   */
+       * Schedule first op
+       */
       ScheduleFirstOpCPU(sch, ctx, tensorize_param);
       /*
-   * Schedule first op's prologue
-   */
+       * Schedule first op's prologue
+       */
       ScheduleFirstOpPrologue(sch, ctx, tensorize_param);
       /*
-   * import the intrinsic
-   */
+       * import the intrinsic
+       */
 
       return sch;
     }
@@ -917,44 +928,6 @@ namespace ditto
         std::string searchType = "stochastic", std::string mode = "best",
         std::vector<CostAndFactor> *data = NULL, bool verbose = false, std::string prefix = "")
     {
-      // std::cout << "begin schedule helper with param: \n";
-      // for (auto idxFactors: factor.tileSize){
-      //   int idx = idxFactors.first;
-      //   auto factors = idxFactors.second;
-      //   std::cout << "[" << idx2var[idx] << " , (" << factors[0] << ", " <<
-      //   bounds[idx2var[idx]] << ")], ";
-      // }
-      // std::cout << std::endl;
-      // std::cout << "bounds: " << std::endl;
-      // std::cout << bounds << std::endl;
-      // std::cout << "fixed tileSize" << std::endl;
-      // std::cout << fixedTileSize << std::endl;
-      // std::cout << "begin/end: " << beginCacheLevel << ":" << endCacheLevel <<
-      // std::endl; std::cout << "cacheSizes: " << cacheSizes.size() << std::endl;
-      // std::cout << "weightPerCacheLevel.size()" << weightPerCacheLevel.size() <<
-      // std::endl; std::cout << "delayedWeightInit.size()" <<
-      // delayedWeight_init.size() << std::endl; std::cout <<
-      // "weightPerTensor.size()" << weightPerTensor.size() << std::endl; std::cout
-      // << "acf.size()" << accessFunctions.size() << std::endl;
-      // std::cout << "access functions:";
-      // for (auto acf: accessFunctions)
-      //   std::cout <<acf << " " << acf->absentVars << std::endl;
-      // if (verbose) {
-      //   for (auto acf : accessFunctions)
-      //     std::cout << "access_indices" << acf->access_indices
-      //               << "absentVars: " << acf->absentVars
-      //               << ", presentVars: " << acf->presentVars << std::endl;
-      //   std::cout << std::endl;
-      //   std::cout << "tensorWeight:";
-      //   for (auto tswt : weightPerTensor)
-      //     std::cout << tswt << " ";
-      //   std::cout << std::endl;
-      //   std::cout << "weightPerCacheLevel:";
-      //   for (auto wpcl : weightPerCacheLevel)
-      //     std::cout << wpcl << " ";
-      //   std::cout << std::endl;
-      // }
-
       std::vector<CostAndFactor> candidates;
       std::vector<double> footprints;
       int cnt = 0;
@@ -962,253 +935,258 @@ namespace ditto
                          SingleCubicScheduleFactor)>
           dfsTileSize = [&](std::vector<double> cost, size_t cacheLevel,
                             std::vector<double> delayedWeight,
-                            SingleCubicScheduleFactor factors) {
+                            SingleCubicScheduleFactor factors)
+      {
+        if (verbose)
+          std::cout << "cacheLevel:" << cacheLevel << std::endl;
+        if (cacheLevel >= endCacheLevel)
+        {
+          double cost_ = 0;
+          for (size_t i = 0; i < accessFunctions.size(); i++)
+            cost_ += footprints[i] * delayedWeight[i] * bytePerEle;
+          CHECK(cost.size());
+          auto p = cost.rbegin();
+          *p += cost_;
+          cnt += 1;
+          candidates.push_back({cost, factors});
+          return;
+        }
+
+        std::vector<std::pair<int, int>> baseTileSize;
+        size_t skip;
+        auto getDM = [&accessFunctions, &weightPerCacheLevel, &delayedWeight,
+                      &cacheLevel, &weightPerTensor, &skip, &bounds,
+                      &footprints, &verbose,
+                      &bytePerEle](Map<tir::Var, IntImm> tileSize,
+                                   double *delayedDM_p = NULL)
+        {
+          if (verbose)
+          {
+            std::cout << "delayed weight:" << std::endl;
+            for (auto dlwt : delayedWeight)
+              std::cout << dlwt << " ";
+            std::cout << std::endl;
+            std::cout << "skip" << skip << std::endl;
+            std::cout << "cachelevel: " << cacheLevel << std::endl;
+            std::cout << "tileSize: " << tileSize << std::endl;
+          }
+          Map<tir::Var, FloatImm> quotients;
+          double prod = 1;
+          for (auto varext : tileSize)
+          {
+            tir::Var var = varext.first;
+            int ext = varext.second->value;
+            double quotient = (bounds[var]->value + ext - 1) / ext;
+            quotients.Set(var, FloatImm(DataType::Float(64), quotient));
+            prod *= quotients[var]->value;
+          }
+          if (verbose)
+            std::cout << "quotients: " << quotients << std::endl;
+          double dm = 0;
+          double delayedDM = 0;
+          for (size_t i = 0; i < accessFunctions.size(); i++)
+          {
+            double dm_ = footprints[i];
+            for (auto var : accessFunctions[i]->absentVars)
+              dm_ *= quotients[var]->value;
+
+            double weight = delayedWeight[i];
+
+            delayedDM += dm_ * weight;
+
+            if (i != skip)
+              weight += weightPerCacheLevel[cacheLevel] * weightPerTensor[i];
             if (verbose)
-              std::cout << "cacheLevel:" << cacheLevel << std::endl;
-            if (cacheLevel >= endCacheLevel)
             {
-              double cost_ = 0;
-              for (size_t i = 0; i < accessFunctions.size(); i++)
-                cost_ += footprints[i] * delayedWeight[i] * bytePerEle;
-              CHECK(cost.size());
-              auto p = cost.rbegin();
-              *p += cost_;
-              cnt += 1;
-              candidates.push_back({cost, factors});
+              std::cout << "dm" << i << " : " << dm_ << " ";
+              std::cout << accessFunctions[i]->absentVars << " " << footprints[i] << std::endl;
+              std::cout << "weight" << weight << std::endl;
+            }
+            dm += dm_ * weight;
+          }
+          if (delayedDM_p)
+            *delayedDM_p = delayedDM * bytePerEle;
+          return dm * bytePerEle;
+        };
+        auto getFP = [&accessFunctions,
+                      &bytePerEle](Map<tir::Var, IntImm> tileSize)
+        {
+          double fp = 0;
+          for (size_t i = 0; i < accessFunctions.size(); i++)
+          {
+            for (auto fp_ : accessFunctions[i]->getFootprint(tileSize))
+              fp += (double)fp_ * bytePerEle;
+          }
+          return fp;
+        };
+        struct cacheLevelFactor
+        {
+          double cost;
+          Map<tir::Var, IntImm> TileSize;
+          double occupancy;
+          double delayedCost;
+          double curCost;
+          double fp;
+          cacheLevelFactor(double cost_, Map<tir::Var, IntImm> TileSize_,
+                           double occupancy_, double delayedCost_,
+                           double curCost_, double fp_)
+              : cost(cost_), TileSize(TileSize_), occupancy(occupancy_),
+                delayedCost(delayedCost_), curCost(curCost_), fp(fp_) {}
+        };
+        std::vector<cacheLevelFactor> best;
+        size_t beam;
+        std::function<void(int, Map<tir::Var, IntImm>)>
+            dfsTileSizeOfCacheLevel = [&](size_t idx,
+                                          Map<tir::Var, IntImm> tileSize)
+        {
+          if (verbose)
+            std::cout << "idx: " << idx << std::endl;
+          if (mode == "survey" && best.size() >= beam)
+            return;
+          int pos = baseTileSize[idx].first;
+          if (idx == baseTileSize.size())
+          {
+            // do the evaluation
+            if (verbose)
+              std::cout << "tileSize" << tileSize << std::endl;
+            double fp = getFP(tileSize);
+            if (fp > cacheSizes[cacheLevel])
               return;
-            }
-
-            std::vector<std::pair<int, int>> baseTileSize;
-            size_t skip;
-            auto getDM = [&accessFunctions, &weightPerCacheLevel, &delayedWeight,
-                          &cacheLevel, &weightPerTensor, &skip, &bounds,
-                          &footprints, &verbose,
-                          &bytePerEle](Map<tir::Var, IntImm> tileSize,
-                                       double *delayedDM_p = NULL) {
+            double delayedDM;
+            double dm = getDM(tileSize, &delayedDM);
+            double occupancy = getFP(tileSize) / cacheSizes[cacheLevel];
+            cacheLevelFactor newItem = {dm, tileSize, occupancy, delayedDM,
+                                        dm - delayedDM, fp};
+            if (mode == "best")
+            {
               if (verbose)
-              {
-                std::cout << "delayed weight:" << std::endl;
-                for (auto dlwt : delayedWeight)
-                  std::cout << dlwt << " ";
-                std::cout << std::endl;
-                std::cout << "skip" << skip << std::endl;
-                std::cout << "cachelevel: " << cacheLevel << std::endl;
-                std::cout << "tileSize: " << tileSize << std::endl;
-              }
-              Map<tir::Var, FloatImm> quotients;
-              double prod = 1;
-              for (auto varext : tileSize)
-              {
-                tir::Var var = varext.first;
-                int ext = varext.second->value;
-                double quotient = (bounds[var]->value + ext - 1) / ext;
-                quotients.Set(var, FloatImm(DataType::Float(64), quotient));
-                prod *= quotients[var]->value;
-              }
-              if (verbose)
-                std::cout << "quotients: " << quotients << std::endl;
-              double dm = 0;
-              double delayedDM = 0;
-              for (size_t i = 0; i < accessFunctions.size(); i++)
-              {
-                double dm_ = footprints[i];
-                for (auto var : accessFunctions[i]->absentVars)
-                  dm_ *= quotients[var]->value;
-
-                double weight = delayedWeight[i];
-
-                delayedDM += dm_ * weight;
-
-                if (i != skip)
-                  weight += weightPerCacheLevel[cacheLevel] * weightPerTensor[i];
-                if (verbose)
-                {
-                  std::cout << "dm" << i << " : " << dm_ << " ";
-                  std::cout << accessFunctions[i]->absentVars << " " << footprints[i] << std::endl;
-                  std::cout << "weight" << weight << std::endl;
-                }
-                dm += dm_ * weight;
-              }
-              if (delayedDM_p)
-                *delayedDM_p = delayedDM * bytePerEle;
-              return dm * bytePerEle;
-            };
-            auto getFP = [&accessFunctions,
-                          &bytePerEle](Map<tir::Var, IntImm> tileSize) {
-              double fp = 0;
-              for (size_t i = 0; i < accessFunctions.size(); i++)
-              {
-                for (auto fp_ : accessFunctions[i]->getFootprint(tileSize))
-                  fp += (double)fp_ * bytePerEle;
-              }
-              return fp;
-            };
-            struct cacheLevelFactor
-            {
-              double cost;
-              Map<tir::Var, IntImm> TileSize;
-              double occupancy;
-              double delayedCost;
-              double curCost;
-              double fp;
-              cacheLevelFactor(double cost_, Map<tir::Var, IntImm> TileSize_,
-                               double occupancy_, double delayedCost_,
-                               double curCost_, double fp_)
-                  : cost(cost_), TileSize(TileSize_), occupancy(occupancy_),
-                    delayedCost(delayedCost_), curCost(curCost_), fp(fp_) {}
-            };
-            std::vector<cacheLevelFactor> best;
-            size_t beam;
-            std::function<void(int, Map<tir::Var, IntImm>)>
-                dfsTileSizeOfCacheLevel = [&](size_t idx,
-                                              Map<tir::Var, IntImm> tileSize) {
-                  if (verbose)
-                    std::cout << "idx: " << idx << std::endl;
-                  if (mode == "survey" && best.size() >= beam)
-                    return;
-                  int pos = baseTileSize[idx].first;
-                  if (idx == baseTileSize.size())
-                  {
-                    // do the evaluation
-                    if (verbose)
-                      std::cout << "tileSize" << tileSize << std::endl;
-                    double fp = getFP(tileSize);
-                    if (fp > cacheSizes[cacheLevel])
-                      return;
-                    double delayedDM;
-                    double dm = getDM(tileSize, &delayedDM);
-                    double occupancy = getFP(tileSize) / cacheSizes[cacheLevel];
-                    cacheLevelFactor newItem = {dm, tileSize, occupancy, delayedDM,
-                                                dm - delayedDM, fp};
-                    if (mode == "best")
-                    {
-                      if (verbose)
-                        std::cout << "best.size(): " << best.size() << std::endl;
-                      size_t rank = 0;
-                      while (best.size() > rank && best[rank].cost < dm)
-                        rank++;
-                      best.insert(best.begin() + rank, newItem);
-                      while (best.size() > beam)
-                        best.pop_back();
-                    }
-                    else if (mode == "survey")
-                    {
-                      best.push_back(newItem);
-                    }
-                    return;
-                  }
-                  for (size_t i = idx; i < baseTileSize.size(); i++)
-                  {
-                    tileSize.Set(idx2var[baseTileSize[i].first],
-                                 IntImm(DataType::Int(32), baseTileSize[i].second));
-                  }
-                  if (getFP(tileSize) > cacheSizes[cacheLevel])
-                    return;
-
-                  if (mode == "best")
-                  {
-                    for (size_t i = idx; i < baseTileSize.size(); i++)
-                    {
-                      int bound = bounds[idx2var[baseTileSize[i].first]]->value;
-                      tileSize.Set(idx2var[baseTileSize[i].first],
-                                   IntImm(DataType::Int(32), bound));
-                    }
-                    if (best.size() == beam &&
-                        getDM(tileSize) >= best[beam - 1].cost)
-                      return;
-                  }
-                  int bound =
-                      (bounds[idx2var[pos]]->value + baseTileSize[idx].second - 1) /
-                      baseTileSize[idx].second;
-                  size_t n_trial =
-                      (searchType == "stochastic" ? std::min(bound, 10) : bound);
-                  for (size_t trial = 0; trial < n_trial; trial++)
-                  {
-                    int ext = (trial + 1) * baseTileSize[idx].second;
-                    if (searchType == "stochastic")
-                      ext = (random() % bound + 1) * baseTileSize[idx].second;
-                    tileSize.Set(idx2var[pos], IntImm(DataType::Int(32), ext));
-                    dfsTileSizeOfCacheLevel(idx + 1, tileSize);
-                  }
-                  return;
-                };
-            Map<tir::Var, IntImm> tileSizeInit;
-            for (auto varExt : fixedTileSize)
-              tileSizeInit.Set(varExt.first, varExt.second);
-            for (auto idx : factors.tileSize)
-            {
-              baseTileSize.push_back(
-                  {idx.first, idx.second[idx.second.size() - 1]->value});
+                std::cout << "best.size(): " << best.size() << std::endl;
+              size_t rank = 0;
+              while (best.size() > rank && best[rank].cost < dm)
+                rank++;
+              best.insert(best.begin() + rank, newItem);
+              while (best.size() > beam)
+                best.pop_back();
             }
-            if (verbose)
+            else if (mode == "survey")
             {
-              std::cout << "baseTileSize:\n";
-              for (auto idxext : baseTileSize)
-              {
-                std::cout << "(" << idx2var[idxext.first] << ", " << idxext.second
-                          << "), ";
-                std::cout << std::endl;
-              }
+              best.push_back(newItem);
             }
-            beam = 20;
-            for (size_t i = 0; i < accessFunctions.size(); i++)
+            return;
+          }
+          for (size_t i = idx; i < baseTileSize.size(); i++)
+          {
+            tileSize.Set(idx2var[baseTileSize[i].first],
+                         IntImm(DataType::Int(32), baseTileSize[i].second));
+          }
+          if (getFP(tileSize) > cacheSizes[cacheLevel])
+            return;
+
+          if (mode == "best")
+          {
+            for (size_t i = idx; i < baseTileSize.size(); i++)
             {
-              // determine the delayed weight
-              skip = i;
-              dfsTileSizeOfCacheLevel(0, tileSizeInit);
-
-              std::vector<double> newDelayedWeight;
-              for (size_t j = 0; j < accessFunctions.size(); j++)
-              {
-                if (j != i)
-                  newDelayedWeight.push_back(0);
-                else
-                  newDelayedWeight.push_back(weightPerTensor[i] *
-                                             weightPerCacheLevel[cacheLevel]);
-              }
-
-              Array<tir::Var> absentVars = accessFunctions[i]->absentVars;
-              auto isAbsentVar = [&absentVars](tir::Var var_) {
-                for (auto var : absentVars)
-                  if (var.same_as(var_))
-                    return true;
-                return false;
-              };
-              std::vector<int> newLoopOrder;
-              std::vector<int> innerOrder;
-              for (auto it : baseTileSize)
-              {
-                int idx = it.first;
-                if (isAbsentVar(idx2var[idx]))
-                  innerOrder.push_back(idx);
-                else
-                  newLoopOrder.push_back(idx);
-              }
-              newLoopOrder.insert(newLoopOrder.end(), innerOrder.begin(),
-                                  innerOrder.end());
-
-              for (auto item : best)
-              {
-                auto tileSize = item.TileSize;
-                SingleCubicScheduleFactor newFactors = factors;
-                for (auto &kv : newFactors.tileSize)
-                {
-                  kv.second.push_back(tileSize[idx2var[kv.first]]);
-                }
-                newFactors.skip.push_back(i);
-                newFactors.loopOrder.push_back(newLoopOrder);
-                newFactors.log[prefix + "fp" + std::to_string(cacheLevel)] = item.fp;
-                newFactors.log[prefix + "cost" + std::to_string(cacheLevel)] = item.curCost;
-                auto newCost = cost;
-                CHECK(newCost.size());
-                auto p = newCost.rbegin();
-                *p += item.delayedCost;
-                newCost.push_back(item.curCost);
-                newFactors.cacheOccupancy.push_back(item.occupancy);
-                dfsTileSize(newCost, cacheLevel + 1, newDelayedWeight, newFactors);
-              }
+              int bound = bounds[idx2var[baseTileSize[i].first]]->value;
+              tileSize.Set(idx2var[baseTileSize[i].first],
+                           IntImm(DataType::Int(32), bound));
             }
+            if (best.size() == beam &&
+                getDM(tileSize) >= best[beam - 1].cost)
+              return;
+          }
+          int bound =
+              (bounds[idx2var[pos]]->value + baseTileSize[idx].second - 1) /
+              baseTileSize[idx].second;
+          size_t n_trial =
+              (searchType == "stochastic" ? std::min(bound, 10) : bound);
+          for (size_t trial = 0; trial < n_trial; trial++)
+          {
+            int ext = (trial + 1) * baseTileSize[idx].second;
+            if (searchType == "stochastic")
+              ext = (random() % bound + 1) * baseTileSize[idx].second;
+            tileSize.Set(idx2var[pos], IntImm(DataType::Int(32), ext));
+            dfsTileSizeOfCacheLevel(idx + 1, tileSize);
+          }
+          return;
+        };
+        Map<tir::Var, IntImm> tileSizeInit;
+        for (auto varExt : fixedTileSize)
+          tileSizeInit.Set(varExt.first, varExt.second);
+        for (auto idx : factors.tileSize)
+        {
+          baseTileSize.push_back(
+              {idx.first, idx.second[idx.second.size() - 1]->value});
+        }
+        if (verbose)
+        {
+          std::cout << "baseTileSize:\n";
+          for (auto idxext : baseTileSize)
+          {
+            std::cout << "(" << idx2var[idxext.first] << ", " << idxext.second
+                      << "), ";
+            std::cout << std::endl;
+          }
+        }
+        beam = 20;
+        for (size_t i = 0; i < accessFunctions.size(); i++)
+        {
+          // determine the delayed weight
+          skip = i;
+          dfsTileSizeOfCacheLevel(0, tileSizeInit);
+
+          std::vector<double> newDelayedWeight;
+          for (size_t j = 0; j < accessFunctions.size(); j++)
+          {
+            if (j != i)
+              newDelayedWeight.push_back(0);
+            else
+              newDelayedWeight.push_back(weightPerTensor[i] *
+                                         weightPerCacheLevel[cacheLevel]);
+          }
+
+          Array<tir::Var> absentVars = accessFunctions[i]->absentVars;
+          auto isAbsentVar = [&absentVars](tir::Var var_)
+          {
+            for (auto var : absentVars)
+              if (var.same_as(var_))
+                return true;
+            return false;
           };
+          std::vector<int> newLoopOrder;
+          std::vector<int> innerOrder;
+          for (auto it : baseTileSize)
+          {
+            int idx = it.first;
+            if (isAbsentVar(idx2var[idx]))
+              innerOrder.push_back(idx);
+            else
+              newLoopOrder.push_back(idx);
+          }
+          newLoopOrder.insert(newLoopOrder.end(), innerOrder.begin(),
+                              innerOrder.end());
+
+          for (auto item : best)
+          {
+            auto tileSize = item.TileSize;
+            SingleCubicScheduleFactor newFactors = factors;
+            for (auto &kv : newFactors.tileSize)
+            {
+              kv.second.push_back(tileSize[idx2var[kv.first]]);
+            }
+            newFactors.skip.push_back(i);
+            newFactors.loopOrder.push_back(newLoopOrder);
+            newFactors.log[prefix + "fp" + std::to_string(cacheLevel)] = item.fp;
+            newFactors.log[prefix + "cost" + std::to_string(cacheLevel)] = item.curCost;
+            auto newCost = cost;
+            CHECK(newCost.size());
+            auto p = newCost.rbegin();
+            *p += item.delayedCost;
+            newCost.push_back(item.curCost);
+            newFactors.cacheOccupancy.push_back(item.occupancy);
+            dfsTileSize(newCost, cacheLevel + 1, newDelayedWeight, newFactors);
+          }
+        }
+      };
       // check factor.tileSize doesn't have fixed vars
       for (auto iv : factor.tileSize)
       {
@@ -1225,43 +1203,47 @@ namespace ditto
           fp += fp_;
         footprints.push_back(fp);
       }
-      std::cout << std::endl;
       dfsTileSize({0.0}, beginCacheLevel, delayedWeight_init, factor);
       std::sort(candidates.begin(), candidates.end(),
-                [](CostAndFactor &a, CostAndFactor &b) { return a.sum < b.sum; });
+                [](CostAndFactor &a, CostAndFactor &b)
+                { return a.sum < b.sum; });
 
       if (!candidates.size())
       {
-        // std::cout << std::endl;
-        // std::cout << "bounds: " << std::endl;
-        // std::cout << bounds << std::endl;
-        // std::cout << "fixed tileSize" << std::endl;
-        // std::cout << fixedTileSize << std::endl;
-        // std::cout << "begin/end: " << beginCacheLevel << ":" << endCacheLevel <<
-        // std::endl; std::cout << "cacheSizes: " << cacheSizes.size() << std::endl;
-        // std::cout << "weightPerCacheLevel.size()" << weightPerCacheLevel.size() <<
-        // std::endl; std::cout << "delayedWeightInit.size()" <<
-        // delayedWeight_init.size() << std::endl; std::cout <<
-        // "weightPerTensor.size()" << weightPerTensor.size() << std::endl; std::cout
-        // << "acf.size()" << accessFunctions.size() << std::endl;
-        // std::cout << "access functions:";
-        // for (auto acf: accessFunctions)
-        //   std::cout <<acf << " " << acf->absentVars << std::endl;
-        // if (verbose) {
-        //   for (auto acf : accessFunctions)
-        //     std::cout << "access_indices" << acf->access_indices
-        //               << "absentVars: " << acf->absentVars
-        //               << ", presentVars: " << acf->presentVars << std::endl;
-        //   std::cout << std::endl;
-        //   std::cout << "tensorWeight:";
-        //   for (auto tswt : weightPerTensor)
-        //     std::cout << tswt << " ";
-        //   std::cout << std::endl;
-        //   std::cout << "weightPerCacheLevel:";
-        //   for (auto wpcl : weightPerCacheLevel)
-        //     std::cout << wpcl << " ";
-        //   std::cout << std::endl;
-        // }
+        if (verbose)
+        {
+          std::cout << std::endl;
+          std::cout << "bounds: " << std::endl;
+          std::cout << bounds << std::endl;
+          std::cout << "fixed tileSize" << std::endl;
+          std::cout << fixedTileSize << std::endl;
+          std::cout << "begin/end: " << beginCacheLevel << ":" << endCacheLevel << std::endl;
+          std::cout << "cacheSizes: " << cacheSizes.size() << std::endl;
+          std::cout << "weightPerCacheLevel.size()" << weightPerCacheLevel.size() << std::endl;
+          std::cout << "delayedWeightInit.size()" << delayedWeight_init.size() << std::endl;
+          std::cout << "weightPerTensor.size()" << weightPerTensor.size() << std::endl;
+          std::cout
+              << "acf.size()" << accessFunctions.size() << std::endl;
+          std::cout << "access functions:";
+          for (auto acf : accessFunctions)
+            std::cout << acf << " " << acf->absentVars << std::endl;
+          if (verbose)
+          {
+            for (auto acf : accessFunctions)
+              std::cout << "access_indices" << acf->access_indices
+                        << "absentVars: " << acf->absentVars
+                        << ", presentVars: " << acf->presentVars << std::endl;
+            std::cout << std::endl;
+            std::cout << "tensorWeight:";
+            for (auto tswt : weightPerTensor)
+              std::cout << tswt << " ";
+            std::cout << std::endl;
+            std::cout << "weightPerCacheLevel:";
+            for (auto wpcl : weightPerCacheLevel)
+              std::cout << wpcl << " ";
+            std::cout << std::endl;
+          }
+        }
         LOG(WARNING) << "no valid candidates found";
         for (auto idxFactors : factor.tileSize)
         {
@@ -1314,8 +1296,8 @@ namespace ditto
       weightPerTensor.push_back(hw_param->tensorWeight[1]);
       delayedWeight_init.push_back(
           0); // currently we do not have register level reuse
-      // init footprint
 
+      // hard-code the shape configuration for tensorize
       SingleCubicScheduleFactor factor;
       std::unordered_map<int, Array<IntImm>> &tileFactorInit = factor.tileSize;
       std::vector<int> L1LoopOrder;
@@ -1416,7 +1398,8 @@ namespace ditto
       // judge whether the access function is shared
       for (auto acf : op2->ReadAccessFunctions())
       {
-        auto inAbsentVar = [&acf](tir::Var var) {
+        auto inAbsentVar = [&acf](tir::Var var)
+        {
           for (auto var_ : acf->absentVars)
             if (var_.same_as(var))
               return true;
@@ -1475,20 +1458,21 @@ namespace ditto
 
       auto tileSize2factor =
           [](const SingleCubicScheduleFactor &sch,
-             std::unordered_map<int, Array<IntImm>> &tileFactor) {
-            for (auto it : sch.tileSize)
-            {
-              int idx = it.first;
-              Array<IntImm> factor = it.second;
-              tileFactor[idx] = Array<IntImm>();
-              for (size_t i = 1; i < factor.size(); i++)
-              {
-                CHECK(factor[i]->value % factor[i - 1]->value == 0);
-                tileFactor[idx].push_back(IntImm(
-                    DataType::Int(32), factor[i]->value / factor[i - 1]->value));
-              }
-            }
-          };
+             std::unordered_map<int, Array<IntImm>> &tileFactor)
+      {
+        for (auto it : sch.tileSize)
+        {
+          int idx = it.first;
+          Array<IntImm> factor = it.second;
+          tileFactor[idx] = Array<IntImm>();
+          for (size_t i = 1; i < factor.size(); i++)
+          {
+            CHECK(factor[i]->value % factor[i - 1]->value == 0);
+            tileFactor[idx].push_back(IntImm(
+                DataType::Int(32), factor[i]->value / factor[i - 1]->value));
+          }
+        }
+      };
       std::unordered_map<int, Array<IntImm>> firstOpTileFactor, secondOpTileFactor,
           commonLoopTileFcator;
       tileSize2factor(op1Schedule, firstOpTileFactor);
@@ -1518,7 +1502,6 @@ namespace ditto
       {
         log[kv.first] = kv.second;
       }
-      std::cout << std::endl;
       for (auto &cost : op1caf.costs)
         cost = cost * fusionInfo.outerCost;
       for (auto &cost : op2caf.costs)
@@ -1615,7 +1598,8 @@ namespace ditto
 
     TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
         .set_dispatch<CPUTensorizeParamNode>([](const ObjectRef &node,
-                                                ReprPrinter *p) {
+                                                ReprPrinter *p)
+                                             {
           auto *op = static_cast<const CPUTensorizeParamNode *>(node.get());
           p->PrintIndent();
           p->stream << "---------------CPU Tensorize Param------------------\n";
@@ -1716,50 +1700,16 @@ namespace ditto
             p->stream << std::setw(12) << op->log.at(key);
           }
           p->stream << std::endl;
-          p->stream << "\n----------------------------------------------------\n";
-        });
+          p->stream << "\n----------------------------------------------------\n"; });
 
     TVM_REGISTER_GLOBAL("ditto.auto_tensorize.CPUTensorizeContext")
-        .set_body_typed([](Layer layer, TensorizeHyperFusionState state) {
-          return CPUTensorizeContext(layer, state);
-        });
+        .set_body_typed([](Layer layer, TensorizeHyperFusionState state)
+                        { return CPUTensorizeContext(layer, state); });
 
     TVM_REGISTER_GLOBAL("ditto.auto_tensorize.buildCPUTensorizeParam")
         .set_body_typed([](SerialFusionState sfs, FusionChoice fusionChoice,
-                           hardware::HardwareParam hw_param, int bytePerEle) {
-          /*
-              double occupancy, parallelism, memUse;
-          std::tie(valid, cost) = getCost(&occupancy, &parallelism, &memUse);
-          if (valid && cost < bestLevelCost) {
-            bestLevelCost = cost;
-            memcpy(bestFactors, secondOpTilingFactors,
-                   sizeof(int) * nSecondOpIters);
-          }
-          if (!valid)
-            return;
-          if (itemCnt >= MAX_CANDIDATES_NUMBER) return;
-
-          FusionInfo fusionInfo;
-          fusionInfo.cacheOccupancy = occupancy;
-          fusionInfo.cost = cost;
-          fusionInfo.n_block = ig->getNumOfBlocks();
-          fusionInfo.outerCost = ig->_outerCost;
-          fusionInfo.maxThreadIter = ig->_maxThreadIter;
-          fusionInfo.parallelism = parallelism;
-          fusionInfo.secondOpOuterIndices = secondOpOuterIndices;
-          fusionInfo.fusionLevel = fusionLevel;
-          fusionInfo.computation =
-              ig->getFirstOpWorkload() + ig->getSecondOpWorkload();
-          fusionInfo.bounds = ig->bounds;
-          fusionInfo.valid = true;
-          fusionInfo.boundsAfterParallel = ig->_boundsAfterParallel;
-          fusionInfo.parallelFactor = ig->_parallelSchedule;
-          for (auto idx : secondOpUnsetIndices)
-            fusionInfo.secondOpOuterTilingFactors.push_back(
-                secondOpTilingFactors[idx]);
-          fusionInfo.memUse = memUse;
-          candidates[itemCnt++] = fusionInfo;
-      */
+                           hardware::HardwareParam hw_param, int bytePerEle)
+                        {
           FusionInfo fusionInfo;
           fusionInfo.fusionLevel = fusionChoice->fusionResult->fusionLevel;
           IterGraph ig = buildIterGraph(sfs);
@@ -1787,21 +1737,18 @@ namespace ditto
           CHECK(sfs->tensorizeAxes.defined());
           fusionInfo.computation =
               ig->getFirstOpWorkload() + ig->getSecondOpWorkload();
-          return buildCPUTensorizeParam(sfs, hw_param, bytePerEle, fusionInfo);
-        });
+          return buildCPUTensorizeParam(sfs, hw_param, bytePerEle, fusionInfo); });
 
     TVM_REGISTER_GLOBAL("ditto.auto_tensorize.TensorizeCPU")
         .set_body_typed([](Layer layer, TensorizeHyperFusionState state,
                            hardware::HardwareParam cpu_param,
-                           CPUTensorizeParam tensorize_param) {
-          return TensorizeCPU(layer, state, cpu_param, tensorize_param);
-        });
+                           CPUTensorizeParam tensorize_param)
+                        { return TensorizeCPU(layer, state, cpu_param, tensorize_param); });
     TVM_REGISTER_GLOBAL("ditto.auto_tensorize.SingleOpSchedule")
         .set_body_typed([](te::Operation op, Array<tir::IterVar> tensorizeAxes,
                            hardware::HardwareParam hw_param, String searchType,
-                           String mode) {
-          return SingleOpSchedule(op, tensorizeAxes, hw_param, searchType, mode);
-        });
+                           String mode)
+                        { return SingleOpSchedule(op, tensorizeAxes, hw_param, searchType, mode); });
     TVM_REGISTER_GLOBAL("ditto.auto_tensorize.run")
         .set_body_method<ScheduleContext>(&ScheduleContextNode::run);
     TVM_REGISTER_GLOBAL("ditto.auto_tensorize.runFusion")
