@@ -406,13 +406,24 @@ def gemm_impl(shape, isa, dtype, prefix):
                 }
             return 0;
         }
-
+        extern "C" int %s_update_baseline(float * C, float *A, float*B, int K_, int N_, int c_stride_){
+            for (int k = 0; k < %d; k++){
+                for (int i = 0; i < %d; i++){
+                    for (int j = 0; j < %d; j++){
+                        C[i * c_stride_ + j] += A[i * K_ + k] * B[k * N_ + j];
+                    }
+                }
+            }
+            return 0;
+        }
     """ % (
         prefix,
         KI,
         prefix,
         MI,
-        NI
+        NI,
+        prefix,
+        KI,MI,NI
     )
 
     if isa == "avx2":
@@ -591,7 +602,17 @@ extern "C" int %s_reset(float *cc, int stride) {
         }
     return 0;
 }
-        '''%(prefix, KI, prefix, MI, NI)
+extern "C" int %s_update_baseline(float * C, float *A, float*B, int K_, int N_, int c_stride_){
+    for (int k = 0; k < %d; k++){
+        for (int i = 0; i < %d; i++){
+            for (int j = 0; j < %d; j++){
+                C[i * c_stride_ + j] += A[i * K_ + k] * B[k * N_ + j];
+            }
+        }
+    }
+    return 0;
+}
+        '''%(prefix, KI, prefix, MI, NI, prefix, KI, MI, NI)
     from tvm.contrib import utils, clang
     with open("gemm.cc", 'w') as f:
         f.write(cc_code) 
@@ -604,7 +625,7 @@ extern "C" int %s_reset(float *cc, int stride) {
     return ll_code
 
 def intrin_gemm(
-    shape, dtype, prefix
+    shape, dtype, prefix, baseline = False
 ):
     assert (len(shape) == 3)
     MICRO_M, MICRO_N, MICRO_K = shape 
@@ -648,7 +669,7 @@ def intrin_gemm(
             ib.emit(
                 tvm.tir.call_extern(
                     "int32",
-                    prefix + "_update",
+                    prefix + "_update" + ("_baseline" if baseline else ""),
                     cc.access_ptr("w"),
                     aa.access_ptr("r"),
                     bb.access_ptr("r"),
@@ -676,7 +697,7 @@ def intrin_gemm(
     return te.decl_tensor_intrin(c.op, intrin_func, binds={a: Ab, b: Bb, c: Cb})
 
 def intrin_gemm_noreshape(
-    shape, dtype, prefix
+    shape, dtype, prefix, baseline = False
 ):
     assert (len(shape) == 3)
     MICRO_M, MICRO_N, MICRO_K = shape 
@@ -724,7 +745,7 @@ def intrin_gemm_noreshape(
             ib.emit(
                 tvm.tir.call_extern(
                     "int32",
-                    prefix + "_update",
+                    prefix + "_update" + ("_baseline" if baseline else ""),
                     cc.access_ptr("w"),
                     aa.access_ptr("r"),
                     bb.access_ptr("r"),
@@ -1672,16 +1693,16 @@ def exp_impl(shape, isa, dtype, prefix):
     return ll_code
 
 
-def cpu_intrin(op, shape, isa, dtype, prefix=""):
+def cpu_intrin(op, shape, isa, dtype, prefix="", baseline = False):
     loads = []
     if op == "gemm":
         compute = intrin_gemm(
-            shape, dtype=dtype, prefix=prefix
+            shape, dtype=dtype, prefix=prefix, baseline = baseline
         )
         code = gemm_impl(shape, isa, dtype, prefix)
     elif op == "gemm_noreshape":
         compute = intrin_gemm_noreshape(
-            shape, dtype = dtype, prefix = prefix 
+            shape, dtype = dtype, prefix = prefix, baseline = baseline
         )
         code = gemm_impl(shape, isa, dtype, prefix)
     elif op == "conv":

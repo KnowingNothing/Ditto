@@ -50,7 +50,7 @@ namespace ditto
       p->Print(op->inner);
       p->stream << ") "; });
     IterVar::IterVar(int idx_, FACTOR ext_, IV_Type iv_type_, tvm::tir::Var name_,
-                     tvm::tir::Var originVar)
+                     tvm::tir::Var originVar, int tensorize_ext)
     {
       ObjectPtr<IterVarNode> n = make_object<IterVarNode>();
       n->index = idx_;
@@ -59,18 +59,14 @@ namespace ditto
       n->name = name_;
       n->originVar = originVar;
       n->shared = false;
+      n->tensorize_ext = tensorize_ext;
       data_ = std::move(n);
     }
 
     TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
         .set_dispatch<IterVarNode>([](const ObjectRef &node, ReprPrinter *p) {
       auto *op = static_cast<const IterVarNode *>(node.get());
-      std::string classes[3] = {"S1", "S2", "R"};
       p->PrintIndent();
-      // p->stream << "IterVar(";
-      // p->stream << "ext: " << op->ext << ", ";
-      // p->stream << "type: " << (op->iv_type == IV_Type::SPATIAL? "S":"R") <<
-      // ", ";
       p->stream << op->name << " ";
       switch (op->iv_type) {
       case IV_Type::FIRSTSPATIAL:
@@ -85,10 +81,13 @@ namespace ditto
       case IV_Type::TENSORIZE:
         p->stream << "T";
         break;
+      case IV_Type::BATCH:
+        p->stream << "B";
+        break;
       default:
         p->stream << "U";
       }
-      p->stream << " " << op->ext; });
+      p->stream << " " << op->ext << "," << op->tensorize_ext; });
 
     AccessFunction::AccessFunction(te::Operation op,
                                    Array<Array<PrimExpr>> access_indices,
@@ -335,8 +334,11 @@ namespace ditto
         return;
       }
       Array<IterVar> outer, inner;
-      for (size_t i = 0; i < factors.size(); i++)
+      for (auto& iv: secondOpIters)
       {
+        size_t i = 0;
+        while(i < _secondOpIters.size() && _secondOpIters[i] != iv) i++;
+        CHECK(i < _secondOpIters.size());
         IterVar parent = _secondOpIters[i];
         CHECK(factors[i] <= parent->ext)
             << "tiling factor larger than axis extent. iv: " << _secondOpIters[i]
@@ -862,8 +864,8 @@ namespace ditto
         std::cout << "for  " << common->name << " in [0, " << common->ext << "):";
         if (common->shared)
           std::cout << "\"shared\" ";
-        if (common->iv_type != IV_Type::REDUCE)
-          std::cout << "\"parallel\"";
+        if (_parallelSchedule.count(common->index))
+          std::cout << "\"parallel" << _parallelSchedule[common->index] << "\"";
         std::cout << "\n";
         n_tab++;
       }
@@ -942,7 +944,7 @@ namespace ditto
         return true;
       };
       Array<IterVar> firstOpR, firstOpS1, firstOpS2, secondOpR, secondOpS1,
-          secondOpS2;
+          secondOpS2, firstOpB, secondOpB;
       for (auto iv : secondOpIters)
         if (iv->iv_type == IV_Type::REDUCE)
           secondOpR.push_back(iv);
@@ -950,6 +952,8 @@ namespace ditto
           secondOpS1.push_back(iv);
         else if (iv->iv_type == IV_Type::SECONDSPATIAL)
           secondOpS2.push_back(iv);
+        else if (iv->iv_type == IV_Type::BATCH)
+          secondOpB.push_back(iv);
       for (auto iv : firstOpIters)
         if (iv->iv_type == IV_Type::REDUCE)
           firstOpR.push_back(iv);
@@ -957,6 +961,10 @@ namespace ditto
           firstOpS1.push_back(iv);
         else if (iv->iv_type == IV_Type::SECONDSPATIAL)
           firstOpS2.push_back(iv);
+        else if (iv->iv_type == IV_Type::BATCH)
+          firstOpB.push_back(iv);
+        
+      CHECK(isMapped(firstOpB, secondOpB));
 
       if (isMapped(firstOpS2, secondOpR))
       {
@@ -1009,13 +1017,12 @@ namespace ditto
     }
     inline IterGraph buildIterGraph(SerialFusionState sfState)
     {
-      Array<tir::IterVar> tensorizeAxes = sfState->tensorizeAxes;
       OpHyperState ops1, ops2;
       std::tie(ops1, ops2) = sfState->getCubicOpPair();
       Array<IterVar> firstOpIters_ = ops1->getAllIters();
       Array<IterVar> secondOpIters_ = ops2->getAllIters();
       Array<Array<tir::IterVar>> shared_axis =
-          share_axis_analysis(ops1->op, ops2->op, tensorizeAxes);
+          share_axis_analysis(ops1->op, ops2->op, OpHyperStateNode::tensorizeAxes);
       std::unordered_map<tir::IterVar, IterVar> IterMap = ops1->getIterMap();
       IterMap.insert(ops2->getIterMap().begin(), ops2->getIterMap().end());
       Array<Share> sharedIterPairs;
@@ -1029,6 +1036,7 @@ namespace ditto
       bool isBindingCorrect =
           ivBindingAndValidate(firstOpIters_, secondOpIters_, sharedIterPairs);
       CHECK(isBindingCorrect) << "iv binding doesn't follow mlkn pattern";
+      
       Array<IterVar> firstOpIters, secondOpIters, firsrOpTensorizeIters,
           secondOpTensorizeAxis;
       for (auto iv : firstOpIters_)

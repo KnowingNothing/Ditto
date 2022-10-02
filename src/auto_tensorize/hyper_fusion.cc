@@ -1720,7 +1720,7 @@ namespace ditto
       struct FusionTemplate
       {
         std::string name;
-        std::string secondOpPermute[3];
+        std::string secondOpPermute[4];
         size_t attachPos;
       };
 
@@ -1730,7 +1730,7 @@ namespace ditto
       //     {"S1", "R", "S2"}, 2}, {"F4", {"S2", "R", "S1"}, 2}, {"F5", {"S1",
       //     "S2", "R"}, 1}, {"F6", {"S2", "S1", "R"}, 1}, {"F7", {"R", "S1", "S2"},
       //     1}};
-      FusionTemplate fusionTemplates[1] = {{"F1", {"S1", "S2", "R"}, 3}};
+      FusionTemplate fusionTemplates[1] = {{"F1", {"B", "S1", "S2", "R"}, 4}};
 
       std::vector<int> secondOpR, secondOpS1, secondOpS2;
 
@@ -1766,7 +1766,9 @@ namespace ditto
       std::vector<FusionInfo> candidates(MAX_CANDIDATES_NUMBER);
       size_t itemCnt = 0;
       ig->setConfig(hw_param, bytePerEle);
-      for (auto fusionLevel : ig->fusionLevels)
+      std::vector<int> fusion_levels = ig->fusionLevels;
+      if (searchType == "nofuse") fusion_levels = {fusion_levels.back()};
+      for (auto fusionLevel : fusion_levels)
       {
         std::cout << "fusionLevel: " << fusionLevel << std::endl;
         int itemBeforeSearch = itemCnt;
@@ -1835,7 +1837,8 @@ namespace ditto
               fusionInfo.fusionLevel = fusionLevel;
               fusionInfo.computation =
                   ig->getFirstOpWorkload() + ig->getSecondOpWorkload();
-              fusionInfo.bounds = ig->bounds;
+              fusionInfo.lower_bounds_for_upper_cache_level 
+                = fusionInfo.upper_bounds_for_lower_cache_level = ig->bounds;
               fusionInfo.valid = true;
               fusionInfo.boundsAfterParallel = ig->_boundsAfterParallel;
               fusionInfo.parallelFactor = ig->_parallelSchedule;
@@ -1990,7 +1993,7 @@ namespace ditto
                                    hardware::HardwareParam hw_param, String dtype,
                                    int simple_mode)
     {
-      CHECK(sfs->tensorizeAxes.defined());
+      // CHECK(sfs->tensorizeAxes.defined());
       IterGraph ig = buildIterGraph(sfs);
       SearchDriver searchDriver =
           buildSearchDriver(ig, {"static analysis"}, "bruteForce", hw_param, dtype);
@@ -2195,21 +2198,24 @@ namespace ditto
         double maxThreadIter;
         std::unordered_map<std::string, double> features;
       };*/
-      o << "bounds: " << fusionInfo.bounds << std::endl;
+      o << "===========fusion_info===========" << std::endl;
+      o << "lower_bounds_for_upper_cache_level: " << fusionInfo.lower_bounds_for_upper_cache_level << std::endl;
+      o << "upper_bounds_for_lower_cache_level: " << fusionInfo.upper_bounds_for_lower_cache_level << std::endl;
       o << "bounds after parallel" << fusionInfo.boundsAfterParallel << std::endl;
       std::cout << "parallelFactor: ";
       for (auto idxfactor : fusionInfo.parallelFactor)
         o << "(" << idxfactor.first << ", " << idxfactor.second << "),";
       std::cout << std::endl;
-      o << "#block: " << fusionInfo.n_block << std::endl;
+      o << "occupancy: " << fusionInfo.cacheOccupancy << std::endl;
       o << "fusionLevel: " << fusionInfo.fusionLevel << std::endl;
       o << "parallelism: " << fusionInfo.parallelism << std::endl;
-      o << "occupancy: " << fusionInfo.cacheOccupancy << std::endl;
       o << "fusion cost: " << fusionInfo.cost << std::endl;
       o << "outerIndices.size(): " << fusionInfo.secondOpOuterIndices.size()
         << std::endl;
+      o << "#block: " << fusionInfo.n_block << std::endl;
       o << "outer cost" << fusionInfo.outerCost << std::endl;
       o << "max iter: " << fusionInfo.maxThreadIter << std::endl;
+      o << "==================================" << std::endl;
       return o;
     }
     FusionContext buildFusionContext(SerialFusionState sfs, Layer layer,
@@ -2221,9 +2227,9 @@ namespace ditto
     {
       std::vector<FusionInfo> fusionInfo(SURVEY_CANDIDATES_NUMBER);
       for (auto it : fusionInfo)
-        it.valid = 0;
+        it.valid = false;
       std::vector<CPUTensorizeParam> schParams;
-      CHECK(sfs->tensorizeAxes.defined());
+      // CHECK(sfs->tensorizeAxes.defined());
       IterGraph ig = buildIterGraph(sfs);
       if (verbose){
         std:: cout << "iterGraph: " << std::endl;
@@ -2232,20 +2238,31 @@ namespace ditto
       std::unordered_map<std::string, int32_t> m = {{"float32", 4}, {"float64", 8}, {"float16", 2}, {"int16", 2}, {"int32", 4}, {"int64", 8}};
       CHECK(m.count(dtype));
       int bytePerEle = m[dtype];
-      setTemplatesAndSearchPrunedDFS(ig, hw_param, bytePerEle, searchType, mode,
+      if (searchType == "rule_based"){
+        setTemplatesAndSearchByRule(
+          ig, hw_param, bytePerEle, &fusionInfo, true
+        );
+      }
+      else {
+        setTemplatesAndSearchPrunedDFS(ig, hw_param, bytePerEle, searchType, mode,
                                        &fusionInfo);
+      }
       OpHyperState op1, op2;
       std::tie(op1, op2) = sfs->getCubicOpPair();
       auto share_axes = share_axis_analysis(op1->op, op2->op);
       std::cout << "share_axes: " << share_axes << std::endl;
       size_t cnt = 0;
-      for (auto info : fusionInfo)
+      for (auto& info : fusionInfo)
       {
         if (!info.valid)
           break;
         cnt += 1;
-        if(verbose) std::cout << "begin build Tensorize param: " << cnt << "/"
+        if(verbose) {
+          std::cout << "begin build Tensorize param: " << cnt << "/"
                     << fusionInfo.size() << std::endl;
+          std::cout << info << std::endl;
+        }
+          
         CPUTensorizeParam schParam =
             buildCPUTensorizeParam(sfs, hw_param, bytePerEle, info);
         std::vector<double> costs;

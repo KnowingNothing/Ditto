@@ -511,7 +511,7 @@ namespace ditto
           continue;
         n_level = 0;
         Array<IntImm> factors = idxFactor.second;
-        CHECK(factors.size() == loopOrder.size() - 1) << idx2iv[idx];
+        // CHECK(factors.size() == loopOrder.size() - 1) << idx2iv[idx];
         for (auto factor : factors)
         {
           if (idx2iv[idx]->dom.defined() && idx2iv[idx]->dom->extent.defined())
@@ -1341,7 +1341,7 @@ namespace ditto
       Array<AccessFunction> accessFunctions;
 
       // init the innerbounds
-      for (auto iv : fusionInfo.bounds)
+      for (auto iv : fusionInfo.lower_bounds_for_upper_cache_level)
       {
         innerBounds.Set(iv.first, iv.second);
       }
@@ -1439,12 +1439,11 @@ namespace ditto
     {
       OpHyperState op1, op2;
       std::tie(op1, op2) = sfs->getCubicOpPair();
-      Map<tir::Var, IntImm> bounds = fusionInfo.bounds;
       CostAndFactor op1caf =
-          scheduleSingleCubic(op1, bounds, hw_param, fusionInfo.fusionLevel,
+          scheduleSingleCubic(op1, fusionInfo.upper_bounds_for_lower_cache_level, hw_param, fusionInfo.fusionLevel,
                               bytePerEle, "normal", "best", NULL, "op1");
       CostAndFactor op2caf =
-          scheduleSingleCubic(op2, bounds, hw_param, fusionInfo.fusionLevel,
+          scheduleSingleCubic(op2, fusionInfo.upper_bounds_for_lower_cache_level, hw_param, fusionInfo.fusionLevel,
                               bytePerEle, "normal", "best", NULL, "op2");
       CostAndFactor commCaf = scheduleCommonLoop(
           op1, op2, hw_param, fusionInfo, bytePerEle, "normal", "best", NULL, "comm");
@@ -1455,6 +1454,20 @@ namespace ditto
       SingleCubicScheduleFactor op1Schedule = op1caf.factor;
       SingleCubicScheduleFactor op2Schedule = op2caf.factor;
       SingleCubicScheduleFactor commSchedule = commCaf.factor;
+
+      auto add_fusion_level_loops = [](
+        const std::vector<std::pair<int, int>>&ivs,
+        SingleCubicScheduleFactor&sch){
+        if (!ivs.size()) return;
+        sch.loopOrder.push_back({});
+        for (auto kv: ivs){
+          sch.loopOrder.back().push_back(kv.first);
+          sch.tileSize[kv.first].push_back(IntImm(DataType::Int(32), kv.second));
+        }
+      };
+
+      add_fusion_level_loops(fusionInfo.op1InnerIvs, op1Schedule);
+      add_fusion_level_loops(fusionInfo.op2InnerIvs, op2Schedule);
 
       auto tileSize2factor =
           [](const SingleCubicScheduleFactor &sch,
@@ -1523,7 +1536,7 @@ namespace ditto
                                      String mode = "best")
     {
       OpHyperState op_ = buildOpHyperState(op, 0);
-      op_->registerTensorizeAxes(tensorizeAxes);
+      OpHyperStateNode::tensorizeAxes = tensorizeAxes;
       Map<tir::Var, IntImm> bounds;
       for (auto iv : op_->getAllIters())
         bounds.Set(iv->originVar, IntImm(DataType::Int(32), iv->ext));
@@ -1606,11 +1619,11 @@ namespace ditto
           std::unordered_map<int, tir::Var> firstOpIdx2var = op->op1->getIdx2var();
           std::unordered_map<int, tir::Var> secondOpIdx2var = op->op2->getIdx2var();
           p->stream << "fusion level: " << op->fusionInfo.fusionLevel << std::endl;
-          auto bounds = op->fusionInfo.bounds;
+          // auto bounds = op->fusionInfo.bounds;
           auto parallel_bounds = op->fusionInfo.boundsAfterParallel;
           p->stream << "tileSize: " << std::endl;
           std::cout << std::setw(12) << "" << std::setw(12) << "L1" << std::setw(12) << "L2" << std::setw(12) << "L3" << std::setw(12) << "B" << std::setw(12) << "P" << std::endl;
-          for (auto idx_factor : op->firstOpTilingFactor)
+          for (auto& idx_factor : op->firstOpTilingFactor)
           {
             auto var = firstOpIdx2var[idx_factor.first];
             p->stream << std::setw(12) << "op1." + std::string(var->name_hint);
@@ -1626,11 +1639,11 @@ namespace ditto
                 p->stream << std::setw(12) << tileSize;
               level++;
             }
-            tileSize = bounds.at(var)->value;
+            tileSize = op->fusionInfo.lower_bounds_for_upper_cache_level.at(var)->value;
             p->stream << std::setw(12) << tileSize;
             p->stream << std::endl;
           }
-          for (auto idx_factor : op->secondOpTilingFactor)
+          for (auto& idx_factor : op->secondOpTilingFactor)
           {
             auto var = secondOpIdx2var[idx_factor.first];
             p->stream << std::setw(12) << "op2." + std::string(var->name_hint);
@@ -1646,19 +1659,21 @@ namespace ditto
                 p->stream << std::setw(12) << tileSize;
               level++;
             }
-            tileSize = bounds.at(var)->value;
+            tileSize = op->fusionInfo.lower_bounds_for_upper_cache_level.at(var)->value;
             p->stream << std::setw(12) << tileSize;
-            auto commFactor = op->commonTilingFactor.at(idx_factor.first);
-            level = 0;
-            for (auto factor : commFactor)
-            {
-              tir::Var innerMostVar = secondOpIdx2var[*op->commonLoopOrder[level + 1].rbegin()];
-              tileSize *= factor->value;
-              if (var.same_as(innerMostVar))
-                p->stream << std::setw(12) << std::to_string(tileSize) + "*";
-              else
-                p->stream << std::setw(12) << tileSize;
-              level++;
+            if (op->commonTilingFactor.count(idx_factor.first)) {
+              auto commFactor = op->commonTilingFactor.at(idx_factor.first);
+              level = 0;
+              for (auto factor : commFactor)
+              {
+                tir::Var innerMostVar = secondOpIdx2var[*op->commonLoopOrder[level + 1].rbegin()];
+                tileSize *= factor->value;
+                if (var.same_as(innerMostVar))
+                  p->stream << std::setw(12) << std::to_string(tileSize) + "*";
+                else
+                  p->stream << std::setw(12) << tileSize;
+                level++;
+              }
             }
             p->stream << std::setw(12) << op->fusionInfo.boundsAfterParallel.at(var);
             if (op->fusionInfo.parallelFactor.count(idx_factor.first))
@@ -1729,12 +1744,13 @@ namespace ditto
             fusionInfo.secondOpOuterIndices.push_back(i->value);
           for (auto i : fusionChoice->secondOpOuterTilingFactors)
             fusionInfo.secondOpOuterTilingFactors.push_back(i->value);
-          fusionInfo.bounds = ig->bounds;
+          fusionInfo.lower_bounds_for_upper_cache_level =
+            fusionInfo.upper_bounds_for_lower_cache_level = ig->bounds;
           fusionInfo.valid = true;
           fusionInfo.boundsAfterParallel = ig->_boundsAfterParallel;
           fusionInfo.parallelFactor = ig->_parallelSchedule;
           fusionInfo.memUse = memUse;
-          CHECK(sfs->tensorizeAxes.defined());
+          CHECK(OpHyperStateNode::tensorizeAxes.defined());
           fusionInfo.computation =
               ig->getFirstOpWorkload() + ig->getSecondOpWorkload();
           return buildCPUTensorizeParam(sfs, hw_param, bytePerEle, fusionInfo); });
