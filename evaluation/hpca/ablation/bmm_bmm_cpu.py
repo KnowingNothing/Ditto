@@ -15,6 +15,20 @@ import math
 import numpy as np
 import argparse
 
+build_options = [
+    "-libs=cblas"
+    # '-L/opt/intel/compilers_and_libraries_2019.3.199/linux/mkl/lib/intel64',
+    # '-L/opt/intel/compilers_and_libraries_2019.3.199/linux/compiler/lib/intel64_lin/',
+    # '-L$HOME/software/llvm/llvm-15.0.0/lib',
+    # '-Wl,rpath=$HOME/software/llvm/llvm-15.0.0/lib',
+    # '-lmkl_intel_lp64',
+    # '-lmkl_intel_thread',
+    # '-lmkl_core',
+    # '-fopenmp',
+    # '-lm',
+    # '-lstdc++'
+]
+
 MI = 6
 NI1 = 16
 KI1 = 64
@@ -136,7 +150,7 @@ def test_double_gemm(
     isa = "avx2"
     dtype = "float32"
     topk = 5
-    baseline = False
+    mk_type = ""
     if SERVER:
         cacheSizes = SERVER['cacheSizes']
         bandwidth = SERVER['bandwidth']
@@ -152,8 +166,8 @@ def test_double_gemm(
         dtype = config['dtype']
     if 'topk' in config:
         topk = config['topk']
-    if 'baseline' in config:
-        baseline = config['baseline']
+    if 'mk_type' in config:
+        mk_type = config['mk_type']
     print("begin test ...")
     print("shape,cacheSizes,bandwidth,tensorWeight,searchType,mode,parallelism,isa,dtype")
     print(batch, M, N, K, L, cacheSizes, bandwidth, tensorWeight,
@@ -186,10 +200,9 @@ def test_double_gemm(
     op1, op2 = sfs.first_op, sfs.second_op
 
     def get_match_info(op, shape, prefix, choice = None):
-        nonlocal baseline
         # cpu_intrin(op, shape, instructionSet, dtype, prefix="")
         packed, code = at.cpu_intrin(
-            op="gemm_noreshape", shape=shape, isa=isa, dtype=dtype, prefix=prefix, baseline = baseline)
+            op="gemm_noreshape", shape=shape, isa=isa, dtype=dtype, prefix=prefix, surfix = mk_type)
         if choice == None:
             choices = at.intrinsic_match(op.output(0), packed, [
                                         'SameRange'])
@@ -233,7 +246,7 @@ def test_double_gemm(
     t1 = time.time()
     print("static analysis time", t1-t0)
     sch0 = tvm.te.create_schedule(outs[0].op)
-    func = tvm.build(sch0, layer.schedule_tensors, name="bmm")
+    func = tvm.build(sch0, layer.schedule_tensors, name="bmm", target = "llvm " + ' '.join(build_options))
     ctx = tvm.cpu()
     inputs_np = [
         np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype("float32")
@@ -260,7 +273,7 @@ def test_double_gemm(
 
         sch = fusionContext.run(iter, sch, verbose=verbose)
 
-        func = tvm.build(sch, layer.schedule_tensors, name="bmm")
+        func = tvm.build(sch, layer.schedule_tensors, name="bmm", target = "llvm " + ' '.join(build_options))
 
         inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
         outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
@@ -303,7 +316,7 @@ def setGlobals(B, M, N, K, L, dtype):
     return (B, M, N, K, L)
 
 
-def main(batch, M, N, K, L, dtype, server, mode, weights, topk, search_type, baseline):
+def main(batch, M, N, K, L, dtype, server, mode, weights, topk, search_type, mk_type):
     global SERVER
     SERVER = ServerConfig[server]
     B, M, N, K, L = setGlobals(batch, M, N, K, L,dtype= dtype)
@@ -313,7 +326,7 @@ def main(batch, M, N, K, L, dtype, server, mode, weights, topk, search_type, bas
     Time, fusionLevel, schedule_time = test_double_gemm(B, M, N, K, L, config={
                            'searchType': search_type, 'mode': mode, 
                            'dtype': dtype, 'tensorWeight': weights,
-                           'topk': topk, 'baseline': baseline})
+                           'topk': topk, 'mk_type': mk_type})
     t1 = time.time()
     print("schedule time: ", t1 - t0)
     ret = {}
@@ -362,7 +375,13 @@ if __name__ == "__main__":
     )
     parser.add_argument("--only_once", action="store_true")
     parser.add_argument("--verbose", action="store_true")
-    parser.add_argument("--baseline", action="store_true", help = "whether a naive microkernel is used")
+    parser.add_argument(
+        "--mk_type", 
+        type = str, 
+        choices = ['mkl', 'baseline', ''],
+        default = "",
+        help = "whether a naive microkernel is used"
+    )
     parser.add_argument(
         "--dtype",
         type=str,
@@ -421,7 +440,7 @@ if __name__ == "__main__":
             weights = args.weights,
             topk = args.topk,
             search_type = args.search_type,
-            baseline = args.baseline
+            mk_type = args.mk_type
         )
         costs.append((ss, cost))
 
