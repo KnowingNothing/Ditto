@@ -1,6 +1,6 @@
 import tvm
 from .module import Module, Parameter
-from ..functional import BatchGemmSoftmaxGemmMMA, reshape, transpose
+from ..functional import BatchGemmSoftmaxGemmMMA, reshape, transpose, split
 from ...graph import LayerTensor, layer, layer_tensor
 
 
@@ -29,14 +29,20 @@ class MultiHeadAttentionMMA(Module):
         self.NI = mma_NI
         self.KI = mma_KI
 
-    def forward(self, query, key, value):
+    def forward(self, query_key_value):
         """
         query: layer_tensor([batch, M, K], name="A", dtype=in_dtype)
         key: layer_tensor([batch, M, K], name="B", dtype=in_dtype)
         value: layer_tensor([batch, M, K], name="C", dtype=in_dtype)
         """
-        query, key, value = self.preprocess(query, key, value)
-        batch, M, K = query.tensor.shape
+        query_key_value = self.preprocess(query_key_value)
+        # batch, M, Kx3 = query_key_value.tensor.shape
+        # K = Kx3 // 3
+        # query_key_value_mh = reshape(query_key_value, [batch, M, self.num_heads, self.model_k * 3])
+        # query_key_value_mh = transpose(query_key_value_mh, [0, 2, 1, 3])
+        # query_key_value_mh = reshape(query_key_value_mh, [batch * self.num_heads, M, self.model_k * 3])
+        query, key, value = split(query_key_value, 3, axis=-1)
+        batch, M, K = query.shape
         try:
             assert int(K) == self.hidden_size
         except:
@@ -68,9 +74,9 @@ class MultiHeadAttentionMMA(Module):
         outputs = reshape(outputs_mh, [batch, M, K])
         attention_layer = layer(
             outputs.op,
-            inputs=[query.tensor, key.tensor, value.tensor],
+            inputs=[query_key_value.tensor],
             weights=[],
             requires_grad=self.training,
             name=MUTI_HEAD_ATTENTION_LAYER,
         )
-        return attention_layer(query, key, value)
+        return attention_layer(query_key_value)

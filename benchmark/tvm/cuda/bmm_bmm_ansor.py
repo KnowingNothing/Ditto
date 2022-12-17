@@ -111,7 +111,7 @@ def main(batch, M, N, K, L, in_dtype, acc_dtype, sm="70", only_once=False, test=
     tune_option = auto_scheduler.TuningOptions(
         num_measure_trials=1000,
         measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
-        verbose=2,
+        verbose=1,
     )
 
     # Run auto-tuning (search)
@@ -168,18 +168,21 @@ def uround(x, y):
 
 shapes = [
     # (batch, M, N, K, L)
+    (8, 1024, 512 // 8, 512 // 8, 512),  # Bert-Small
+    (12, 1024, 768 // 12, 768 // 12, 512),  # Bert-Base
+    (16, 1024, 1024 // 16, 1024 // 16, 512),  # Bert-Large
     (8, 512, 512 // 8, 512 // 8, 512),  # Bert-Small
     (12, 512, 768 // 12, 768 // 12, 512),  # Bert-Base
     (16, 512, 1024 // 16, 1024 // 16, 512),  # Bert-Large
-    (12, 256, 768 // 12, 768 // 12, 256),  # ViT-Base/14
-    (16, 256, 1024 // 16, 1024 // 16, 256),  # ViT-Large/14
-    (16, 256, 1280 // 16, 1280 // 16, 256),  # ViT-Huge/14
+    # (12, 256, 768 // 12, 768 // 12, 256),  # ViT-Base/14
+    # (16, 256, 1024 // 16, 1024 // 16, 256),  # ViT-Large/14
+    # (16, 256, 1280 // 16, 1280 // 16, 256),  # ViT-Huge/14
     (12, uround(196, 16), 768 // 12, 768 // 12, uround(196, 16)),  # ViT-Base/16
     (16, uround(196, 16), 1024 // 16, 1024 // 16, uround(196, 16)),  # ViT-Large/16
     (16, uround(196, 16), 1280 // 16, 1280 // 16, uround(196, 16)),  # ViT-Huge/16
-    (1, 512, uround(49, 16), uround(49, 16), 256),  # Mixer-Small/32-S
-    (1, 768, uround(49, 16), uround(49, 16), 384),  # Mixer-Base/32-S
-    (1, 1024, uround(49, 16), uround(49, 16), 512),  # Mixer-Large/32-S
+    # (1, 512, uround(49, 16), uround(49, 16), 256),  # Mixer-Small/32-S
+    # (1, 768, uround(49, 16), uround(49, 16), 384),  # Mixer-Base/32-S
+    # (1, 1024, uround(49, 16), uround(49, 16), 512),  # Mixer-Large/32-S
 ]
 
 if __name__ == "__main__":

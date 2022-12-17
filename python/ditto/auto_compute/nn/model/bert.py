@@ -52,7 +52,7 @@ class BERT(Module):
                 TransformerBlock(
                     hidden,
                     attn_heads,
-                    hidden * 4,
+                    min(hidden * 4, 3072),
                     dtype=dtype,
                     mma_in_dtype=mma_in_dtype,
                     mma_acc_dtype=mma_acc_dtype,

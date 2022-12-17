@@ -4,6 +4,7 @@ from ..module import (
     Parameter,
     Linear,
     GELU,
+    ReLU,
     MultiHeadAttentionMMA,
     LayerNormInfer,
 )
@@ -22,15 +23,15 @@ class PositionwiseFeedForward(Module):
 
     def __init__(self, d_model, d_ff, dtype="float32", out_dtype="float32"):
         super(PositionwiseFeedForward, self).__init__()
-        self.w_1 = Linear(d_model, d_ff, bias=False,
+        self.w_1 = Linear(d_model, d_ff, bias=True,
                           dtype=dtype, out_dtype=out_dtype)
-        self.w_2 = Linear(d_ff, d_model, bias=False,
+        self.w_2 = Linear(d_ff, d_model, bias=True,
                           dtype=dtype, out_dtype=out_dtype)
-        self.activation = GELU()
+        self.activation = ReLU()
 
     def forward(self, x):
         x = self.preprocess(x)
-        return self.w_2(self.activation(self.w_1(x)))
+        return self.activation(self.w_2(self.activation(self.w_1(x))))
 
 
 class TransformerBlock(Module):
@@ -67,15 +68,17 @@ class TransformerBlock(Module):
             mma_NI=mma_NI,
             mma_KI=mma_KI
         )
+        self.linear = Linear(hidden, hidden * 3, bias=False, dtype=dtype, out_dtype=dtype)
         self.feed_forward = PositionwiseFeedForward(
             d_model=hidden, d_ff=feed_forward_hidden, dtype=dtype, out_dtype=dtype
         )
-        self.layer_norm1 = LayerNormInfer(feature_shape=[hidden], dtype=dtype)
-        self.layer_norm2 = LayerNormInfer(feature_shape=[hidden], dtype=dtype)
+        # self.layer_norm1 = LayerNormInfer(feature_shape=[hidden], dtype=dtype)
+        # self.layer_norm2 = LayerNormInfer(feature_shape=[hidden], dtype=dtype)
 
     def forward(self, x):
-        x = self.layer_norm1(x)
-        x = self.attention(x, x, x)
-        x = self.layer_norm2(x)
+        # x = self.layer_norm1(x)
+        x = self.linear(x)
+        x = self.attention(x)
+        # x = self.layer_norm2(x)
         x = self.feed_forward(x)
         return x
