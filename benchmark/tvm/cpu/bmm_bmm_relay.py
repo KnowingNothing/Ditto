@@ -1,12 +1,13 @@
 import tvm
 from tvm import relay
 import numpy as np
-import argparse
+import argparse 
 import time
 from tvm import topi
 from tvm import te
 import os
 import pickle as pkl
+
 REPEAT = 2000
 peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995}
 def relay_bmm_bmm(
@@ -25,19 +26,21 @@ def relay_bmm_bmm(
     params = {}
     import tvm.contrib.graph_executor as runtime
 
+    t0 = time.time()
     with tvm.transform.PassContext(opt_level=3):
         lib = relay.build_module.build(mod, target=target, params=params)
 
         # load parameters
         dev = tvm.device(str(target), 0)
         module = runtime.GraphModule(lib["default"](dev))
-    return [[batch, M, K], [batch, K, L], [batch, L, N]], [[batch, M, N]], module
+    t1 = time.time()
+    return [[batch, M, K], [batch, K, L], [batch, L, N]], [[batch, M, N]], module, t1 - t0
 
 
 
 def main(B, M, N, K, L, dtype, server):
     target = "llvm -mcpu=skylake-avx512"
-    ins, outs, module = relay_bmm_bmm(
+    ins, outs, module, search_time = relay_bmm_bmm(
         B, M, N, K, L, dtype=dtype, target=target
     )
 
@@ -53,7 +56,7 @@ def main(B, M, N, K, L, dtype, server):
     cost = ret.mean
     workload = B * (M * K * L + M * N * L)
     ratioToPeak = workload / 1e9 / cost / peakflops[server]
-    return (cost, ratioToPeak)
+    return (cost, ratioToPeak, search_time)
 
 
 

@@ -5,6 +5,10 @@ from tvm.runtime import Object
 from typing import List, Dict
 import tvm.te as te
 
+# TODO: automatic discover this
+mkl_flags = [
+    '-I/opt/intel/compilers_and_libraries_2019.3.199/linux/mkl/include'
+]
 
 @tvm._ffi.register_object("ditto.auto_tensorize.PackedIntrinsic")
 class PackedIntrinsic(Object):
@@ -289,10 +293,32 @@ def gemm_impl(shape, isa, dtype, prefix):
         assert NI == 8
     if isa == "avx512" and dtype == "float64":
         assert NI == 16 or NI == 64
+    cc_code_baselines = """
+    #include <mkl.h>
+    #include <unistd.h>
+    #include <stdio.h>
+    #include <immintrin.h>
+    extern "C" int %s_update_baseline(float * C, float *A, float*B, int K_, int N_, int c_stride_){
+        for (int k = 0; k < %d; k++){
+            for (int i = 0; i < %d; i++){
+                for (int j = 0; j < %d; j++){
+                    C[i * c_stride_ + j] += A[i * K_ + k] * B[k * N_ + j];
+                }
+            }
+        }
+        return 0;
+    }
+    extern "C" int %s_update_mkl(float * C, float *A, float*B, int K_, int N_, int c_stride_){
+        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, 
+                                    %d, %d, %d, 1.0, 
+                                    A, K_, 
+                                    B, N_, 1.0, 
+                                    C, c_stride_);
+        return 0;
+    }
+    """ % (prefix, KI, MI, NI, prefix, MI, NI, KI)
+    
     cc_code = """
-        #include <immintrin.h>
-        #include <stdio.h>
-
         extern "C" int %s_update(__TYPE__ *C, __TYPE__ *A, __TYPE__ *B, int K_, int N_, int c_stride_) {
             long long K = K_;
             long long N = N_;
@@ -406,7 +432,6 @@ def gemm_impl(shape, isa, dtype, prefix):
                 }
             return 0;
         }
-
     """ % (
         prefix,
         KI,
@@ -433,10 +458,9 @@ def gemm_impl(shape, isa, dtype, prefix):
         cc_code = cc_code.replace("__FMAInst__", "vfmadd231pd")
         cc_code = cc_code.replace("__BDCASTInst__", "vbroadcastsd")
         cc_code = cc_code.replace("__TYPE__", "double")
+    # A 32 reg implementation for avx512 
     if isa == "avx512" and dtype == "float32" and NI == 64:
         cc_code = '''
-#include <unistd.h>
-#include <stdio.h>
 extern "C" int %s_update(float *C, float *A, float *B, int K_, int N_, int c_stride_)
 {
     getpid();
@@ -592,6 +616,8 @@ extern "C" int %s_reset(float *cc, int stride) {
     return 0;
 }
         '''%(prefix, KI, prefix, MI, NI)
+
+    cc_code = cc_code_baselines + cc_code
     from tvm.contrib import utils, clang
     with open("gemm.cc", 'w') as f:
         f.write(cc_code) 
@@ -599,14 +625,20 @@ extern "C" int %s_reset(float *cc, int stride) {
     ll_path = temp.relpath("temp.ll")
     # Create LLVM ir from c source code
     ll_code = clang.create_llvm(
-        cc_code, output=ll_path, options=["-mavx2", "-mavx512f", "-msse"]
+        cc_code, output=ll_path, options=["-O3", "-mavx2", "-mavx512f", "-msse"] + mkl_flags
     )
+    with open(ll_path, 'r') as f:
+        ll_code = f.read() 
+    with open("gemm.ll", 'w') as f:
+        f.write(ll_code)
     return ll_code
 
 def intrin_gemm(
-    shape, dtype, prefix
+    shape, dtype, prefix, surfix = ""
 ):
     assert (len(shape) == 3)
+    assert surfix in ("", "baseline", "mkl")
+    if len(surfix): surfix = "_" + surfix
     MICRO_M, MICRO_N, MICRO_K = shape 
     a = te.placeholder((MICRO_M, MICRO_K), name="a", dtype=dtype)
     b = te.placeholder((MICRO_K, MICRO_N), name="b", dtype=dtype)
@@ -648,7 +680,7 @@ def intrin_gemm(
             ib.emit(
                 tvm.tir.call_extern(
                     "int32",
-                    prefix + "_update",
+                    prefix + "_update" + surfix,
                     cc.access_ptr("w"),
                     aa.access_ptr("r"),
                     bb.access_ptr("r"),
@@ -676,9 +708,11 @@ def intrin_gemm(
     return te.decl_tensor_intrin(c.op, intrin_func, binds={a: Ab, b: Bb, c: Cb})
 
 def intrin_gemm_noreshape(
-    shape, dtype, prefix
+    shape, dtype, prefix, surfix = ""
 ):
     assert (len(shape) == 3)
+    assert surfix in ("", "baseline", "mkl")
+    if len(surfix): surfix = '_' + surfix
     MICRO_M, MICRO_N, MICRO_K = shape 
     A = te.placeholder((1, 1, MICRO_M, 1, MICRO_K), name="A", dtype=dtype)
     B = te.placeholder((1, 1, MICRO_K, 1, MICRO_N), name="B", dtype=dtype)
@@ -724,7 +758,7 @@ def intrin_gemm_noreshape(
             ib.emit(
                 tvm.tir.call_extern(
                     "int32",
-                    prefix + "_update",
+                    prefix + "_update" + surfix,
                     cc.access_ptr("w"),
                     aa.access_ptr("r"),
                     bb.access_ptr("r"),
@@ -1672,16 +1706,16 @@ def exp_impl(shape, isa, dtype, prefix):
     return ll_code
 
 
-def cpu_intrin(op, shape, isa, dtype, prefix=""):
+def cpu_intrin(op, shape, isa, dtype, prefix="", surfix = ""):
     loads = []
     if op == "gemm":
         compute = intrin_gemm(
-            shape, dtype=dtype, prefix=prefix
+            shape, dtype=dtype, prefix=prefix, surfix = surfix
         )
         code = gemm_impl(shape, isa, dtype, prefix)
     elif op == "gemm_noreshape":
         compute = intrin_gemm_noreshape(
-            shape, dtype = dtype, prefix = prefix 
+            shape, dtype = dtype, prefix = prefix, surfix = surfix
         )
         code = gemm_impl(shape, isa, dtype, prefix)
     elif op == "conv":

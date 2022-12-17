@@ -16,6 +16,9 @@ class SerialFusionState(Object):
     def register_tensorize_axes(self, tensorizeAxes: List[tvm.tir.IterVar]):
         _ffi_api.registerTensorizeAxes(self, tensorizeAxes)
 
+    def register_tensorize_map(self, tensorize_map):
+        _ffi_api.registerTensorizeMap(self, tensorize_map)
+
 def build_serial_fusion_state(
     layer: ac.Layer
 ):

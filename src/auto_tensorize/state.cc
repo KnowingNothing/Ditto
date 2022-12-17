@@ -6,7 +6,8 @@
 namespace ditto {
 
 namespace auto_tensorize {
-
+Array<tir::IterVar> OpHyperStateNode::tensorizeAxes;
+Map<tir::IterVar, tir::IterVar> OpHyperStateNode::tensorizeMap; 
 Array<IterVar> OpHyperStateNode::getAllIters() {
   Array<IterVar> ret;
 
@@ -33,17 +34,24 @@ Array<IterVar> OpHyperStateNode::getAllIters() {
     if (IterMap.count(iv) == 0) {
       const tir::IntImmNode *as_int = iv->dom->extent.as<tir::IntImmNode>();
       IV_Type iv_type = IV_Type::REDUCE;
+      bool in_op1 = in(iv->var, op1Vars);
+      bool in_op2 = in(iv->var, op2Vars);
       if (isTensroize(iv))
         iv_type = IV_Type::TENSORIZE;
-      else if (in(iv->var, op1Vars))
+      else if (in_op1 && in_op2)
+        iv_type = IV_Type::BATCH;
+      else if (in_op1)
         iv_type = IV_Type::FIRSTSPATIAL;
-      else if (in(iv->var, op2Vars))
+      else if (in_op2)
         iv_type = IV_Type::SECONDSPATIAL;
       CHECK(iv_type != IV_Type::REDUCE)
           << "neither first spatial nor second spatial";
+      int tensorize_ext = 1;
+      if (tensorizeMap.count(iv))
+        tensorize_ext = tensorizeMap[iv]->dom->extent.as<tir::IntImmNode>()->value;
       IterMap[iv] =
           IterVar(index, as_int->value, iv_type,
-                  tir::Var(op->name + "." + iv->var->name_hint), iv->var);
+                  tir::Var(op->name + "." + iv->var->name_hint), iv->var, tensorize_ext);
     }
     ret.push_back(IterMap.at(iv));
     index += 1;
@@ -51,10 +59,13 @@ Array<IterVar> OpHyperStateNode::getAllIters() {
   for (auto iv : op.as<te::ComputeOpNode>()->reduce_axis) {
     if (IterMap.count(iv) == 0) {
       const tir::IntImmNode *as_int = iv->dom->extent.as<tir::IntImmNode>();
+      int tensorize_ext = 1;
+      if (tensorizeMap.count(iv))
+        tensorize_ext = tensorizeMap[iv]->dom->extent.as<tir::IntImmNode>()->value;
       IV_Type iv_type = isTensroize(iv) ? IV_Type::TENSORIZE : IV_Type::REDUCE;
       IterMap[iv] =
           IterVar(index, as_int->value, iv_type,
-                  tir::Var(op->name + "." + iv->var->name_hint), iv->var);
+                  tir::Var(op->name + "." + iv->var->name_hint), iv->var, tensorize_ext);
     }
     ret.push_back(IterMap.at(iv));
     index += 1;
@@ -174,7 +185,6 @@ OpHyperState::OpHyperState(te::Operation op, size_t index) {
   node->index = index;
   data_ = std::move(node);
 }
-
 TVM_REGISTER_NODE_TYPE(SerialFusionStateNode);
 
 TVM_REGISTER_NODE_TYPE(OpHyperStateNode);
@@ -255,6 +265,9 @@ TVM_REGISTER_GLOBAL("ditto.auto_tensorize.build_serial_fusion_state")
     .set_body_typed(buildSerialFusionState);
 TVM_REGISTER_GLOBAL("ditto.auto_tensorize.registerTensorizeAxes")
     .set_body_method<SerialFusionState>(&SerialFusionStateNode::registerTensorizeAxes);
+
+TVM_REGISTER_GLOBAL("ditto.auto_tensorize.registerTensorizeMap")
+  .set_body_method<SerialFusionState>(&SerialFusionStateNode::registerTensorizeMap);
 } // namespace auto_tensorize
 
 } // namespace ditto

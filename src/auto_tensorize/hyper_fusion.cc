@@ -1720,7 +1720,7 @@ namespace ditto
       struct FusionTemplate
       {
         std::string name;
-        std::string secondOpPermute[3];
+        std::string secondOpPermute[4];
         size_t attachPos;
       };
 
@@ -1730,7 +1730,7 @@ namespace ditto
       //     {"S1", "R", "S2"}, 2}, {"F4", {"S2", "R", "S1"}, 2}, {"F5", {"S1",
       //     "S2", "R"}, 1}, {"F6", {"S2", "S1", "R"}, 1}, {"F7", {"R", "S1", "S2"},
       //     1}};
-      FusionTemplate fusionTemplates[1] = {{"F1", {"S1", "S2", "R"}, 3}};
+      FusionTemplate fusionTemplates[1] = {{"F1", {"B", "S1", "S2", "R"}, 4}};
 
       std::vector<int> secondOpR, secondOpS1, secondOpS2;
 
@@ -1766,7 +1766,9 @@ namespace ditto
       std::vector<FusionInfo> candidates(MAX_CANDIDATES_NUMBER);
       size_t itemCnt = 0;
       ig->setConfig(hw_param, bytePerEle);
-      for (auto fusionLevel : ig->fusionLevels)
+      std::vector<int> fusion_levels = ig->fusionLevels;
+      if (searchType == "nofuse") fusion_levels = {fusion_levels.back()};
+      for (auto fusionLevel : fusion_levels)
       {
         std::cout << "fusionLevel: " << fusionLevel << std::endl;
         int itemBeforeSearch = itemCnt;
@@ -1835,7 +1837,8 @@ namespace ditto
               fusionInfo.fusionLevel = fusionLevel;
               fusionInfo.computation =
                   ig->getFirstOpWorkload() + ig->getSecondOpWorkload();
-              fusionInfo.bounds = ig->bounds;
+              fusionInfo.lower_bounds_for_upper_cache_level 
+                = fusionInfo.upper_bounds_for_lower_cache_level = ig->bounds;
               fusionInfo.valid = true;
               fusionInfo.boundsAfterParallel = ig->_boundsAfterParallel;
               fusionInfo.parallelFactor = ig->_parallelSchedule;
@@ -1949,32 +1952,28 @@ namespace ditto
         else if (mode == "survey")
         {
           std::vector<FusionInfo> candidates_;
-          for (size_t i = 0; i < std::min(candidates.size(), (size_t)SELECT_TOP); i++)
-          {
-            candidates_.push_back(candidates.at(i));
+          for (size_t i = 0; i < SURVEY_CANDIDATES_NUMBER; i++){
+            candidates_.push_back(candidates[random() % candidates.size()]);
           }
-          double ave = 0, ave2 = 0;
-          for (size_t i = 0; i < candidates.size(); i++)
-          {
-            FusionInfo &fusionInfo = candidates.at(i);
-            ave += fusionInfo.cost;
-            ave2 += fusionInfo.cost * fusionInfo.cost;
+          if (verbose){
+            std::function<std::pair<double, double>(const std::vector<FusionInfo>&)> get_stats = 
+            [](const std::vector<FusionInfo>& vec){
+              double ave = 0, std = 0;
+              for(auto & item: vec) 
+                ave += item.cost, std += item.cost * item.cost;
+              ave /= vec.size();
+              std /= vec.size();
+              std = sqrt(std - ave * ave);
+              return std::make_pair(ave, std);
+            };
+            double ave, std;
+            std::tie(ave, std) = get_stats(candidates);
+            std::cout << "original data: ave " << ave << ", std " << std << "; ";
+            std::tie(ave, std) = get_stats(candidates_);
+            std::cout << "sampled data: ave " << ave << ", std " << std << std::endl; 
           }
-          ave /= candidates.size();
-          ave2 /= candidates.size();
-          std::cout << "ave is" << ave << ", dev is " << ave2 - ave * ave
-                    << std::endl;
-          for (size_t i = 0; i < candidates.size();
-               i += std::max((candidates.size() + SURVEY_CANDIDATES_NUMBER - 1) /
-                                 (SURVEY_CANDIDATES_NUMBER),
-                             (size_t)1))
-          {
-            if (candidates_.size() >= SURVEY_CANDIDATES_NUMBER)
-              break;
-            FusionInfo fusionInfo = candidates.at(i);
-            candidates_.push_back(fusionInfo);
-          }
-          *data = candidates_;
+
+          *data = move(candidates_);
         }
       }
       CHECK(bestFusionItem.defined());
@@ -1990,7 +1989,7 @@ namespace ditto
                                    hardware::HardwareParam hw_param, String dtype,
                                    int simple_mode)
     {
-      CHECK(sfs->tensorizeAxes.defined());
+      // CHECK(sfs->tensorizeAxes.defined());
       IterGraph ig = buildIterGraph(sfs);
       SearchDriver searchDriver =
           buildSearchDriver(ig, {"static analysis"}, "bruteForce", hw_param, dtype);
@@ -2195,21 +2194,24 @@ namespace ditto
         double maxThreadIter;
         std::unordered_map<std::string, double> features;
       };*/
-      o << "bounds: " << fusionInfo.bounds << std::endl;
+      o << "===========fusion_info===========" << std::endl;
+      o << "lower_bounds_for_upper_cache_level: " << fusionInfo.lower_bounds_for_upper_cache_level << std::endl;
+      o << "upper_bounds_for_lower_cache_level: " << fusionInfo.upper_bounds_for_lower_cache_level << std::endl;
       o << "bounds after parallel" << fusionInfo.boundsAfterParallel << std::endl;
       std::cout << "parallelFactor: ";
       for (auto idxfactor : fusionInfo.parallelFactor)
         o << "(" << idxfactor.first << ", " << idxfactor.second << "),";
       std::cout << std::endl;
-      o << "#block: " << fusionInfo.n_block << std::endl;
+      o << "occupancy: " << fusionInfo.cacheOccupancy << std::endl;
       o << "fusionLevel: " << fusionInfo.fusionLevel << std::endl;
       o << "parallelism: " << fusionInfo.parallelism << std::endl;
-      o << "occupancy: " << fusionInfo.cacheOccupancy << std::endl;
       o << "fusion cost: " << fusionInfo.cost << std::endl;
       o << "outerIndices.size(): " << fusionInfo.secondOpOuterIndices.size()
         << std::endl;
+      o << "#block: " << fusionInfo.n_block << std::endl;
       o << "outer cost" << fusionInfo.outerCost << std::endl;
       o << "max iter: " << fusionInfo.maxThreadIter << std::endl;
+      o << "==================================" << std::endl;
       return o;
     }
     FusionContext buildFusionContext(SerialFusionState sfs, Layer layer,
@@ -2221,9 +2223,9 @@ namespace ditto
     {
       std::vector<FusionInfo> fusionInfo(SURVEY_CANDIDATES_NUMBER);
       for (auto it : fusionInfo)
-        it.valid = 0;
+        it.valid = false;
       std::vector<CPUTensorizeParam> schParams;
-      CHECK(sfs->tensorizeAxes.defined());
+      // CHECK(sfs->tensorizeAxes.defined());
       IterGraph ig = buildIterGraph(sfs);
       if (verbose){
         std:: cout << "iterGraph: " << std::endl;
@@ -2232,22 +2234,39 @@ namespace ditto
       std::unordered_map<std::string, int32_t> m = {{"float32", 4}, {"float64", 8}, {"float16", 2}, {"int16", 2}, {"int32", 4}, {"int64", 8}};
       CHECK(m.count(dtype));
       int bytePerEle = m[dtype];
-      setTemplatesAndSearchPrunedDFS(ig, hw_param, bytePerEle, searchType, mode,
+      if (searchType == "rule_based"){
+        setTemplatesAndSearchByRule(
+          ig, hw_param, bytePerEle, &fusionInfo, true
+        );
+      }
+      else {
+        setTemplatesAndSearchPrunedDFS(ig, hw_param, bytePerEle, searchType, mode,
                                        &fusionInfo);
+      }
       OpHyperState op1, op2;
       std::tie(op1, op2) = sfs->getCubicOpPair();
       auto share_axes = share_axis_analysis(op1->op, op2->op);
       std::cout << "share_axes: " << share_axes << std::endl;
       size_t cnt = 0;
-      for (auto info : fusionInfo)
+      int invalid_cnt = 0;
+      for (auto& info : fusionInfo)
       {
         if (!info.valid)
           break;
         cnt += 1;
-        if(verbose) std::cout << "begin build Tensorize param: " << cnt << "/"
+        if(verbose) {
+          std::cout << "begin build Tensorize param: " << cnt << "/"
                     << fusionInfo.size() << std::endl;
+          std::cout << info << std::endl;
+        }
+          
         CPUTensorizeParam schParam =
-            buildCPUTensorizeParam(sfs, hw_param, bytePerEle, info);
+            buildCPUTensorizeParam(sfs, hw_param, bytePerEle, info, mode, searchType);
+        printf("[buildFusionContext]: build Tensorize param %d\n", schParam->valid);
+        if (!schParam->valid){
+          invalid_cnt ++;
+          continue; 
+        }
         std::vector<double> costs;
 
         costs.insert(costs.end(), schParam->firstOpCosts.begin(),
@@ -2265,6 +2284,7 @@ namespace ditto
         schParam->cost = cost;
         schParams.push_back(schParam);
       }
+      fprintf(stdout, "[buildFusionContext]: schParams.size() %d\n", schParams.size());
       std::sort(schParams.begin(), schParams.end(),
                 [](CPUTensorizeParam &first, CPUTensorizeParam &second) {
                   if (first->valid && !second->valid)
@@ -2277,6 +2297,9 @@ namespace ditto
                 });
       while (!(*schParams.rbegin())->valid)
         schParams.pop_back();
+      if (verbose){
+        std::cout << "[buildFusionContext]: valid: " << schParams.size() << "; invalid: " << invalid_cnt << std::endl;
+      }
       return FusionContext(sfs, schParams, layer, state, path, hw_param,
                            m[dtype]);
     }
