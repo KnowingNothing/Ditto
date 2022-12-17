@@ -1226,31 +1226,31 @@ namespace ditto
               << "acf.size()" << accessFunctions.size() << std::endl;
           std::cout << "access functions:";
           for (auto acf : accessFunctions)
-            std::cout << acf << " " << acf->absentVars << std::endl;
-          if (verbose)
+          std::cout << acf << " " << acf->absentVars << std::endl;
+          for (auto acf : accessFunctions)
+            std::cout << "access_indices" << acf->access_indices
+                      << "absentVars: " << acf->absentVars
+                      << ", presentVars: " << acf->presentVars << std::endl;
+          std::cout << std::endl;
+          std::cout << "tensorWeight:";
+          for (auto tswt : weightPerTensor)
+            std::cout << tswt << " ";
+          std::cout << std::endl;
+          std::cout << "weightPerCacheLevel:";
+          for (auto wpcl : weightPerCacheLevel)
+            std::cout << wpcl << " ";
+          std::cout << std::endl;
+          for (auto idxFactors : factor.tileSize)
           {
-            for (auto acf : accessFunctions)
-              std::cout << "access_indices" << acf->access_indices
-                        << "absentVars: " << acf->absentVars
-                        << ", presentVars: " << acf->presentVars << std::endl;
-            std::cout << std::endl;
-            std::cout << "tensorWeight:";
-            for (auto tswt : weightPerTensor)
-              std::cout << tswt << " ";
-            std::cout << std::endl;
-            std::cout << "weightPerCacheLevel:";
-            for (auto wpcl : weightPerCacheLevel)
-              std::cout << wpcl << " ";
-            std::cout << std::endl;
+            int idx = idxFactors.first;
+            auto factors = idxFactors.second;
+            CHECK(bounds.count(idx2var[idx]));
+            CHECK(factors.size()) << idx2var[idx] << bounds[idx2var[idx]] << " has no factor";
+            std::cout << "[" << idx2var[idx] << " , (" << factors[0] << ", " << bounds[idx2var[idx]] << ")], ";
           }
+          std::cout << std::endl;
         }
         LOG(WARNING) << "no valid candidates found";
-        for (auto idxFactors : factor.tileSize)
-        {
-          int idx = idxFactors.first;
-          auto factors = idxFactors.second;
-          std::cout << "[" << idx2var[idx] << " , (" << factors[0] << ", " << bounds[idx2var[idx]] << ")], ";
-        }
         return CostAndFactor(false);
       }
       if (data)
@@ -1435,19 +1435,21 @@ namespace ditto
     CPUTensorizeParam buildCPUTensorizeParam(SerialFusionState sfs,
                                              hardware::HardwareParam hw_param,
                                              int bytePerEle,
-                                             FusionInfo fusionInfo)
+                                             FusionInfo fusionInfo,
+                                             std::string mode,
+                                             std::string search_type)
     {
       OpHyperState op1, op2;
       std::tie(op1, op2) = sfs->getCubicOpPair();
       CostAndFactor op1caf =
           scheduleSingleCubic(op1, fusionInfo.upper_bounds_for_lower_cache_level, hw_param, fusionInfo.fusionLevel,
-                              bytePerEle, "normal", "best", NULL, "op1");
+                              bytePerEle, search_type, mode, NULL, "op1");
       CostAndFactor op2caf =
           scheduleSingleCubic(op2, fusionInfo.upper_bounds_for_lower_cache_level, hw_param, fusionInfo.fusionLevel,
-                              bytePerEle, "normal", "best", NULL, "op2");
+                              bytePerEle, search_type, mode, NULL, "op2");
       CostAndFactor commCaf = scheduleCommonLoop(
-          op1, op2, hw_param, fusionInfo, bytePerEle, "normal", "best", NULL, "comm");
-
+          op1, op2, hw_param, fusionInfo, bytePerEle, search_type, mode, NULL, "comm");
+      printf("[buildCPUTensorizeParam]: %d, %d, %d\n", op1caf.valid, op2caf.valid, commCaf.valid);
       if (!op1caf.valid || !op2caf.valid || !commCaf.valid)
         return CPUTensorizeParam(false);
 

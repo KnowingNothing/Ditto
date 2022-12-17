@@ -22,9 +22,10 @@ class FusionSpace;
 class FusionResult;
 enum class IV_Type : int {
   FIRSTSPATIAL = 0,
-  SECONDSPATIAL = 1,
-  REDUCE = 2,
-  TENSORIZE = 3
+  SECONDSPATIAL,
+  REDUCE,
+  TENSORIZE,
+  BATCH
 };
 typedef int FACTOR;
 
@@ -86,12 +87,14 @@ public:
   tvm::tir::Var name;
   tvm::tir::Var originVar;
   bool shared; // mark shared & common axis
+  int tensorize_ext; // the tensorize size
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("index", &index);
     v->Visit("ext", &ext);
     v->Visit("iv_type", &iv_type);
     v->Visit("name", &name);
     v->Visit("originVar", &originVar);
+    v->Visit("tensorize_ext", &tensorize_ext);
   }
 
   bool isSpatial() {
@@ -107,7 +110,7 @@ public:
 class IterVar : public ObjectRef {
 public:
   TVM_DLL IterVar(int idx, FACTOR ext, IV_Type iv_type, tvm::tir::Var name,
-                  tvm::tir::Var originVar);
+                  tvm::tir::Var originVar, int tensorize_ext = 1);
 
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(IterVar, ObjectRef, IterVarNode);
   TVM_DEFINE_OBJECT_REF_COW_METHOD(IterVarNode);
@@ -172,23 +175,6 @@ public:
   TVM_DLL Share(IterVar upper, IterVar lower);
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(Share, Relation, ShareNode);
 };
-
-// class AttachNode: public RelationNode{
-// public:
-//     /*! \brief Head is from the second op.*/
-//     int attachPos;
-//     void VisitAttrs(AttrVisitor* v){
-//     }
-
-//     static constexpr const char * _type_key="Share";
-//     TVM_DECLARE_FINAL_OBJECT_INFO(AttachNode, RelationNode);
-// };
-
-// class Attach: public Relation{
-// public:
-//     TVM_DLL Attach(IterVar head, IterVar remain, IterVar orginal);
-//     TVM_DEFINE_OBJECT_REF_METHODS(Attach, Relation, AttachNode);
-// };
 
 class IterGraphNode : public Object {
 public:

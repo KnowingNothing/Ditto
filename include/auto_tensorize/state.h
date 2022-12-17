@@ -39,7 +39,8 @@ public:
   /*! \brief The iterVar map*/
   std::unordered_map<tir::IterVar, IterVar> IterMap;
   /*! \brief The axes for tensorize */
-  Array<te::IterVar> tensorizeAxes;
+  static Array<te::IterVar> tensorizeAxes;
+  static Map<tir::IterVar, tir::IterVar> tensorizeMap;
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("op", &op);
     v->Visit("pattern", &pattern);
@@ -96,9 +97,7 @@ public:
       ret[iv->index] = iv->originVar;
     return ret;
   }
-  void registerTensorizeAxes(Array<tir::IterVar> tensorizeAxes_){
-    tensorizeAxes = tensorizeAxes_;
-  }
+
   /*! get all vars*/
   Array<tir::Var> getAllVars();
 
@@ -139,7 +138,9 @@ public:
    */
   std::unordered_map<te::Operation, OpHyperState> op_hyper_states;
   /*! \brief The tensorize axes */
-  Array<tir::IterVar> tensorizeAxes;
+  // Array<tir::IterVar> tensorizeAxes;
+  // /*! \brief a map from axis to the tensorize axis counterpart */
+  // Map<tir::IterVar, tir::IterVar> tensorizeMap;
   void VisitAttrs(tvm::AttrVisitor *v) {
     v->Visit("layer_state", &layer_state);
     v->Visit("ops", &ops);
@@ -155,10 +156,14 @@ public:
    */
   std::pair<OpHyperState, OpHyperState> getCubicOpPair();
   void registerTensorizeAxes(Array<tir::IterVar> _tensorizeAxes){
-    tensorizeAxes = _tensorizeAxes;
-    for (auto & k: op_hyper_states)
-      k.second->registerTensorizeAxes(tensorizeAxes);
+    // tensorizeAxes = _tensorizeAxes;
+    OpHyperStateNode::tensorizeAxes = _tensorizeAxes;
   }
+
+  void registerTensorizeMap(Map<tir::IterVar, tir::IterVar> map){
+    OpHyperStateNode::tensorizeMap = map;
+  }
+
   static constexpr const char *_type_key =
       "ditto.auto_tensorize.SerialFusionState";
   TVM_DECLARE_BASE_OBJECT_INFO(SerialFusionStateNode, Object);

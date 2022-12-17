@@ -1952,32 +1952,28 @@ namespace ditto
         else if (mode == "survey")
         {
           std::vector<FusionInfo> candidates_;
-          for (size_t i = 0; i < std::min(candidates.size(), (size_t)SELECT_TOP); i++)
-          {
-            candidates_.push_back(candidates.at(i));
+          for (size_t i = 0; i < SURVEY_CANDIDATES_NUMBER; i++){
+            candidates_.push_back(candidates[random() % candidates.size()]);
           }
-          double ave = 0, ave2 = 0;
-          for (size_t i = 0; i < candidates.size(); i++)
-          {
-            FusionInfo &fusionInfo = candidates.at(i);
-            ave += fusionInfo.cost;
-            ave2 += fusionInfo.cost * fusionInfo.cost;
+          if (verbose){
+            std::function<std::pair<double, double>(const std::vector<FusionInfo>&)> get_stats = 
+            [](const std::vector<FusionInfo>& vec){
+              double ave = 0, std = 0;
+              for(auto & item: vec) 
+                ave += item.cost, std += item.cost * item.cost;
+              ave /= vec.size();
+              std /= vec.size();
+              std = sqrt(std - ave * ave);
+              return std::make_pair(ave, std);
+            };
+            double ave, std;
+            std::tie(ave, std) = get_stats(candidates);
+            std::cout << "original data: ave " << ave << ", std " << std << "; ";
+            std::tie(ave, std) = get_stats(candidates_);
+            std::cout << "sampled data: ave " << ave << ", std " << std << std::endl; 
           }
-          ave /= candidates.size();
-          ave2 /= candidates.size();
-          std::cout << "ave is" << ave << ", dev is " << ave2 - ave * ave
-                    << std::endl;
-          for (size_t i = 0; i < candidates.size();
-               i += std::max((candidates.size() + SURVEY_CANDIDATES_NUMBER - 1) /
-                                 (SURVEY_CANDIDATES_NUMBER),
-                             (size_t)1))
-          {
-            if (candidates_.size() >= SURVEY_CANDIDATES_NUMBER)
-              break;
-            FusionInfo fusionInfo = candidates.at(i);
-            candidates_.push_back(fusionInfo);
-          }
-          *data = candidates_;
+
+          *data = move(candidates_);
         }
       }
       CHECK(bestFusionItem.defined());
@@ -2252,6 +2248,7 @@ namespace ditto
       auto share_axes = share_axis_analysis(op1->op, op2->op);
       std::cout << "share_axes: " << share_axes << std::endl;
       size_t cnt = 0;
+      int invalid_cnt = 0;
       for (auto& info : fusionInfo)
       {
         if (!info.valid)
@@ -2264,7 +2261,12 @@ namespace ditto
         }
           
         CPUTensorizeParam schParam =
-            buildCPUTensorizeParam(sfs, hw_param, bytePerEle, info);
+            buildCPUTensorizeParam(sfs, hw_param, bytePerEle, info, mode, searchType);
+        printf("[buildFusionContext]: build Tensorize param %d\n", schParam->valid);
+        if (!schParam->valid){
+          invalid_cnt ++;
+          continue; 
+        }
         std::vector<double> costs;
 
         costs.insert(costs.end(), schParam->firstOpCosts.begin(),
@@ -2282,6 +2284,7 @@ namespace ditto
         schParam->cost = cost;
         schParams.push_back(schParam);
       }
+      fprintf(stdout, "[buildFusionContext]: schParams.size() %d\n", schParams.size());
       std::sort(schParams.begin(), schParams.end(),
                 [](CPUTensorizeParam &first, CPUTensorizeParam &second) {
                   if (first->valid && !second->valid)
@@ -2294,6 +2297,9 @@ namespace ditto
                 });
       while (!(*schParams.rbegin())->valid)
         schParams.pop_back();
+      if (verbose){
+        std::cout << "[buildFusionContext]: valid: " << schParams.size() << "; invalid: " << invalid_cnt << std::endl;
+      }
       return FusionContext(sfs, schParams, layer, state, path, hw_param,
                            m[dtype]);
     }
