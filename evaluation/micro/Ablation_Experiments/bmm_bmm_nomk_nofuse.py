@@ -1,76 +1,31 @@
+import torch
 import tvm 
-import numpy as np
+import numpy as np 
+import math 
 import argparse
-import random
 import pickle as pkl
-import math
-import threading
 
-TY = 8
-TX = 8
-TL = 32
+TY_SIZE = 8
+TX_SIZE = 8
 TK = 8
+VEC = 1
 WARP_Y = 32
 WARP_X = 1
-VEC = 1
 UNROLL_STEP = 512
 UNROLL_EXPLICIT = 1
+M_factors = [-1, TY_SIZE, WARP_Y]
+N_factors = [-1, TX_SIZE, WARP_X]
+K_factors = [-1, TK]
 
-def tile_axes(s, axis, factors):
+def tile_axes(sch, op, axis, factors):
     ret = []
-    for f in reversed(factors):
-        axis, inner = s.split(axis, factor=f)
+    for f in reversed(factors[1:]):
+        axis, inner = sch[op].split(axis, factor=f)
         ret.append(inner)
     ret.append(axis)
     return list(reversed(ret))
 
-def bind(s, binds):
-    for (ax, thread_ax) in binds:
-        s.bind(ax, tvm.te.thread_axis(thread_ax))
-
-def schedule_bmm(sch, A, B, C, fusion = True, second = False):
-    A_shared = A if (fusion and second) else sch.cache_read(A, "shared", [C])
-    B_shared = sch.cache_read(B, "shared", [C])
-    A_local = sch.cache_read(A_shared, "local", [C])
-    B_local = sch.cache_read(B_shared, "local", [C])
-    C_local = sch.cache_write(C, "local")
-
-    b, m, n = sch[C].op.axis 
-    mo, mm, mi = tile_axes(sch[C], m, (TY, WARP_Y))
-    no, nm, ni = tile_axes(sch[C], n, (TX, WARP_X))
-
-    sch[C].reorder(b, mo, no, mm, nm, mi, ni)
-    sch[C].pragma(b, "auto_unroll_max_step", UNROLL_STEP)
-    sch[C].pragma(b, "unroll_explicit", UNROLL_EXPLICIT)
-    bind(sch[C], [(b, "blockIdx.z"), (mo, "blockIdx.y"), (no, "blockIdx.x"), 
-        (mm, "threadIdx.y"), (nm, "threadIdx.x")])
-
-    sch[C_local].compute_at(sch[C], nm)
-    b,m,n = sch[C_local].op.axis
-    (rk,) = sch[C_local].op.reduce_axis 
-    rko, rki = sch[C_local].split(rk, TL)
-    sch[C_local].reorder(b, rko, rki, m, n)
-
-    sch[A_local].compute_at(sch[C_local], rki)
-    sch[B_local].compute_at(sch[C_local], rki)
-
-    sch[A_shared].compute_at(sch[C_local], rko)
-    if not (fusion and second):
-        b,m,k = sch[A_shared].op.axis 
-        fused = sch[A_shared].fuse(b, m, k)
-        fused, ty, tx, vec = tile_axes(sch[A_shared], fused, (TY, TX, VEC))
-        bind(sch[A_shared], [(ty, "threadIdx.y"), (tx, "threadIdx.x")])
-        sch[A_shared].vectorize(vec)
-
-    sch[B_shared].compute_at(sch[C_local], rko)
-    b, k, n = sch[B_shared].op.axis 
-    fused = sch[B_shared].fuse(b, k, n)
-    fused, ty, tx, vec = tile_axes(sch[B_shared], fused, (TY, TX, VEC))
-    bind(sch[B_shared], [(ty, "threadIdx.y"), (tx, "threadIdx.x")])
-    sch[B_shared].vectorize(vec)
-    return C_local, rko
-
-def BatchGemmGemm(batch, M, N, K, L, in_dtype, acc_dtype):
+def BatchGemmGemm(batch, M, N, K, L, in_dtype = "float16", acc_dtype = "float32"):
     A = tvm.te.placeholder([batch, M, K], name="A", dtype=in_dtype)
     B = tvm.te.placeholder([batch, K, L], name="B", dtype=in_dtype)
     C = tvm.te.placeholder([batch, L, N], name="C", dtype=in_dtype)
@@ -83,7 +38,7 @@ def BatchGemmGemm(batch, M, N, K, L, in_dtype, acc_dtype):
         ),
         name = "D"
     )
-
+    
     rl = tvm.te.reduce_axis([0, L], "rl")
     E = tvm.te.compute(
         [batch, M, N], 
@@ -93,52 +48,85 @@ def BatchGemmGemm(batch, M, N, K, L, in_dtype, acc_dtype):
         ),
         name = "E"
     )
-    return A, B, C, D, E
+    return [A, B, C], [E], D
+
+def schedule_bmm(sch, C):
+    A, B = C.op.input_tensors
+    
+    A_shared = sch.cache_read(A, "shared", [C])
+    B_shared = sch.cache_read(B, "shared", [C])
+    A_local = sch.cache_read(A_shared, "local", [C])
+    B_local = sch.cache_read(B_shared, "local", [C])
+    C_local = sch.cache_write(C, "local")
+
+    
+    b, m, n = C.op.axis 
+    m1, m2, m3 = tile_axes(sch, C, m, M_factors)
+    n1, n2, n3 = tile_axes(sch, C, n, N_factors)
+    sch[C].reorder(b, m1, n1, m2, n2, m3, n3)
+    sch[C].pragma(b, "auto_unroll_max_step", UNROLL_STEP)
+    sch[C].pragma(b, "unroll_explicit", UNROLL_EXPLICIT)
+    sch[C].bind(b, tvm.te.thread_axis("blockIdx.z"))
+    sch[C].bind(m1, tvm.te.thread_axis("blockIdx.y"))
+    sch[C].bind(n1, tvm.te.thread_axis("blockIdx.x"))
+    sch[C].bind(m2, tvm.te.thread_axis("threadIdx.y"))
+    sch[C].bind(n2, tvm.te.thread_axis("threadIdx.x"))
+
+    sch[C_local].compute_at(sch[C], n2)
+    b, m, n = C_local.op.axis
+    (rk,) = C_local.op.reduce_axis
+    rko, rki = tile_axes(sch, C_local, rk, K_factors)
+    sch[C_local].reorder(b, rko, rki, m, n)
+
+    def optimize_cache(shared, local):
+        sch[shared].compute_at(sch[C_local], rko)
+        sch[local].compute_at(sch[C_local], rki)
+        b, y, x = sch[shared].op.axis 
+        yo, yi = sch[shared].split(y, nparts = TY_SIZE)
+        xo, xi = sch[shared].split(x, nparts = TX_SIZE)
+        sch[shared].reorder(b, yo, xo, yi, xi)
+        sch[shared].bind(yo, tvm.te.thread_axis("threadIdx.y"))
+        sch[shared].bind(xo, tvm.te.thread_axis("threadIdx.x"))
+    optimize_cache(A_shared, A_local)
+    optimize_cache(B_shared, B_local)
+
 
 def schedule_cuda(batch, M, N, K, L, in_dtype = "float16", acc_dtype = "float32"):
-    A, B, C, D, E = BatchGemmGemm(batch, M, N, K, L, in_dtype, acc_dtype)
+    (A, B, C), (E,), D = BatchGemmGemm(batch, M, N, K, L, in_dtype = "float16", acc_dtype = "float32")
     sch = tvm.te.create_schedule(E.op)
-    # print(tvm.lower(sch, [A, B, C, E], simple_mode = True))
-
-    D_local = sch.cache_write(D, "local")
-    sch[D].set_scope("shared")
-    attach_tensor, attach_axis = schedule_bmm(sch, D, C, E, True, True)
-
-    A_shared = sch.cache_read(A, "shared", [D_local])
-    A_local = sch.cache_read(A_shared, "local", [D_local])
-    B_shared = sch.cache_read(B, "shared", [D_local])
-    B_local = sch.cache_read(B_shared, "local", [D_local])
-
-    sch[D_local].compute_at(sch[attach_tensor], attach_axis)
-    b, m, l = sch[D_local].op.axis 
-    rk, = sch[D_local].op.reduce_axis 
-    mm, mi = sch[D_local].split(m, nparts = TY)
-    lo, li = sch[D_local].split(l, nparts = TX)
-    rko, rki = sch[D_local].split(rk, nparts = TK)
-    sch[D_local].reorder(b, mm, lo, rko, rki, mi, li)
-    bind(sch[D_local], [(mm, "threadIdx.y"), (lo, "threadIdx.x")])
-
-    sch[A_local].compute_at(sch[D_local], rki)
-    sch[B_local].compute_at(sch[D_local], rki)
-    sch[A_shared].compute_at(sch[D_local], rko)
-    b, m, k = sch[A_shared].op.axis 
-    fused = sch[A_shared].fuse(b,m,k)
-    fused, ty, tx, vec = tile_axes(sch[A_shared], fused, (TY, TX, VEC))
-    bind(sch[A_shared], [(ty, "threadIdx.y"), (tx, "threadIdx.x")])
-    sch[A_shared].vectorize(vec)
-
-    sch[B_shared].compute_at(sch[D_local], rko)
-    b, k, l = sch[B_shared].op.axis 
-    fused = sch[B_shared].fuse(b,k,l)
-    fused, ty, tx, vec = tile_axes(sch[B_shared], fused, (TY, TX, VEC))
-    bind(sch[B_shared], [(ty, "threadIdx.y"), (tx, "threadIdx.x")])
-    sch[B_shared].vectorize(vec)
-
-    # print(tvm.lower(sch, [A, B, C, E], simple_mode = True))
+    schedule_bmm(sch, E)
+    schedule_bmm(sch, D)
+    
+    # print(tvm.lower(sch, [A, B, C, E], simple_mode= True))
     func = tvm.build(sch, [A, B, C, E], "cuda")
-    return [A,B,C], [E], func
+    return [A, B, C], [E], func
 
-time_cost = 0
+def test_cuda(profile):
+    in_dtype = "float16"
+    acc_dtype = "float32"
+    ins, outs, func = schedule_cuda(
+        12, 512, 64, 64, 512, in_dtype=in_dtype, acc_dtype=acc_dtype
+    )
+
+    inputs_np = [
+        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(y.dtype)
+        for y in ins
+    ]
+
+    outputs_np = [
+        np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype(y.dtype)
+        for y in outs
+    ]
+    ctx = tvm.cuda()
+    inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
+    outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
+    if profile:
+        func(*inputs_tvm, *outputs_tvm)
+    else:
+        evaluator = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=600)
+        cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
+        print(f"Our code uses {cost} ms")
+
 
 def test_cuda(batch, M, N, K, L):
     in_dtype = "float16"
@@ -229,6 +217,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
+    parser.add_argument(
+        "--record", action = "store_true"
+    )
     args = parser.parse_args()
     if args.mode == "correctness":
         test_llvm()
@@ -245,7 +236,11 @@ if __name__ == "__main__":
             )
         for cc in costs:
             print(cc[1])
-        with open("bmm_bmm_nomk_fuse.pkl", "wb") as f:
-            pkl.dump(costs, f)
+        if args.record:
+            with open("bmm_bmm_nomk_nofuse.pkl", "wb") as f:
+                pkl.dump(costs, f)
     else:
         raise ValueError()
+
+    
+

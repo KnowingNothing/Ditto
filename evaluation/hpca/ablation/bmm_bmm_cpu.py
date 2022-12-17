@@ -261,13 +261,20 @@ def test_double_gemm(
     func(*inputs, *outputs)
 
     top = float()
-    top10 = float('inf')
+    topk_time = float('inf')
     if mode == "test":
         R = 1
+        stepsize = 1
     elif mode == "best":
         R = min(topk, fusionContext.size)
+        stepsize = 1
+    elif mode == "survey":
+        R = min(topk, fusionContext.size) 
+        stepsize = max(1, int(R / topk))
+
     fusionLevel = fusionContext.getFusionLevel(0)
-    for iter in range(R):
+    times = []
+    for iter in range(0, R, stepsize):
         print("run", iter)
         sch = tvm.te.create_schedule(outs[0].op)
 
@@ -286,13 +293,13 @@ def test_double_gemm(
 
 
         cost = evaluator(*inputs_tvm, *outputs_tvm).mean
-
+        times.append(cost)
         if iter == 0:
             top = cost
-        if cost < top10:
-            top10 = cost
+        if cost < topk_time:
+            topk_time = cost
         print(f'iter{iter}: ', cost)
-    return {'top1': top, f'top{topk}': top10}, fusionLevel, t1 - t0
+    return {'top1': top, f'top{topk}': topk_time, 'geomean': np.exp(np.mean(np.log(times)))}, fusionLevel, t1 - t0, times
 
 
 def setGlobals(B, M, N, K, L, dtype):
@@ -323,7 +330,7 @@ def main(batch, M, N, K, L, dtype, server, mode, weights, topk, search_type, mk_
     print ("B,M,N,K,L,dtype,WORKLOAD,SERVER")
     print(B,M,N,K,L,dtype,WORKLOAD,SERVER)
     t0 = time.time()
-    Time, fusionLevel, schedule_time = test_double_gemm(B, M, N, K, L, config={
+    Time, fusionLevel, schedule_time, all_times = test_double_gemm(B, M, N, K, L, config={
                            'searchType': search_type, 'mode': mode, 
                            'dtype': dtype, 'tensorWeight': weights,
                            'topk': topk, 'mk_type': mk_type})
@@ -334,6 +341,8 @@ def main(batch, M, N, K, L, dtype, server, mode, weights, topk, search_type, mk_
         ret[k] = {} 
         ret[k]['time(s)'] = Time[k]
         ret[k]['%peak'] = (WORKLOAD / Time[k] / 1e9) / SERVER['peakgflops']
+    ret['std'] = np.std([(WORKLOAD / x / 1e9 / SERVER['peakgflops']) for x in all_times])
+    ret['n_sample'] = len(all_times)
     ret['total_time'] = t1 - t0
     ret['fusionLevel'] = fusionLevel
 
@@ -414,7 +423,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--search_type", type=str, default = "normal"
+        "--search_type", type=str, choices = ['normal', 'stochastic', 'nofuse'], default = "normal"
     )
 
     parser.add_argument(
@@ -443,6 +452,9 @@ if __name__ == "__main__":
             mk_type = args.mk_type
         )
         costs.append((ss, cost))
+        if args.store:
+            with open(f"{args.output}.pkl", 'wb') as f:
+                pkl.dump(costs, f)
 
     print("B,M,N,K,L,dtype,args,sm,cost")
     for cc in costs:
@@ -452,9 +464,6 @@ if __name__ == "__main__":
     for cc in costs:
         print(cc[1])
     
-    if args.store:
-        with open(f"{args.output}.pkl", 'wb') as f:
-            pkl.dump(costs, f)
 
 '''
 No-C(easy): 

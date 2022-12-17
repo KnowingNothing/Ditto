@@ -15,31 +15,15 @@ import math
 import numpy as np
 import argparse
 
-build_options = [
-    "-libs=cblas"
-    # '-L/opt/intel/compilers_and_libraries_2019.3.199/linux/mkl/lib/intel64',
-    # '-L/opt/intel/compilers_and_libraries_2019.3.199/linux/compiler/lib/intel64_lin/',
-    # '-L$HOME/software/llvm/llvm-15.0.0/lib',
-    # '-Wl,rpath=$HOME/software/llvm/llvm-15.0.0/lib',
-    # '-lmkl_intel_lp64',
-    # '-lmkl_intel_thread',
-    # '-lmkl_core',
-    # '-fopenmp',
-    # '-lm',
-    # '-lstdc++'
-]
-
 MI = 6
 NI1 = 16
 KI1 = 64
 NI2 = 16
 KI2 = 16
-REPEAT = 200
+REPEAT = 500
 PEAKGFLOPS = int()
 WORKLOAD = int()
 SERVER = None
-
-verbose = False
 
 ServerConfig = {
     'sc':{
@@ -77,8 +61,6 @@ def BatchGemmGemm(
     assert L % NI1 == 0
     assert L % KI2 == 0
 
-    tensorize_map = {}
-
     # A = tvm.te.placeholder([batch, M, K], name="A", dtype=dtype)
     A = tvm.te.placeholder([batch, M // MI, MI, K // KI1, KI1], name="A", dtype=dtype)
     #  B = tvm.te.placeholder([batch, M, L], name="B", dtype=dtype)
@@ -98,7 +80,6 @@ def BatchGemmGemm(
         name="D_frag",
     )
 
-    tensorize_map.update({D_frag.op.axis[1]: D_frag.op.axis[2], D_frag.op.axis[3]:D_frag.op.axis[4], rko: rki})
     choice1 = [D_frag.op.axis[2], D_frag.op.axis[4], rki]
 
     # C_ext = tvm.te.compute(
@@ -119,7 +100,6 @@ def BatchGemmGemm(
         name="E_frag",
     )
 
-    tensorize_map.update({E_frag.op.axis[1]: E_frag.op.axis[2], E_frag.op.axis[3]: E_frag.op.axis[4], rlo: rli})
     choice2 = [E_frag.op.axis[2], E_frag.op.axis[4], rli]
 
     F = tvm.te.compute(
@@ -132,8 +112,7 @@ def BatchGemmGemm(
     return (
         [A, B, C],
         [F],
-        (choice1, choice2),
-        tensorize_map
+        (choice1, choice2)
     )
 
 def test_double_gemm(
@@ -147,10 +126,9 @@ def test_double_gemm(
     searchType = "stochastic"
     mode = "survey"
     parallelism = 1
+    verbose = False
     isa = "avx2"
     dtype = "float32"
-    topk = 5
-    mk_type = ""
     if SERVER:
         cacheSizes = SERVER['cacheSizes']
         bandwidth = SERVER['bandwidth']
@@ -162,12 +140,10 @@ def test_double_gemm(
         searchType = config["searchType"]
     if "mode" in config:
         mode = config["mode"]
+    if "verbose" in config:
+        verbose = config['verbose']
     if "dtype" in config:
         dtype = config['dtype']
-    if 'topk' in config:
-        topk = config['topk']
-    if 'mk_type' in config:
-        mk_type = config['mk_type']
     print("begin test ...")
     print("shape,cacheSizes,bandwidth,tensorWeight,searchType,mode,parallelism,isa,dtype")
     print(batch, M, N, K, L, cacheSizes, bandwidth, tensorWeight,
@@ -189,7 +165,7 @@ def test_double_gemm(
         platform="CPU",
     )
 
-    ins, outs, (choice1, choice2), tensorize_map = BatchGemmGemm(batch, M, N, K, L, dtype=dtype)
+    ins, outs, (choice1, choice2) = BatchGemmGemm(batch, M, N, K, L, dtype=dtype)
 
     t0 = time.time()
 
@@ -202,7 +178,7 @@ def test_double_gemm(
     def get_match_info(op, shape, prefix, choice = None):
         # cpu_intrin(op, shape, instructionSet, dtype, prefix="")
         packed, code = at.cpu_intrin(
-            op="gemm_noreshape", shape=shape, isa=isa, dtype=dtype, prefix=prefix, surfix = mk_type)
+            op="gemm_noreshape", shape=shape, isa=isa, dtype=dtype, prefix=prefix)
         if choice == None:
             choices = at.intrinsic_match(op.output(0), packed, [
                                         'SameRange'])
@@ -218,7 +194,6 @@ def test_double_gemm(
     tensorizeAxes = list(first_match_info.axis) + list(second_match_info.axis)
 
     sfs.register_tensorize_axes(tensorizeAxes)
-    sfs.register_tensorize_map(tensorize_map)
 
     fuse_choice = at.build_fusion_choice(
         sfs, hw_param=CPU, dtype=dtype, simple_mode=-1
@@ -246,7 +221,7 @@ def test_double_gemm(
     t1 = time.time()
     print("static analysis time", t1-t0)
     sch0 = tvm.te.create_schedule(outs[0].op)
-    func = tvm.build(sch0, layer.schedule_tensors, name="bmm", target = "llvm " + ' '.join(build_options))
+    func = tvm.build(sch0, layer.schedule_tensors, name="bmm")
     ctx = tvm.cpu()
     inputs_np = [
         np.random.uniform(-1, 1, [int(x) for x in y.shape]).astype("float32")
@@ -261,31 +236,34 @@ def test_double_gemm(
     func(*inputs, *outputs)
 
     top = float()
-    topk_time = float('inf')
+    top10 = float('inf')
     if mode == "test":
         R = 1
-        stepsize = 1
     elif mode == "best":
-        R = min(topk, fusionContext.size)
-        stepsize = 1
-    elif mode == "survey":
-        R = min(topk, fusionContext.size) 
-        stepsize = max(1, int(R / topk))
-
-    fusionLevel = fusionContext.getFusionLevel(0)
-    times = []
-    for iter in range(0, R, stepsize):
+        R = min(5, fusionContext.size)
+    best_func = None
+    
+    
+    t_profile_start = time.time()
+    fusionLevel = -1
+    for iter in range(R):
         print("run", iter)
         sch = tvm.te.create_schedule(outs[0].op)
 
         sch = fusionContext.run(iter, sch, verbose=verbose)
 
-        func = tvm.build(sch, layer.schedule_tensors, name="bmm", target = "llvm " + ' '.join(build_options))
+        func = tvm.build(sch, layer.schedule_tensors, name="bmm")
 
         inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
         outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
 
         func(*inputs_tvm, *outputs_tvm)
+
+        # try:
+        #     for (a, b) in zip(outputs, outputs_tvm):
+        #         tvm.testing.assert_allclose(a.numpy(), b.numpy(), atol=1, rtol=1e-6)
+        # except:
+        #     print(f"WARNING: schedule {iter} of {batch} {M} {N} {K} {L} is incorrect")
 
         evaluator = func.time_evaluator(
             func.entry_name, ctx, min_repeat_ms=0, repeat=REPEAT, number = 1, f_preproc="cache_flush_cpu_non_first_arg"
@@ -293,13 +271,32 @@ def test_double_gemm(
 
 
         cost = evaluator(*inputs_tvm, *outputs_tvm).mean
-        times.append(cost)
+
         if iter == 0:
             top = cost
-        if cost < topk_time:
-            topk_time = cost
+            best_func = func 
+            fusionLevel = fusionContext.getFusionLevel(0)
+        if cost < top10:
+            best_func = func 
+            top10 = cost
+            fusionLevel = fusionContext.getFusionLevel(iter)
         print(f'iter{iter}: ', cost)
-    return {'top1': top, f'top{topk}': topk_time, 'geomean': np.exp(np.mean(np.log(times)))}, fusionLevel, t1 - t0, times
+    t_profile_end = time.time()
+
+    logs={}
+    logs['fusionLevel'] = fusionLevel 
+    logs['staticAnalysisTime'] = t1 - t0
+    logs['profileTime'] = t_profile_end - t_profile_start 
+
+    
+    if config['export_lib'] == True:
+        libname = f"lib_fuse_{batch}_{M}_{N}_{K}_{L}.so"
+        best_func.export_library("./lib/" + libname)
+        tensorInfo = [([int(_) for _ in x.shape], x.dtype) for x in ins + outs] 
+        logs['libname'] = libname 
+        logs['tensorInfo'] = tensorInfo 
+
+    return {'top1': top, 'top10': top10}, logs
 
 
 def setGlobals(B, M, N, K, L, dtype):
@@ -323,28 +320,22 @@ def setGlobals(B, M, N, K, L, dtype):
     return (B, M, N, K, L)
 
 
-def main(batch, M, N, K, L, dtype, server, mode, weights, topk, search_type, mk_type):
+def main(batch, M, N, K, L, dtype, server, mode, export_lib = False):
     global SERVER
     SERVER = ServerConfig[server]
     B, M, N, K, L = setGlobals(batch, M, N, K, L,dtype= dtype)
     print ("B,M,N,K,L,dtype,WORKLOAD,SERVER")
     print(B,M,N,K,L,dtype,WORKLOAD,SERVER)
     t0 = time.time()
-    Time, fusionLevel, schedule_time, all_times = test_double_gemm(B, M, N, K, L, config={
-                           'searchType': search_type, 'mode': mode, 
-                           'dtype': dtype, 'tensorWeight': weights,
-                           'topk': topk, 'mk_type': mk_type})
+    Time, ret = test_double_gemm(B, M, N, K, L, config={
+                           'searchType': 'normal', 'verbose':False, 'mode': mode, 'dtype': dtype, 'export_lib': export_lib})
     t1 = time.time()
     print("schedule time: ", t1 - t0)
-    ret = {}
     for k in Time:
         ret[k] = {} 
         ret[k]['time(s)'] = Time[k]
         ret[k]['%peak'] = (WORKLOAD / Time[k] / 1e9) / SERVER['peakgflops']
-    ret['std'] = np.std([(WORKLOAD / x / 1e9 / SERVER['peakgflops']) for x in all_times])
-    ret['n_sample'] = len(all_times)
     ret['total_time'] = t1 - t0
-    ret['fusionLevel'] = fusionLevel
 
     print(batch, M, N, K, L, dtype,":",ret)
     return ret
@@ -361,8 +352,8 @@ def uround(x, y):
 
 shapes = [
     # (batch, M, N, K, L)
-    (8, 512, 512 // 8, 512 // 8, 512),      # Bert-Small
-    (12, 512, 768 // 12, 768 // 12, 512),   # Bert-Base
+    (16, 512, 512 // 8, 512 // 8, 512),      # Bert-Small
+    (24, 512, 768 // 12, 768 // 12, 512),   # Bert-Base
     (16, 512, 1024 // 16, 1024 // 16, 512), # Bert-Large
     (12, 256, 768 // 12, 768 // 12, 256),   # ViT-Base/14
     (16, 256, 1024 // 16, 1024 // 16, 256), # ViT-Large/14
@@ -383,14 +374,6 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--only_once", action="store_true")
-    parser.add_argument("--verbose", action="store_true")
-    parser.add_argument(
-        "--mk_type", 
-        type = str, 
-        choices = ['mkl', 'baseline', ''],
-        default = "",
-        help = "whether a naive microkernel is used"
-    )
     parser.add_argument(
         "--dtype",
         type=str,
@@ -411,28 +394,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--store", type=bool, choices = [0, 1], default = 1
+        "--store", action = "store_true"
     )
-    
     parser.add_argument(
-        "--weights", type=float, nargs="+", default=[1.0,1.0,1.0,1.0,1.0]
-    )
-
-    parser.add_argument(
-        "--topk", type=int, default=5
-    )
-
-    parser.add_argument(
-        "--search_type", type=str, choices = ['normal', 'stochastic', 'nofuse'], default = "normal"
-    )
-
-    parser.add_argument(
-        "--output", type = str, default = "bmm_bmm_chimera"
+        "--export_lib", action = "store_true"
     )
 
     args = parser.parse_args()
-
-    verbose = args.verbose
 
     costs = []
     for ss in shapes[args.begin: args.begin + args.num]:
@@ -446,15 +414,9 @@ if __name__ == "__main__":
             dtype=args.dtype,
             server = args.server,
             mode = args.mode,
-            weights = args.weights,
-            topk = args.topk,
-            search_type = args.search_type,
-            mk_type = args.mk_type
+            export_lib = args.export_lib 
         )
         costs.append((ss, cost))
-        if args.store:
-            with open(f"{args.output}.pkl", 'wb') as f:
-                pkl.dump(costs, f)
 
     print("B,M,N,K,L,dtype,args,sm,cost")
     for cc in costs:
@@ -464,12 +426,6 @@ if __name__ == "__main__":
     for cc in costs:
         print(cc[1])
     
-
-'''
-No-C(easy): 
-    fusion: loop structure; 
-    tiling is defined by chimera/lirui's model
-No-F(easy):   
-    fusion at outermost cache level;
-No-M(easy):
-'''
+    if args.store:
+        with open("bmm_bmm_fuse_cpu.pkl", 'wb') as f:
+            pkl.dump(costs, f)

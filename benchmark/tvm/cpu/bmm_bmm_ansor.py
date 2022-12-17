@@ -6,9 +6,10 @@ from tvm import te, auto_scheduler
 import argparse
 import pickle as pkl
 import tvm.testing
+import time
 
 EVALUTE_SCHEDULE_INPUTS = None
-REPEAT = 2000
+REPEAT = 500
 peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995}
 
 @auto_scheduler.register_workload  # Note the auto_scheduler decorator
@@ -74,7 +75,9 @@ def main(batch, M, N, K, L, dtype, server):
     )
 
     # Run auto-tuning (search)
+    t0 = time.time()
     task.tune(tune_option)
+    t1 = time.time()
     # Apply the best schedule
     sch, args = task.apply_best(log_file)
     A, B, C, out = args
@@ -104,7 +107,7 @@ def main(batch, M, N, K, L, dtype, server):
     cost = evaluator(a_tvm, b_tvm, c_tvm, out_tvm).mean
     workload = batch * (M * K * L + M * N * L)
     ratioToPeak = workload / 1e9 / cost / peakflops[server]
-    return (cost, ratioToPeak)
+    return (cost, ratioToPeak, t1 - t0)
 
 
 example_text = """

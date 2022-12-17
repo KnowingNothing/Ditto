@@ -463,7 +463,6 @@ def schedule_cuda(batch, M, N, K, L, in_dtype="float16", acc_dtype="float32"):
     schedule_bmm(sch, D, in_dtype, acc_dtype)
 
 
-    print(tvm.lower(sch, ins + outs, simple_mode=True))
     func = tvm.build(sch, ins + outs, "cuda")
 
     return ins, [F], func
@@ -573,6 +572,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
+    parser.add_argument(
+        "--record", action = "store_true"
+    )
     args = parser.parse_args()
     if args.mode == "correctness":
         test_llvm()
@@ -589,7 +591,8 @@ if __name__ == "__main__":
             )
         for cc in costs:
             print(cc[1])
-        with open("bmm_bmm_mk_nofuse.pkl", "wb") as f:
-            pkl.dump(costs, f)
+        if args.record:
+            with open("bmm_bmm_mk_nofuse.pkl", "wb") as f:
+                pkl.dump(costs, f)
     else:
         raise ValueError()

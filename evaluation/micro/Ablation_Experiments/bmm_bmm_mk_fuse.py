@@ -582,7 +582,7 @@ def test_llvm():
     )
 
 
-def test_cuda(batch, M, N, K, L):
+def test_cuda(batch, M, N, K, L, profile = False):
     in_dtype = "float16"
     acc_dtype = "float32"
     ins, outs, func = schedule_cuda(
@@ -601,6 +601,9 @@ def test_cuda(batch, M, N, K, L):
     ctx = tvm.cuda()
     inputs_tvm = [tvm.nd.array(x, ctx) for x in inputs_np]
     outputs_tvm = [tvm.nd.array(x, ctx) for x in outputs_np]
+    if profile:
+        func(*inputs_tvm, *outputs_tvm)
+        return
     evaluator = func.time_evaluator(func.entry_name, ctx, min_repeat_ms=300)
     cost = evaluator(*inputs_tvm, *outputs_tvm).mean * 1e3
     global time_cost 
@@ -642,15 +645,20 @@ shapes = [
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["correctness", "perf"])
+    parser.add_argument("--mode", choices=["correctness", "perf", "profile"])
     parser.add_argument(
         "--begin", type=int, choices=list(range(len(shapes))), default=0
     )
     parser.add_argument(
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
+    parser.add_argument(
+        "--record", action = "store_true"
+    )
     args = parser.parse_args()
-    if args.mode == "correctness":
+    if args.mode == "profile":
+        test_cuda(*shapes[args.begin], True)
+    elif args.mode == "correctness":
         test_llvm()
     elif args.mode == "perf":
         costs = []
@@ -665,7 +673,8 @@ if __name__ == "__main__":
             )
         for cc in costs:
             print(cc[1])
-        with open("bmm_bmm_mk_fuse.pkl", "wb") as f:
-            pkl.dump(costs, f)
+        if args.record:
+            with open("bmm_bmm_mk_fuse.pkl", "wb") as f:
+                pkl.dump(costs, f)
     else:
         raise ValueError()
