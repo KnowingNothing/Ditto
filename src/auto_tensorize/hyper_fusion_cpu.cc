@@ -412,7 +412,6 @@ namespace ditto
       Array<tir::IterVar> paralleliters, otheriters;
       for (auto var : vars)
       {
-        std::cout << var << std::endl;
         Map<tir::Var, IntImm> onehot;
         for (auto tmpvar : vars)
         {
@@ -793,7 +792,6 @@ namespace ditto
       CHECK(ctx->path_attach_tensor.defined() && ctx->path_attach_axis.defined());
       sch[root_op].compute_at(sch[ctx->path_attach_tensor], ctx->path_attach_axis);
       tensorizeOp(sch, root_op, ctx);
-      std::cout << "path_attach_axis: " << ctx->path_attach_axis << std::endl;
       for (auto op : ctx->InterPathNonRootOps())
       {
         if (tensorizeOp(sch, op, ctx))

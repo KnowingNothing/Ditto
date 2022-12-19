@@ -86,8 +86,9 @@ def main(shape, dtype):
     # # Inspect the computational graph
     print("Computational DAG:")
     print(task.compute_dag)
-
-    log_file = f"conv_relu_conv_{shape}-{dtype}.json"
+    
+    os.system('mkdir -p logs')
+    log_file = f"logs/conv_relu_conv_{shape}-{dtype}.json"
 
     n_line = 0
     if os.path.isfile(log_file):
@@ -170,7 +171,14 @@ if __name__ == "__main__":
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
 
+    parser.add_argument(
+        "--output", type = str, default = "result"
+    )
+
     args = parser.parse_args()
+    
+    os.system(f'mkdir -p {args.output}')
+    
     costs = []
     for ss in shapes[args.begin : args.begin + args.num]:
         cost = main(ss, args.dtype)
@@ -180,6 +188,6 @@ if __name__ == "__main__":
     print("shape,dtype,cost")
     for cc in costs:
         print(f"{cc[0], args.dtype, cc[1]}")
-    with open("conv_relu_conv_ansor.pkl", 'wb') as f:
+    with open(f"{args.output}/conv_relu_conv-ansor.pkl", 'wb') as f:
         pkl.dump(costs, f)
         

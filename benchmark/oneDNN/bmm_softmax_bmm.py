@@ -2,12 +2,14 @@ import subprocess
 import argparse
 import regex as re
 import pickle as pkl
-peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995}
+import os
+
+peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995, 'Xeon-Gold-6348': 4659.2}
 def main(shape, server):
     args = ["cpu"] + shape + [peakflops[server]]
     args = [str(_) for _ in args]
     args = ' '.join(args)
-    cmd = "/home/CORP.PKUSC.ORG/gulang2020/workspace/Ditto/benchmark/oneDNN/bmm_softmax_bmm_f32 " + args
+    cmd = "/home/gulang2022/workspace/Ditto/benchmark/oneDNN/bmm_softmax_bmm_f32 " + args
     print(cmd)
     s = subprocess.check_output(cmd.split()).decode('utf-8')
     s = s.replace("\n", ' ')
@@ -61,10 +63,16 @@ if __name__ == "__main__":
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
     parser.add_argument(
-        "--server", type=str, choices=['sc', 'sccc', 'scccc'], default='scccc'
+        "--server", type=str, choices=peakflops.keys()
+    )
+
+    parser.add_argument(
+        "--output", type = str, default = "result"
     )
 
     args = parser.parse_args()
+    
+    os.system(f'mkdir -p {args.output}')
 
     costs = []
     for ss in shapes[args.begin: args.begin + args.num]:
@@ -80,5 +88,5 @@ if __name__ == "__main__":
         print(
             f"{cc[0]},{args.server},{cc[1]}"
         )
-    with open ("bmm_softmax_bmm_onednn.pkl", 'wb') as f:
+    with open (f"{args.output}/bmm_softmax_bmm-oneDNN.pkl", 'wb') as f:
         pkl.dump(costs, f)

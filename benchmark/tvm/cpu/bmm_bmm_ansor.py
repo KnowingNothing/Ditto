@@ -10,7 +10,7 @@ import time
 
 EVALUTE_SCHEDULE_INPUTS = None
 REPEAT = 500
-peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995}
+peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995, 'Xeon-Gold-6348': 4659.2}
 
 @auto_scheduler.register_workload  # Note the auto_scheduler decorator
 def bmm_bmm(batch, M, N, K, L, dtype):
@@ -53,14 +53,16 @@ def bmm_bmm(batch, M, N, K, L, dtype):
     return [A, B, C, out]
 
 def main(batch, M, N, K, L, dtype, server):
-    target = tvm.target.Target(f"llvm -mcpu=skylake-avx512")
+    target = tvm.target.Target('llvm -mcpu=skylake-avx512')
     task = tvm.auto_scheduler.SearchTask(func=bmm_bmm, args=(batch, M, N, K, L, dtype), target=target)
 
     # # Inspect the computational graph
     print("Computational DAG:")
     print(task.compute_dag)
 
-    log_file = f"bmm_bmm_{batch}-{M}-{N}-{K}-{L}-{dtype}.json"
+    os.system('mkdir -p logs')
+    print (f'[Inform]: write log files to logs/')
+    log_file = f"logs/bmm_bmm_{batch}-{M}-{N}-{K}-{L}-{dtype}.json"
 
     n_line = 0
     if os.path.isfile(log_file):
@@ -162,8 +164,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--server", type=str, choices=peakflops.keys()
     )
+    parser.add_argument(
+        "--output", type = str, default = "result"
+    )
 
     args = parser.parse_args()
+    
+    os.system(f'mkdir -p {args.output}')
 
     costs = []
     for ss in shapes[args.begin : args.begin + args.num]:
@@ -184,5 +191,6 @@ if __name__ == "__main__":
         print(
             f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.dtype},{cc[1]}"
         )
-    with open("bmm_bmm_ansor.pkl", 'wb') as f:
+    
+    with open(f"{args.output}/bmm_bmm-ansor.pkl", 'wb') as f:
         pkl.dump(costs, f)

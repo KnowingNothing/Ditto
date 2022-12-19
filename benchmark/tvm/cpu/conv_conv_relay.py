@@ -93,7 +93,14 @@ if __name__ == "__main__":
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
 
+    parser.add_argument(
+        "--output", type = str, default = "result"
+    )
+
     args = parser.parse_args()
+    
+    os.system(f'mkdir -p {args.output}')
+    
     costs = []
     for ss in shapes[args.begin : args.begin + args.num]:
         cost = main(ss, args.dtype)
@@ -101,5 +108,5 @@ if __name__ == "__main__":
     print("shape,dtype,cost")
     for cc in costs:
         print(f"{cc[0], args.dtype, cc[1]}")
-    with open("conv_conv_relay.pkl", 'wb') as f:
+    with open(f"{args.output}/conv_conv-relay.pkl", 'wb') as f:
         pkl.dump(costs, f)

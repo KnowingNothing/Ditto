@@ -14,6 +14,7 @@ import regex as re
 import math
 import numpy as np
 import argparse
+import os
 
 build_options = [
     "-libs=cblas"
@@ -66,6 +67,14 @@ ServerConfig = {
         'isa': 'avx512',
         'peakgflops': 2995.20
     },
+    'Xeon-Gold-6348': {
+        'parallelism': 112,
+        'cacheSizes': [32 * 32, 2.6 * 1024 * 1024, 70 * 1024 * 1024, 84 * 1024 * 1024],
+        'corePerLevel': [1.0, 1.0, 1.0, 28.0],
+        'bandwidth': [293.72, 100.72, 50.54, 13.14],
+        'isa': 'avx512',
+        'peakgflops': 4659.2
+    }
 }
 
 def BatchGemmGemm(
@@ -404,7 +413,7 @@ if __name__ == "__main__":
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
     parser.add_argument(
-        "--server", type=str, choices=['sc', 'sccc', 'scccc']
+        "--server", type=str, choices=ServerConfig.keys()
     )
     parser.add_argument(
         "--mode", type=str, choices=['test', 'best', 'survey'], default = "test"
@@ -427,10 +436,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--output", type = str, default = "bmm_bmm_chimera"
+        "--output", type = str, default = "result"
     )
 
     args = parser.parse_args()
+    
+    os.system(f"mkdir -p {args.output}")
 
     verbose = args.verbose
 
@@ -453,7 +464,7 @@ if __name__ == "__main__":
         )
         costs.append((ss, cost))
         if args.store:
-            with open(f"{args.output}.pkl", 'wb') as f:
+            with open(f"{args.output}/bmm_bmm-chimera.pkl", 'wb') as f:
                 pkl.dump(costs, f)
 
     print("B,M,N,K,L,dtype,args,sm,cost")

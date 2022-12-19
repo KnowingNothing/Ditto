@@ -13,6 +13,7 @@ import regex as re
 import math
 import numpy as np
 import argparse
+import os 
 
 ServerConfig = {
     'sc': {
@@ -39,6 +40,14 @@ ServerConfig = {
         'isa': 'avx512',
         'peakgflops': 2995.20
     },
+    'Xeon-Gold-6348': {
+        'parallelism': 112,
+        'cacheSizes': [32 * 32, 2.6 * 1024 * 1024, 70 * 1024 * 1024, 84 * 1024 * 1024],
+        'corePerLevel': [1.0, 1.0, 1.0, 28.0],
+        'bandwidth': [293.72, 100.72, 50.54, 13.14],
+        'isa': 'avx512',
+        'peakgflops': 4659.2
+    }
 }
 
 
@@ -259,7 +268,6 @@ def test_double_conv(
         packed, code = at.cpu_intrin(
             op="gemm", shape=shape, isa=isa, dtype=dtype, prefix=prefix)
         choices = at.intrinsic_match(op.output(0), packed, ["InnerMost", "SameRange"])
-        print("choices", op.name, choices)
         choice = choices[0]
         match_info = at.match_info(choice, packed, code)
         return match_info
@@ -373,7 +381,9 @@ def test_double_conv(
         )
 
         print("begin evaluate ...")
-        cost = evaluator(*inputs_tvm, *outputs_tvm).mean
+        cost = evaluator(*inputs_tvm, *outputs_tvm)
+        
+        cost = np.mean(cost.results[100:])
         
         if iter == 0:
             top = cost
@@ -479,13 +489,19 @@ if __name__ == "__main__":
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
     parser.add_argument(
-        "--server", type=str, choices=['sc', 'sccc', 'scccc']
+        "--server", type=str, choices=ServerConfig.keys()
     )
     parser.add_argument(
         "--mode", type=str, choices=['test', 'survey', 'best']
     )
+    
+    parser.add_argument(
+        '--output', type=str, default='result'
+    )
 
     args = parser.parse_args()
+    
+    os.system(f'mkdir -p {args.output}')
 
     costs = []
     for ss in shapes[args.begin: args.begin + args.num]:
@@ -496,7 +512,7 @@ if __name__ == "__main__":
             mode = args.mode
         )
         costs.append((ss, cost))
-        with open("conv_conv_nchwc_chimera.pkl", "wb") as f:
+        with open(f"{args.output}/conv_conv_nchwc-chimera.pkl", "wb") as f:
             pkl.dump(costs, f)
 
     print("shape,dtype,args,sm,cost")

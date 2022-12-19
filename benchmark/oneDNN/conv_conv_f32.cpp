@@ -3,7 +3,6 @@
 #include <chrono>
 #include <vector>
 #include <unordered_map>
-#include <emmintrin.h>
 
 #include "example_utils.hpp"
 #include "oneapi/dnnl/dnnl.hpp"
@@ -13,7 +12,7 @@ long long B, C0, P0, Q0, C1, R1, S1, C2, R2, S2, pad1, pad2, stride1,
         stride2;
 double PEAKGFLOPS;
 long long P0_pad, Q0_pad, P1, Q1, P1_pad, Q1_pad, P2, Q2;
-double conv_relu_conv(engine::kind engine_kind, int times = 100) {
+double conv_conv(engine::kind engine_kind, int times = 100) {
     using tag = memory::format_tag;
     using dt = memory::data_type;
 
@@ -90,15 +89,14 @@ double conv_relu_conv(engine::kind engine_kind, int times = 100) {
     /// backward propagation.
     /// @snippet cnn_inference_f32.cpp Create convolution descriptor
     //[Create convolution descriptor]
-    // auto conv1_desc = convolution_forward::desc();
-    //[Create convolution descriptor]
 
     /// Create a convolution primitive descriptor. Once created, this
     /// descriptor has specific formats instead of the `any` format specified
     /// in the convolution descriptor.
     /// @snippet cnn_inference_f32.cpp Create convolution primitive descriptor
     //[Create convolution primitive descriptor]
-    auto conv1_prim_desc = convolution_forward::primitive_desc(eng, prop_kind::forward_inference,
+    auto conv1_prim_desc = convolution_forward::primitive_desc(eng, 
+        prop_kind::forward_inference,
             algorithm::convolution_direct, conv1_src_md, conv1_weights_md,
             conv1_bias_md, conv1_dst_md, conv1_strides, conv1_padding,
             conv1_padding);
@@ -141,26 +139,6 @@ double conv_relu_conv(engine::kind engine_kind, int times = 100) {
             {DNNL_ARG_DST, conv1_dst_memory}});
     //[Create convolution primitive]
 
-    // AlexNet: relu1
-    // {batch, C1, P1, Q1} -> {batch, C1, P1, Q1}
-    const float negative1_slope = 0.0f;
-
-    /// Create the relu primitive. For better performance, keep the input data
-    /// format for ReLU (as well as for other operation primitives until another
-    /// convolution or inner product is encountered) the same as the one chosen
-    /// for convolution. Also note that ReLU is done in-place by using conv1 memory.
-    /// @snippet cnn_inference_f32.cpp Create relu primitive
-    //[Create relu primitive]
-    // auto relu1_desc = eltwise_forward::desc();
-    auto relu1_prim_desc = eltwise_forward::primitive_desc(eng,
-            prop_kind::forward_inference, algorithm::eltwise_relu, conv1_dst_memory.get_desc(), conv1_dst_memory.get_desc(),
-            negative1_slope, negative1_slope);
-
-    net.push_back(eltwise_forward(relu1_prim_desc));
-    net_args.push_back({{DNNL_ARG_SRC, conv1_dst_memory},
-            {DNNL_ARG_DST, conv1_dst_memory}});
-    //[Create relu primitive]
-
     // AlexNet: conv2
     // {batch, C1, P1, Q1} (x) {C2, C1, R2, S2} -> {batch, C2, P2, Q2}
     // strides: {stride2, stride2}
@@ -188,7 +166,8 @@ double conv_relu_conv(engine::kind engine_kind, int times = 100) {
     auto conv2_dst_md = memory::desc({conv2_dst_tz}, dt::f32, tag::any);
 
     // create a convolution
-    auto conv2_prim_desc = convolution_forward::primitive_desc(eng, prop_kind::forward_inference,
+    auto conv2_prim_desc = convolution_forward::primitive_desc(eng, 
+            prop_kind::forward_inference,
             algorithm::convolution_direct, conv2_src_md, conv2_weights_md,
             conv2_bias_md, conv2_dst_md, conv2_strides, conv2_padding,
             conv2_padding);
@@ -268,7 +247,7 @@ double conv_relu_conv(engine::kind engine_kind, int times = 100) {
     return time;
 }
 
-void conv_relu_conv_f32(engine::kind engine_kind) {
+void conv_conv_f32(engine::kind engine_kind) {
     P0_pad = P0 + 2 * pad1;
     Q0_pad = Q0 + 2 * pad1;
     P1 = (P0_pad - R1) / stride1 + 1;
@@ -282,8 +261,8 @@ void conv_relu_conv_f32(engine::kind engine_kind) {
     long long workload = B
             * (C0 * P0 * Q0 * C1 * R1 * S1 + C1 * P1 * Q1 * C2 * R2 * S2);
 //     printf("workload %ld\n", workload);
-    int times = 1000;
-    double time = conv_relu_conv(engine_kind, times);
+    int times = 10;
+    double time = conv_conv(engine_kind, times);
     
     double ratioToPeak = ((double)workload / time / 1e9) / PEAKGFLOPS;
     std::cout << "time(s): " << time << std::endl;
@@ -313,5 +292,5 @@ int main(int argc, char **argv) {
     stride2 = atoi(argv[15]);
     PEAKGFLOPS = atof(argv[16]);
     return handle_example_errors(
-            conv_relu_conv_f32, parse_engine_kind(argc, argv, 15));
+            conv_conv_f32, parse_engine_kind(argc, argv, 15));
 }

@@ -2,8 +2,9 @@ import time
 import torch 
 import numpy as np
 import argparse
-from streamlit import legacy_caching as caching
+import streamlit.runtime.legacy_caching as caching 
 import pickle as pkl
+import os
 
 REPEAT = 2000
 SERVER = None
@@ -36,6 +37,14 @@ ServerConfig = {
         'isa': 'avx512',
         'peakgflops': 2995.20
     },
+    'Xeon-Gold-6348': {
+        'parallelism': 112,
+        'cacheSizes': [32 * 32, 2.6 * 1024 * 1024, 70 * 1024 * 1024, 84 * 1024 * 1024],
+        'corePerLevel': [1.0, 1.0, 1.0, 28.0],
+        'bandwidth': [293.72, 100.72, 50.54, 13.14],
+        'isa': 'avx512',
+        'peakgflops': 4659.2
+    }
 }
 
 
@@ -140,7 +149,11 @@ if __name__ == "__main__":
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
     parser.add_argument(
-        "--server", type=str, choices=['sc', 'sccc', 'scccc']
+        "--server", type=str, choices=ServerConfig.keys()
+    )
+    
+    parser.add_argument(
+        "--output", type=str, default = "result"
     )
 
     args = parser.parse_args()
@@ -162,6 +175,8 @@ if __name__ == "__main__":
         )
     for cc in costs:
         print(cc[1])
-    with open("conv_relu_conv_torch.pkl", "wb") as f:
+
+    os.system(f'mkdir -p {args.output}')
+    with open(f"{args.output}/conv_relu_conv-torch.pkl", "wb") as f:
         pkl.dump(costs, f)
 

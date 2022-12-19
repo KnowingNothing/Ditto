@@ -9,7 +9,7 @@ import pickle as pkl
 REPEAT = 2000
 EVALUTE_SCHEDULE_INPUTS = None
 
-peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995}
+peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995, 'Xeon-Gold-6348': 4659.2}
 
 def evaluate_schedule_worker(dummy):
     global EVALUTE_SCHEDULE_INPUTS
@@ -105,7 +105,8 @@ def main(batch, M, N, K, L, dtype, server):
     print("Computational DAG:")
     print(task.compute_dag)
 
-    log_file = f"bmm_softmax_bmm_{batch}-{M}-{N}-{K}-{L}-{dtype}.json"
+    os.system('mkdir -p logs/')
+    log_file = f"logs/bmm_softmax_bmm_{batch}-{M}-{N}-{K}-{L}-{dtype}.json"
 
     n_line = 0
     if os.path.isfile(log_file):
@@ -200,7 +201,13 @@ if __name__ == "__main__":
         "--server", type=str, choices=peakflops.keys(), default='scccc'
     )
 
+    parser.add_argument(
+        "--output", type = str, default = "result"
+    )
+
     args = parser.parse_args()
+    
+    os.system(f'mkdir -p {args.output}')
 
     costs = []
     for ss in shapes[args.begin : args.begin + args.num]:
@@ -221,5 +228,5 @@ if __name__ == "__main__":
         print(
             f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{cc[0][4]},{args.dtype},{cc[1]}"
         )
-    with open("bmm_softmax_bmm_ansor.pkl", 'wb') as f:
+    with open(f"{args.output}/bmm_softmax_bmm_ansor.pkl", 'wb') as f:
         pkl.dump(costs, f)

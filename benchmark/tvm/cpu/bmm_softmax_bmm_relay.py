@@ -7,7 +7,7 @@ from tvm import topi
 from tvm import te
 import os
 import pickle as pkl
-peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995}
+peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995, 'Xeon-Gold-6348': 4659.2}
 def relay_bmm_softmax_bmm(
     batch, M, N, K, L, dtype="float32", target="cpu"
 ):
@@ -118,10 +118,17 @@ if __name__ == "__main__":
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
     parser.add_argument(
-        "--server", type=str, choices=['sc', 'scc', 'sccc', 'scccc'], default='scccc'
+        "--server", type=str, choices=peakflops.keys()
+    )
+
+    parser.add_argument(
+        "--output", type = str, default = "result"
     )
 
     args = parser.parse_args()
+    
+    os.system(f'mkdir -p {args.output}')
+
     costs = []
     for ss in shapes[args.begin : args.begin + args.num]:
         B, M, N, K, L = ss
@@ -130,5 +137,5 @@ if __name__ == "__main__":
     print("B,M,N,K,dtype,cost")
     for cc in costs:
         print(f"{cc[0][0]},{cc[0][1]},{cc[0][2]},{cc[0][3]},{args.dtype},{cc[1]}")
-    with open("bmm_softmax_bmm_relay.pkl", 'wb') as f:
+    with open(f"{args.output}/bmm_softmax_bmm-relay.pkl", 'wb') as f:
         pkl.dump(costs, f)

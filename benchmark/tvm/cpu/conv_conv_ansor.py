@@ -10,6 +10,7 @@ import pickle as pkl
 
 REPEAT = 2000
 EVALUTE_SCHEDULE_INPUTS = None
+peakflops = {'sc': 704, 'sccc': 2150, 'scccc': 2995, 'Xeon-Gold-6348': 4659.2}
 
 @auto_scheduler.register_workload  # Note the auto_scheduler decorator
 def conv_conv(
@@ -78,7 +79,7 @@ def conv_conv(
     
     return [Img, Weight1, Weight2, conv2]
 
-def main(shape, dtype):
+def main(shape, dtype, server):
     target = tvm.target.Target(f"llvm -mcpu=skylake-avx512")
     task = tvm.auto_scheduler.SearchTask(func=conv_conv, args=(*shape, dtype), target=target)
 
@@ -86,7 +87,8 @@ def main(shape, dtype):
     print("Computational DAG:")
     print(task.compute_dag)
 
-    log_file = f"conv_conv_{shape}-{dtype}.json"
+    os.system('mkdir -p logs')
+    log_file = f"logs/conv_conv_{shape}-{dtype}.json"
 
     n_line = 0
     if os.path.isfile(log_file):
@@ -126,8 +128,8 @@ def main(shape, dtype):
     cost = evaluator(a_tvm, b_tvm, c_tvm, out_tvm).mean
     N,C0,H,W,C1,R1,S1,C2,R2,S2,pad1,pad2,stride1,stride2 = shape
     workload = N * (C0 * C1 * H * W * R1 * S1 + C1 * C2 * R2 * S2 * H * W)
-    topeak = workload / 1e9 / cost / 2995.2
-    ret = (cost, toPeak)
+    topeak = workload / 1e9 / cost / peakflops[server]
+    ret = (cost, topeak)
     print('shape, res')
     print(shape, ret)
     return ret
@@ -168,18 +170,26 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num", type=int, choices=list(range(1, len(shapes) + 1)), default=len(shapes)
     )
+    parser.add_argument(
+        "--server", type=str, choices=peakflops.keys()
+    )
+    parser.add_argument(
+        "--output", type = str, default = "result"
+    )
 
     args = parser.parse_args()
+    
+    os.system(f'mkdir -p {args.output}')
     costs = []
     for ss in shapes[args.begin : args.begin + args.num]:
-        cost = main(ss, args.dtype)
+        cost = main(ss, args.dtype, args.server)
         costs.append((ss, cost))
-        with open("conv_conv_ansor.pkl", 'wb') as f:
+        with open(f"{args.output}/conv_conv-ansor.pkl", 'wb') as f:
             pkl.dump(costs, f)
     print("shape,dtype,cost")
     for cc in costs:
         print(f"{cc[0], args.dtype, cc[1]}")
-    with open("conv_conv_ansor.pkl", 'wb') as f:
+    with open(f"{args.output}/conv_conv-ansor.pkl", 'wb') as f:
         pkl.dump(costs, f)
     
     
